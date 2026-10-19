@@ -7,7 +7,7 @@ import {
   ViewStyle,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import { colors, radius, spacing, typography } from '../../theme';
+import { colors, radius, spacing, useTypography } from '../../theme';
 
 export interface StepperProps {
   value: number;
@@ -45,6 +45,7 @@ export const Stepper: React.FC<StepperProps> = ({
   accessibilityHint,
   style,
 }) => {
+  const typography = useTypography();
   // Normalize min and max bounds safely
   const parsedMin = Number.isFinite(min) ? min : 0;
   const parsedMax = Number.isFinite(max) ? max : 9999;
@@ -118,7 +119,7 @@ export const Stepper: React.FC<StepperProps> = ({
       </Pressable>
 
       <View style={styles.valueContainer}>
-        <Text style={[styles.valueText, disabled && styles.valueTextDisabled]}>
+        <Text style={[styles.valueText, typography.labelMd, disabled && styles.valueTextDisabled]}>
           {safeValue}
           {unit ? ` ${unit}` : ''}
         </Text>
@@ -185,7 +186,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   valueText: {
-    ...typography.labelMd,
     color: colors.textPrimary,
     fontWeight: '700',
   },

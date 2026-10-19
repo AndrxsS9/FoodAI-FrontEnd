@@ -4,7 +4,7 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useAppFonts } from '../src/hooks/useAppFonts';
-import { colors } from '../src/theme';
+import { TypographyProvider, colors } from '../src/theme';
 
 export default function RootLayout() {
   const { isReady, fontError, usingFallback } = useAppFonts();
@@ -32,15 +32,17 @@ export default function RootLayout() {
 
   return (
     <SafeAreaProvider>
-      <StatusBar style="dark" />
-      <Stack
-        screenOptions={{
-          headerShown: false,
-          contentStyle: { backgroundColor: colors.canvas },
-        }}
-      >
-        <Stack.Screen name="index" />
-      </Stack>
+      <TypographyProvider usingFallback={usingFallback}>
+        <StatusBar style="dark" />
+        <Stack
+          screenOptions={{
+            headerShown: false,
+            contentStyle: { backgroundColor: colors.canvas },
+          }}
+        >
+          <Stack.Screen name="index" />
+        </Stack>
+      </TypographyProvider>
     </SafeAreaProvider>
   );
 }

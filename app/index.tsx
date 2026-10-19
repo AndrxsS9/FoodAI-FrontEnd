@@ -15,9 +15,10 @@ import {
   Input,
   Stepper,
 } from '../src/components/common';
-import { colors, radius, spacing, typography } from '../src/theme';
+import { colors, radius, spacing, typography, useTypography } from '../src/theme';
 
 export default function DesignSystemScreen() {
+  const typography = useTypography();
   const [inputText, setInputText] = useState('');
   const [selectedChip, setSelectedChip] = useState<'todos' | 'urgente' | 'bajo'>('todos');
   const [stepperValue, setStepperValue] = useState(2);
@@ -30,7 +31,7 @@ export default function DesignSystemScreen() {
         subtitle="Fase 1: Inicialización & Tokens"
         rightElement={
           <View style={styles.badgeWrapper}>
-            <Text style={styles.badgeText}>v1.0</Text>
+            <Text style={[styles.badgeText, typography.labelSm]}>v1.0</Text>
           </View>
         }
       />
@@ -56,22 +57,22 @@ export default function DesignSystemScreen() {
 
         {/* Color Palette Tokens */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Paleta Cromática (Stitch)</Text>
+          <Text style={[styles.sectionTitle, typography.headlineMd]}>Paleta Cromática (Stitch)</Text>
           <View style={styles.paletteRow}>
             <View style={[styles.colorBox, { backgroundColor: colors.primary }]}>
-              <Text style={styles.colorBoxText}>Primary</Text>
+              <Text style={[styles.colorBoxText, typography.labelSm]}>Primary</Text>
               <Text style={styles.colorHexText}>#5B4B8A</Text>
             </View>
             <View style={[styles.colorBox, { backgroundColor: colors.secondary }]}>
-              <Text style={styles.colorBoxText}>Coral</Text>
+              <Text style={[styles.colorBoxText, typography.labelSm]}>Coral</Text>
               <Text style={styles.colorHexText}>#E9775E</Text>
             </View>
             <View style={[styles.colorBox, { backgroundColor: colors.tertiary }]}>
-              <Text style={[styles.colorBoxText, { color: colors.textPrimary }]}>Butter</Text>
+              <Text style={[styles.colorBoxText, typography.labelSm, { color: colors.textPrimary }]}>Butter</Text>
               <Text style={[styles.colorHexText, { color: colors.textPrimary }]}>#F3C969</Text>
             </View>
             <View style={[styles.colorBox, { backgroundColor: colors.canvas, borderWidth: 1, borderColor: colors.border }]}>
-              <Text style={[styles.colorBoxText, { color: colors.textPrimary }]}>Ivory</Text>
+              <Text style={[styles.colorBoxText, typography.labelSm, { color: colors.textPrimary }]}>Ivory</Text>
               <Text style={[styles.colorHexText, { color: colors.textSecondary }]}>#FAF7F2</Text>
             </View>
           </View>
@@ -114,13 +115,13 @@ export default function DesignSystemScreen() {
             />
           </View>
           {pressCount > 0 && (
-            <Text style={styles.feedbackText}>Botones pulsados: {pressCount} veces</Text>
+            <Text style={[styles.feedbackText, typography.bodySm]}>Botones pulsados: {pressCount} veces</Text>
           )}
         </View>
 
         {/* Chips Section */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Componentes: Chips & Badges</Text>
+          <Text style={[styles.sectionTitle, typography.headlineMd]}>Componentes: Chips & Badges</Text>
           <View style={styles.chipsRow}>
             <Chip
               label="Todos los ingredientes"
@@ -147,7 +148,7 @@ export default function DesignSystemScreen() {
 
         {/* Inputs & Stepper Section */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Componentes: Formularios y Controles</Text>
+          <Text style={[styles.sectionTitle, typography.headlineMd]}>Componentes: Formularios y Controles</Text>
           <Input
             label="Presupuesto objetivo"
             placeholder="Ej. $20.000 COP"

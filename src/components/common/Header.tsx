@@ -7,7 +7,7 @@ import {
   ViewStyle,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import { colors, radius, spacing, typography } from '../../theme';
+import { colors, radius, spacing, useTypography } from '../../theme';
 
 export interface HeaderProps {
   title: string;
@@ -26,6 +26,8 @@ export const Header: React.FC<HeaderProps> = ({
   rightElement,
   style,
 }) => {
+  const typography = useTypography();
+
   return (
     <View style={[styles.container, style]}>
       <View style={styles.leftRow}>
@@ -46,11 +48,15 @@ export const Header: React.FC<HeaderProps> = ({
         )}
 
         <View style={styles.titleContainer}>
-          <Text style={styles.title} numberOfLines={1} accessibilityRole="header">
+          <Text
+            style={[styles.title, typography.headlineMd]}
+            numberOfLines={1}
+            accessibilityRole="header"
+          >
             {title}
           </Text>
           {subtitle && (
-            <Text style={styles.subtitle} numberOfLines={1}>
+            <Text style={[styles.subtitle, typography.bodySm]} numberOfLines={1}>
               {subtitle}
             </Text>
           )}
@@ -95,11 +101,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   title: {
-    ...typography.headlineMd,
     color: colors.textPrimary,
   },
   subtitle: {
-    ...typography.bodySm,
     color: colors.textSecondary,
     marginTop: 2,
   },

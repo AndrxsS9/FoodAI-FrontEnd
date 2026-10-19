@@ -3,6 +3,7 @@
  * Based on Google Stitch specification with Plus Jakarta Sans
  */
 
+import React, { createContext, useContext, useMemo } from 'react';
 import { Platform, TextStyle } from 'react-native';
 
 export const fontFamilies = {
@@ -169,3 +170,52 @@ export const systemTypography: Record<TypographyVariant, TextStyle> = {
 export function getTypography(variant: TypographyVariant, useFallback = false): TextStyle {
   return useFallback ? systemTypography[variant] : typography[variant];
 }
+
+export interface TypographyContextValue {
+  usingFallback: boolean;
+  typography: Record<TypographyVariant, TextStyle>;
+  fontFamilies: typeof fontFamilies | typeof systemFontFamilies;
+}
+
+export const TypographyContext = createContext<TypographyContextValue>({
+  usingFallback: false,
+  typography,
+  fontFamilies,
+});
+
+export interface TypographyProviderProps {
+  usingFallback?: boolean;
+  children?: React.ReactNode;
+}
+
+export const TypographyProvider: React.FC<TypographyProviderProps> = ({
+  usingFallback = false,
+  children,
+}) => {
+  const value = useMemo<TypographyContextValue>(
+    () => ({
+      usingFallback,
+      typography: usingFallback ? systemTypography : typography,
+      fontFamilies: usingFallback ? systemFontFamilies : fontFamilies,
+    }),
+    [usingFallback]
+  );
+
+  return React.createElement(TypographyContext.Provider, { value }, children);
+};
+
+export function useTypography(): Record<TypographyVariant, TextStyle> {
+  const context = useContext(TypographyContext);
+  return context.typography;
+}
+
+export function useFontFamilies(): typeof fontFamilies | typeof systemFontFamilies {
+  const context = useContext(TypographyContext);
+  return context.fontFamilies;
+}
+
+export function useFontFallback(): boolean {
+  const context = useContext(TypographyContext);
+  return context.usingFallback;
+}
+

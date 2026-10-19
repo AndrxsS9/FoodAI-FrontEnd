@@ -7,7 +7,7 @@ import {
   View,
   ViewStyle,
 } from 'react-native';
-import { colors, radius, spacing, typography } from '../../theme';
+import { colors, radius, spacing, useTypography } from '../../theme';
 
 export type ChipVariant = 'filter' | 'urgent' | 'budget' | 'neutral';
 
@@ -40,6 +40,7 @@ export const Chip: React.FC<ChipProps> = ({
   style,
   textStyle,
 }) => {
+  const typography = useTypography();
   const isPressable = typeof onPress === 'function';
 
   const containerStyles = [
@@ -56,6 +57,7 @@ export const Chip: React.FC<ChipProps> = ({
       <Text
         style={[
           styles.text,
+          typography.labelSm,
           styles[`${variant}Text`],
           selected && styles.selectedText,
           disabled && styles.disabledText,
@@ -153,7 +155,6 @@ const styles = StyleSheet.create({
 
   // Text base
   text: {
-    ...typography.labelSm,
     textAlign: 'center',
   },
 

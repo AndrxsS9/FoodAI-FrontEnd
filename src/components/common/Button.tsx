@@ -8,10 +8,16 @@ import {
   View,
   ViewStyle,
 } from 'react-native';
-import { colors, radius, spacing, typography } from '../../theme';
+import { colors, radius, spacing, useTypography } from '../../theme';
 
 export type ButtonVariant = 'primary' | 'secondary' | 'tertiary' | 'outline' | 'ghost';
 export type ButtonSize = 'sm' | 'md' | 'lg';
+
+const sizeTypographyMap: Record<ButtonSize, 'labelSm' | 'labelMd' | 'labelLg'> = {
+  sm: 'labelSm',
+  md: 'labelMd',
+  lg: 'labelLg',
+};
 
 export interface ButtonProps {
   title: string;
@@ -44,6 +50,7 @@ export const Button: React.FC<ButtonProps> = ({
   style,
   textStyle,
 }) => {
+  const typography = useTypography();
   const isInteractive = !disabled && !loading;
   const computedAccessibilityLabel = loading
     ? `${accessibilityLabel || title}, cargando`
@@ -80,8 +87,8 @@ export const Button: React.FC<ButtonProps> = ({
           <Text
             style={[
               styles.textBase,
+              typography[sizeTypographyMap[size]],
               styles[`${variant}Text`],
-              styles[`${size}Text`],
               disabled && styles.disabledText,
               textStyle,
             ]}
@@ -183,15 +190,6 @@ const styles = StyleSheet.create({
   // Text base
   textBase: {
     textAlign: 'center',
-  },
-  smText: {
-    ...typography.labelSm,
-  },
-  mdText: {
-    ...typography.labelMd,
-  },
-  lgText: {
-    ...typography.labelLg,
   },
 
   // Text variant colors

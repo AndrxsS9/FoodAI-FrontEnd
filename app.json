@@ -6,9 +6,6 @@
     "orientation": "portrait",
     "scheme": "foodai",
     "userInterfaceStyle": "light",
-    "splash": {
-      "backgroundColor": "#FAF7F2"
-    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.foodai.app"

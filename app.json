@@ -1,0 +1,29 @@
+{
+  "expo": {
+    "name": "FoodAI",
+    "slug": "foodai",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "foodai",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.foodai.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#FAF7F2"
+      },
+      "package": "com.foodai.app"
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

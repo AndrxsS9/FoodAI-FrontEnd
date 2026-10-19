@@ -8,7 +8,12 @@ import {
   Input,
   Stepper,
 } from '../src/components/common';
-import { Text } from 'react-native';
+import { StyleSheet, Text } from 'react-native';
+import {
+  TypographyProvider,
+  fontFamilies,
+  systemFontFamilies,
+} from '../src/theme';
 
 describe('FoodAI Common Components', () => {
   afterEach(() => {
@@ -203,6 +208,45 @@ describe('FoodAI Common Components', () => {
       expect(input.props.editable).toBe(false);
       expect(input.props.accessibilityState).toEqual({ disabled: true });
     });
+
+    it('prevents external textInputProps from accidentally overriding calculated disabled and accessibility properties', async () => {
+      const screen = await render(
+        <Input
+          label="Seguro"
+          placeholder="Sin override"
+          disabled={true}
+          errorMessage="Error activo"
+          // External props attempting to force editability / invalid state
+          editable={true}
+          accessibilityState={{ disabled: false, selected: true }}
+          aria-invalid={false}
+        />
+      );
+
+      const input = screen.getByPlaceholderText('Sin override');
+      // Must enforce internally calculated properties
+      expect(input.props.editable).toBe(false);
+      expect(input.props.accessibilityState.disabled).toBe(true);
+      expect(input.props.accessibilityState.selected).toBe(true);
+      expect(input.props['aria-invalid']).toBe(true);
+    });
+
+    it('preserves and passes standard TextInput props without interference', async () => {
+      const screen = await render(
+        <Input
+          placeholder="Entrada con props nativas"
+          keyboardType="numeric"
+          maxLength={8}
+          secureTextEntry
+          testID="standard-text-input"
+        />
+      );
+
+      const input = screen.getByTestId('standard-text-input');
+      expect(input.props.keyboardType).toBe('numeric');
+      expect(input.props.maxLength).toBe(8);
+      expect(input.props.secureTextEntry).toBe(true);
+    });
   });
 
   describe('Header', () => {
@@ -365,6 +409,60 @@ describe('FoodAI Common Components', () => {
 
       fireEvent.press(minusBtn);
       expect(onChangeMock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Typography Fallback Integration', () => {
+    it('uses primary Plus Jakarta Sans font families when usingFallback is false', async () => {
+      const screen = await render(
+        <TypographyProvider usingFallback={false}>
+          <Button title="Boton Primario" onPress={jest.fn()} />
+          <Chip label="Chip Filtro" />
+          <Header title="Encabezado" subtitle="Subtitulo" />
+          <Input label="Etiqueta" placeholder="Entrada de texto" />
+          <Stepper value={2} onChange={jest.fn()} unit="porciones" />
+        </TypographyProvider>
+      );
+
+      const buttonText = screen.getByText('Boton Primario');
+      const chipText = screen.getByText('Chip Filtro');
+      const headerTitle = screen.getByText('Encabezado');
+      const headerSubtitle = screen.getByText('Subtitulo');
+      const inputLabel = screen.getByText('Etiqueta');
+      const stepperText = screen.getByText('2 porciones');
+
+      expect(StyleSheet.flatten(buttonText.props.style).fontFamily).toBe(fontFamilies.semiBold);
+      expect(StyleSheet.flatten(chipText.props.style).fontFamily).toBe(fontFamilies.bold);
+      expect(StyleSheet.flatten(headerTitle.props.style).fontFamily).toBe(fontFamilies.semiBold);
+      expect(StyleSheet.flatten(headerSubtitle.props.style).fontFamily).toBe(fontFamilies.regular);
+      expect(StyleSheet.flatten(inputLabel.props.style).fontFamily).toBe(fontFamilies.semiBold);
+      expect(StyleSheet.flatten(stepperText.props.style).fontFamily).toBe(fontFamilies.semiBold);
+    });
+
+    it('dynamically applies system font fallbacks across all shared components when usingFallback is true', async () => {
+      const screen = await render(
+        <TypographyProvider usingFallback={true}>
+          <Button title="Boton Fallback" onPress={jest.fn()} />
+          <Chip label="Chip Fallback" />
+          <Header title="Encabezado Fallback" subtitle="Subtitulo Fallback" />
+          <Input label="Etiqueta Fallback" placeholder="Entrada fallback" />
+          <Stepper value={4} onChange={jest.fn()} unit="kg" />
+        </TypographyProvider>
+      );
+
+      const buttonText = screen.getByText('Boton Fallback');
+      const chipText = screen.getByText('Chip Fallback');
+      const headerTitle = screen.getByText('Encabezado Fallback');
+      const headerSubtitle = screen.getByText('Subtitulo Fallback');
+      const inputLabel = screen.getByText('Etiqueta Fallback');
+      const stepperText = screen.getByText('4 kg');
+
+      expect(StyleSheet.flatten(buttonText.props.style).fontFamily).toBe(systemFontFamilies.semiBold);
+      expect(StyleSheet.flatten(chipText.props.style).fontFamily).toBe(systemFontFamilies.bold);
+      expect(StyleSheet.flatten(headerTitle.props.style).fontFamily).toBe(systemFontFamilies.semiBold);
+      expect(StyleSheet.flatten(headerSubtitle.props.style).fontFamily).toBe(systemFontFamilies.regular);
+      expect(StyleSheet.flatten(inputLabel.props.style).fontFamily).toBe(systemFontFamilies.semiBold);
+      expect(StyleSheet.flatten(stepperText.props.style).fontFamily).toBe(systemFontFamilies.semiBold);
     });
   });
 });

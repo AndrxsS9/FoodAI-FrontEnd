@@ -1,4 +1,18 @@
-import { colors, radius, spacing, typography } from '../src/theme';
+import React from 'react';
+import { renderHook } from '@testing-library/react-native';
+import {
+  colors,
+  radius,
+  spacing,
+  typography,
+  systemFontFamilies,
+  systemTypography,
+  getTypography,
+  TypographyProvider,
+  useTypography,
+  useFontFamilies,
+  useFontFallback,
+} from '../src/theme';
 
 describe('FoodAI Design Tokens (Stitch)', () => {
   describe('Color Tokens', () => {
@@ -54,8 +68,6 @@ describe('FoodAI Design Tokens (Stitch)', () => {
     });
 
     it('should provide safe system typography fallbacks', () => {
-      const { systemFontFamilies, systemTypography, getTypography } = require('../src/theme');
-
       expect(systemFontFamilies.regular).toBeDefined();
       expect(systemFontFamilies.bold).toBeDefined();
 
@@ -64,6 +76,31 @@ describe('FoodAI Design Tokens (Stitch)', () => {
 
       expect(getTypography('headlineXl', false).fontFamily).toBe('PlusJakartaSans_700Bold');
       expect(getTypography('headlineXl', true).fontFamily).toBe(systemFontFamilies.bold);
+    });
+
+    it('should correctly configure TypographyProvider and context hooks', async () => {
+      // Default context (without provider)
+      const { result: defaultTypography } = await renderHook(() => useTypography());
+      expect(defaultTypography.current.headlineXl.fontFamily).toBe('PlusJakartaSans_700Bold');
+
+      const { result: defaultFamilies } = await renderHook(() => useFontFamilies());
+      expect(defaultFamilies.current.bold).toBe('PlusJakartaSans_700Bold');
+
+      const { result: defaultFallback } = await renderHook(() => useFontFallback());
+      expect(defaultFallback.current).toBe(false);
+
+      // With fallback provider enabled
+      const wrapper = ({ children }: { children: React.ReactNode }) =>
+        React.createElement(TypographyProvider, { usingFallback: true }, children);
+
+      const { result: fallbackTypography } = await renderHook(() => useTypography(), { wrapper });
+      expect(fallbackTypography.current.headlineXl.fontFamily).toBe(systemFontFamilies.bold);
+
+      const { result: fallbackFamilies } = await renderHook(() => useFontFamilies(), { wrapper });
+      expect(fallbackFamilies.current.bold).toBe(systemFontFamilies.bold);
+
+      const { result: fallbackActive } = await renderHook(() => useFontFallback(), { wrapper });
+      expect(fallbackActive.current).toBe(true);
     });
   });
 });

@@ -14,6 +14,7 @@ export interface InputProps extends Omit<TextInputProps, 'style'> {
   label?: string;
   helperText?: string;
   errorMessage?: string;
+  disabled?: boolean;
   leftElement?: React.ReactNode;
   rightElement?: React.ReactNode;
   containerStyle?: ViewStyle;
@@ -24,6 +25,7 @@ export const Input: React.FC<InputProps> = ({
   label,
   helperText,
   errorMessage,
+  disabled = false,
   leftElement,
   rightElement,
   containerStyle,
@@ -35,22 +37,36 @@ export const Input: React.FC<InputProps> = ({
   const [isFocused, setIsFocused] = useState(false);
 
   const hasError = Boolean(errorMessage);
+  const isEditable = !disabled && textInputProps.editable !== false;
 
   return (
     <View style={[styles.container, containerStyle]}>
-      {label && <Text style={styles.label}>{label}</Text>}
+      {label && (
+        <Text
+          style={[styles.label, disabled && styles.labelDisabled]}
+          accessibilityRole="text"
+        >
+          {label}
+        </Text>
+      )}
 
       <View
         style={[
           styles.inputWrapper,
           isFocused && styles.focusedWrapper,
           hasError && styles.errorWrapper,
+          disabled && styles.disabledWrapper,
         ]}
       >
         {leftElement && <View style={styles.leftElement}>{leftElement}</View>}
 
         <TextInput
           placeholderTextColor={colors.textSecondary}
+          editable={isEditable}
+          accessibilityLabel={textInputProps.accessibilityLabel || label || textInputProps.placeholder}
+          accessibilityHint={textInputProps.accessibilityHint || helperText}
+          accessibilityState={{ disabled: !isEditable, ...textInputProps.accessibilityState }}
+          aria-invalid={hasError}
           onFocus={(e) => {
             setIsFocused(true);
             onFocus?.(e);
@@ -59,7 +75,7 @@ export const Input: React.FC<InputProps> = ({
             setIsFocused(false);
             onBlur?.(e);
           }}
-          style={[styles.input, inputStyle]}
+          style={[styles.input, disabled && styles.disabledInput, inputStyle]}
           {...textInputProps}
         />
 
@@ -67,7 +83,13 @@ export const Input: React.FC<InputProps> = ({
       </View>
 
       {hasError ? (
-        <Text style={styles.errorText}>{errorMessage}</Text>
+        <Text
+          style={styles.errorText}
+          accessibilityRole="alert"
+          accessibilityLiveRegion="polite"
+        >
+          {errorMessage}
+        </Text>
       ) : helperText ? (
         <Text style={styles.helperText}>{helperText}</Text>
       ) : null}
@@ -118,6 +140,17 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: spacing.xs,
     marginLeft: spacing.xs,
+  },
+  labelDisabled: {
+    color: colors.textSecondary,
+  },
+  disabledWrapper: {
+    backgroundColor: colors.surfaceContainerLow,
+    borderColor: colors.borderLight,
+    opacity: 0.7,
+  },
+  disabledInput: {
+    color: colors.textSecondary,
   },
   errorText: {
     ...typography.bodySm,

@@ -24,6 +24,7 @@ export interface ButtonProps {
   rightIcon?: React.ReactNode;
   fullWidth?: boolean;
   accessibilityLabel?: string;
+  accessibilityHint?: string;
   style?: ViewStyle;
   textStyle?: TextStyle;
 }
@@ -39,18 +40,24 @@ export const Button: React.FC<ButtonProps> = ({
   rightIcon,
   fullWidth = false,
   accessibilityLabel,
+  accessibilityHint,
   style,
   textStyle,
 }) => {
   const isInteractive = !disabled && !loading;
+  const computedAccessibilityLabel = loading
+    ? `${accessibilityLabel || title}, cargando`
+    : (accessibilityLabel || title);
 
   return (
     <Pressable
       onPress={isInteractive ? onPress : undefined}
       disabled={!isInteractive}
       accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel || title}
+      accessibilityLabel={computedAccessibilityLabel}
+      accessibilityHint={accessibilityHint}
       accessibilityState={{ disabled: !isInteractive, busy: loading }}
+      hitSlop={size === 'sm' ? { top: 6, bottom: 6, left: 4, right: 4 } : undefined}
       style={({ pressed }) => [
         styles.base,
         styles[variant],

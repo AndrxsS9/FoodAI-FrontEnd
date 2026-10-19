@@ -16,9 +16,22 @@ export interface StepperProps {
   max?: number;
   step?: number;
   unit?: string;
+  disabled?: boolean;
   accessibilityLabel?: string;
+  accessibilityHint?: string;
   style?: ViewStyle;
 }
+
+const getDecimalPlaces = (num: number): number => {
+  if (!Number.isFinite(num)) return 0;
+  const parts = num.toString().split('.');
+  return parts[1] ? parts[1].length : 0;
+};
+
+const roundToPrecision = (num: number, precision: number): number => {
+  const factor = Math.pow(10, precision);
+  return Math.round(num * factor) / factor;
+};
 
 export const Stepper: React.FC<StepperProps> = ({
   value,
@@ -27,33 +40,69 @@ export const Stepper: React.FC<StepperProps> = ({
   max = 9999,
   step = 1,
   unit,
+  disabled = false,
   accessibilityLabel = 'Ajustar cantidad',
+  accessibilityHint,
   style,
 }) => {
-  const canDecrement = value > min;
-  const canIncrement = value < max;
+  // Normalize min and max bounds safely
+  const parsedMin = Number.isFinite(min) ? min : 0;
+  const parsedMax = Number.isFinite(max) ? max : 9999;
+  const safeMin = Math.min(parsedMin, parsedMax);
+  const safeMax = Math.max(parsedMin, parsedMax);
+
+  // Normalize step: must be finite and strictly positive
+  const safeStep = Number.isFinite(step) && step > 0 ? step : 1;
+
+  // Decimal precision to prevent IEEE-754 floating-point inaccuracies
+  const precision = Math.min(
+    Math.max(getDecimalPlaces(safeStep), getDecimalPlaces(value)),
+    10
+  );
+
+  // Normalize current value safely within bounds
+  const parsedValue = Number.isFinite(value) ? value : safeMin;
+  const safeValue = roundToPrecision(
+    Math.min(Math.max(parsedValue, safeMin), safeMax),
+    precision
+  );
+
+  const canDecrement = !disabled && safeValue > safeMin;
+  const canIncrement = !disabled && safeValue < safeMax;
 
   const handleDecrement = () => {
-    if (canDecrement) {
-      const next = Math.max(min, value - step);
-      onChange(next);
+    if (!canDecrement) return;
+    const rawNext = safeValue - safeStep;
+    const clampedNext = Math.max(safeMin, rawNext);
+    const roundedNext = roundToPrecision(clampedNext, precision);
+    if (Number.isFinite(roundedNext)) {
+      onChange(roundedNext);
     }
   };
 
   const handleIncrement = () => {
-    if (canIncrement) {
-      const next = Math.min(max, value + step);
-      onChange(next);
+    if (!canIncrement) return;
+    const rawNext = safeValue + safeStep;
+    const clampedNext = Math.min(safeMax, rawNext);
+    const roundedNext = roundToPrecision(clampedNext, precision);
+    if (Number.isFinite(roundedNext)) {
+      onChange(roundedNext);
     }
   };
 
   return (
-    <View style={[styles.container, style]} accessibilityLabel={accessibilityLabel}>
+    <View
+      style={[styles.container, disabled && styles.containerDisabled, style]}
+      accessibilityLabel={accessibilityLabel}
+      accessibilityHint={accessibilityHint}
+    >
       <Pressable
         onPress={handleDecrement}
         disabled={!canDecrement}
         accessibilityRole="button"
         accessibilityLabel="Disminuir"
+        accessibilityHint={`Disminuir en ${safeStep}${unit ? ` ${unit}` : ''}`}
+        accessibilityState={{ disabled: !canDecrement }}
         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         style={({ pressed }) => [
           styles.stepButton,
@@ -69,8 +118,8 @@ export const Stepper: React.FC<StepperProps> = ({
       </Pressable>
 
       <View style={styles.valueContainer}>
-        <Text style={styles.valueText}>
-          {value}
+        <Text style={[styles.valueText, disabled && styles.valueTextDisabled]}>
+          {safeValue}
           {unit ? ` ${unit}` : ''}
         </Text>
       </View>
@@ -80,6 +129,8 @@ export const Stepper: React.FC<StepperProps> = ({
         disabled={!canIncrement}
         accessibilityRole="button"
         accessibilityLabel="Aumentar"
+        accessibilityHint={`Aumentar en ${safeStep}${unit ? ` ${unit}` : ''}`}
+        accessibilityState={{ disabled: !canIncrement }}
         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         style={({ pressed }) => [
           styles.stepButton,
@@ -104,6 +155,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceContainerLow,
     borderRadius: radius.full,
     padding: 3,
+  },
+  containerDisabled: {
+    opacity: 0.6,
   },
   stepButton: {
     width: 36,
@@ -134,5 +188,8 @@ const styles = StyleSheet.create({
     ...typography.labelMd,
     color: colors.textPrimary,
     fontWeight: '700',
+  },
+  valueTextDisabled: {
+    color: colors.textSecondary,
   },
 });

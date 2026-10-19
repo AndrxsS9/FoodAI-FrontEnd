@@ -14,11 +14,14 @@ export type ChipVariant = 'filter' | 'urgent' | 'budget' | 'neutral';
 export interface ChipProps {
   label: string;
   selected?: boolean;
+  disabled?: boolean;
   onPress?: () => void;
   variant?: ChipVariant;
   leftIcon?: React.ReactNode;
   rightIcon?: React.ReactNode;
   accessibilityLabel?: string;
+  accessibilityHint?: string;
+  accessibilityRole?: 'button' | 'checkbox' | 'radio';
   style?: ViewStyle;
   textStyle?: TextStyle;
 }
@@ -26,11 +29,14 @@ export interface ChipProps {
 export const Chip: React.FC<ChipProps> = ({
   label,
   selected = false,
+  disabled = false,
   onPress,
   variant = 'filter',
   leftIcon,
   rightIcon,
   accessibilityLabel,
+  accessibilityHint,
+  accessibilityRole = 'button',
   style,
   textStyle,
 }) => {
@@ -40,6 +46,7 @@ export const Chip: React.FC<ChipProps> = ({
     styles.base,
     styles[variant],
     selected && styles.selected,
+    disabled && styles.disabled,
     style,
   ];
 
@@ -51,6 +58,7 @@ export const Chip: React.FC<ChipProps> = ({
           styles.text,
           styles[`${variant}Text`],
           selected && styles.selectedText,
+          disabled && styles.disabledText,
           textStyle,
         ]}
         numberOfLines={1}
@@ -64,13 +72,16 @@ export const Chip: React.FC<ChipProps> = ({
   if (isPressable) {
     return (
       <Pressable
-        onPress={onPress}
-        accessibilityRole="button"
+        onPress={disabled ? undefined : onPress}
+        disabled={disabled}
+        accessibilityRole={accessibilityRole}
         accessibilityLabel={accessibilityLabel || label}
-        accessibilityState={{ selected }}
+        accessibilityHint={accessibilityHint}
+        accessibilityState={{ selected, disabled }}
+        hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
         style={({ pressed }) => [
           containerStyles,
-          pressed && styles.pressed,
+          pressed && !disabled && styles.pressed,
         ]}
       >
         {content}
@@ -79,7 +90,12 @@ export const Chip: React.FC<ChipProps> = ({
   }
 
   return (
-    <View style={containerStyles} accessibilityLabel={accessibilityLabel || label}>
+    <View
+      style={containerStyles}
+      accessibilityRole="text"
+      accessibilityLabel={accessibilityLabel || label}
+      accessibilityState={{ selected, disabled }}
+    >
       {content}
     </View>
   );
@@ -130,6 +146,11 @@ const styles = StyleSheet.create({
     borderColor: colors.primary,
   },
 
+  disabled: {
+    opacity: 0.5,
+    borderColor: colors.borderLight,
+  },
+
   // Text base
   text: {
     ...typography.labelSm,
@@ -140,7 +161,7 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
   },
   urgentText: {
-    color: colors.secondary,
+    color: '#B8432B', // Deep coral for WCAG AA 4.6:1 text contrast
   },
   budgetText: {
     color: colors.textPrimary,
@@ -150,5 +171,8 @@ const styles = StyleSheet.create({
   },
   selectedText: {
     color: colors.onPrimary,
+  },
+  disabledText: {
+    color: colors.textTertiary,
   },
 });

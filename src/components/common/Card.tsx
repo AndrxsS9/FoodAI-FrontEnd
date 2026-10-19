@@ -13,8 +13,10 @@ export interface CardProps {
   children: React.ReactNode;
   variant?: CardVariant;
   padding?: keyof typeof spacing | number;
+  disabled?: boolean;
   onPress?: () => void;
   accessibilityLabel?: string;
+  accessibilityHint?: string;
   style?: ViewStyle;
 }
 
@@ -44,8 +46,10 @@ export const Card: React.FC<CardProps> = ({
   children,
   variant = 'elevated',
   padding = 'md',
+  disabled = false,
   onPress,
   accessibilityLabel,
+  accessibilityHint,
   style,
 }) => {
   const paddingValue = typeof padding === 'number' ? padding : spacing[padding];
@@ -53,18 +57,22 @@ export const Card: React.FC<CardProps> = ({
     ...styles.base,
     ...variantStyles[variant],
     padding: paddingValue,
+    ...(disabled ? styles.disabled : {}),
     ...style,
   };
 
   if (onPress) {
     return (
       <Pressable
-        onPress={onPress}
+        onPress={disabled ? undefined : onPress}
+        disabled={disabled}
         accessibilityRole="button"
         accessibilityLabel={accessibilityLabel}
+        accessibilityHint={accessibilityHint}
+        accessibilityState={{ disabled }}
         style={({ pressed }) => [
           combinedStyle,
-          pressed && styles.pressed,
+          pressed && !disabled && styles.pressed,
         ]}
       >
         {children}
@@ -83,6 +91,9 @@ const styles = StyleSheet.create({
   base: {
     borderRadius: radius.lg,
     overflow: 'hidden',
+  },
+  disabled: {
+    opacity: 0.6,
   },
   pressed: {
     transform: [{ scale: 0.99 }],

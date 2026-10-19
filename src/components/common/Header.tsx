@@ -34,6 +34,7 @@ export const Header: React.FC<HeaderProps> = ({
             onPress={onBack}
             accessibilityRole="button"
             accessibilityLabel="Volver"
+            accessibilityHint="Regresar a la pantalla anterior"
             hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
             style={({ pressed }) => [
               styles.backButton,
@@ -45,7 +46,7 @@ export const Header: React.FC<HeaderProps> = ({
         )}
 
         <View style={styles.titleContainer}>
-          <Text style={styles.title} numberOfLines={1}>
+          <Text style={styles.title} numberOfLines={1} accessibilityRole="header">
             {title}
           </Text>
           {subtitle && (

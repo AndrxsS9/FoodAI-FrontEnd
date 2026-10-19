@@ -8,7 +8,7 @@ import {
   View,
   ViewStyle,
 } from 'react-native';
-import { colors, radius, spacing, typography } from '../../theme';
+import { colors, radius, spacing, useTypography } from '../../theme';
 
 export interface InputProps extends Omit<TextInputProps, 'style'> {
   label?: string;
@@ -35,6 +35,7 @@ export const Input: React.FC<InputProps> = ({
   ...textInputProps
 }) => {
   const [isFocused, setIsFocused] = useState(false);
+  const typography = useTypography();
 
   const hasError = Boolean(errorMessage);
   const isEditable = !disabled && textInputProps.editable !== false;
@@ -43,7 +44,7 @@ export const Input: React.FC<InputProps> = ({
     <View style={[styles.container, containerStyle]}>
       {label && (
         <Text
-          style={[styles.label, disabled && styles.labelDisabled]}
+          style={[styles.label, typography.labelMd, disabled && styles.labelDisabled]}
           accessibilityRole="text"
         >
           {label}
@@ -62,10 +63,14 @@ export const Input: React.FC<InputProps> = ({
 
         <TextInput
           placeholderTextColor={colors.textSecondary}
+          {...textInputProps}
           editable={isEditable}
           accessibilityLabel={textInputProps.accessibilityLabel || label || textInputProps.placeholder}
           accessibilityHint={textInputProps.accessibilityHint || helperText}
-          accessibilityState={{ disabled: !isEditable, ...textInputProps.accessibilityState }}
+          accessibilityState={{
+            ...textInputProps.accessibilityState,
+            disabled: !isEditable,
+          }}
           aria-invalid={hasError}
           onFocus={(e) => {
             setIsFocused(true);
@@ -75,8 +80,7 @@ export const Input: React.FC<InputProps> = ({
             setIsFocused(false);
             onBlur?.(e);
           }}
-          style={[styles.input, disabled && styles.disabledInput, inputStyle]}
-          {...textInputProps}
+          style={[styles.input, typography.bodyMd, disabled && styles.disabledInput, inputStyle]}
         />
 
         {rightElement && <View style={styles.rightElement}>{rightElement}</View>}
@@ -84,14 +88,14 @@ export const Input: React.FC<InputProps> = ({
 
       {hasError ? (
         <Text
-          style={styles.errorText}
+          style={[styles.errorText, typography.bodySm]}
           accessibilityRole="alert"
           accessibilityLiveRegion="polite"
         >
           {errorMessage}
         </Text>
       ) : helperText ? (
-        <Text style={styles.helperText}>{helperText}</Text>
+        <Text style={[styles.helperText, typography.bodySm]}>{helperText}</Text>
       ) : null}
     </View>
   );
@@ -103,7 +107,6 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   label: {
-    ...typography.labelMd,
     color: colors.textPrimary,
     marginBottom: spacing.xs,
   },
@@ -126,7 +129,6 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     height: '100%',
-    ...typography.bodyMd,
     color: colors.textPrimary,
   },
   leftElement: {
@@ -136,7 +138,6 @@ const styles = StyleSheet.create({
     marginLeft: spacing.sm,
   },
   helperText: {
-    ...typography.bodySm,
     color: colors.textSecondary,
     marginTop: spacing.xs,
     marginLeft: spacing.xs,
@@ -153,7 +154,6 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
   errorText: {
-    ...typography.bodySm,
     color: colors.error,
     marginTop: spacing.xs,
     marginLeft: spacing.xs,

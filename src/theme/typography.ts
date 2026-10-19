@@ -3,13 +3,20 @@
  * Based on Google Stitch specification with Plus Jakarta Sans
  */
 
-import { TextStyle } from 'react-native';
+import { Platform, TextStyle } from 'react-native';
 
 export const fontFamilies = {
   regular: 'PlusJakartaSans_400Regular',
   medium: 'PlusJakartaSans_500Medium',
   semiBold: 'PlusJakartaSans_600SemiBold',
   bold: 'PlusJakartaSans_700Bold',
+} as const;
+
+export const systemFontFamilies = {
+  regular: Platform.select({ ios: 'System', android: 'sans-serif', default: 'sans-serif' }),
+  medium: Platform.select({ ios: 'System', android: 'sans-serif-medium', default: 'sans-serif' }),
+  semiBold: Platform.select({ ios: 'System', android: 'sans-serif', default: 'sans-serif' }),
+  bold: Platform.select({ ios: 'System', android: 'sans-serif', default: 'sans-serif' }),
 } as const;
 
 export const fontSizes = {
@@ -115,3 +122,50 @@ export const typography = {
 } as const;
 
 export type TypographyVariant = keyof typeof typography;
+
+export const systemTypography: Record<TypographyVariant, TextStyle> = {
+  headlineXl: {
+    ...typography.headlineXl,
+    fontFamily: systemFontFamilies.bold,
+  },
+  headlineXlMobile: {
+    ...typography.headlineXlMobile,
+    fontFamily: systemFontFamilies.bold,
+  },
+  headlineLg: {
+    ...typography.headlineLg,
+    fontFamily: systemFontFamilies.semiBold,
+  },
+  headlineMd: {
+    ...typography.headlineMd,
+    fontFamily: systemFontFamilies.semiBold,
+  },
+  bodyLg: {
+    ...typography.bodyLg,
+    fontFamily: systemFontFamilies.medium,
+  },
+  bodyMd: {
+    ...typography.bodyMd,
+    fontFamily: systemFontFamilies.regular,
+  },
+  bodySm: {
+    ...typography.bodySm,
+    fontFamily: systemFontFamilies.regular,
+  },
+  labelLg: {
+    ...typography.labelLg,
+    fontFamily: systemFontFamilies.semiBold,
+  },
+  labelMd: {
+    ...typography.labelMd,
+    fontFamily: systemFontFamilies.semiBold,
+  },
+  labelSm: {
+    ...typography.labelSm,
+    fontFamily: systemFontFamilies.bold,
+  },
+};
+
+export function getTypography(variant: TypographyVariant, useFallback = false): TextStyle {
+  return useFallback ? systemTypography[variant] : typography[variant];
+}

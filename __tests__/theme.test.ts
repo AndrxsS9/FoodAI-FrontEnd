@@ -52,5 +52,18 @@ describe('FoodAI Design Tokens (Stitch)', () => {
       expect(typography.labelMd.fontSize).toBe(12);
       expect(typography.labelSm.fontSize).toBe(11);
     });
+
+    it('should provide safe system typography fallbacks', () => {
+      const { systemFontFamilies, systemTypography, getTypography } = require('../src/theme');
+
+      expect(systemFontFamilies.regular).toBeDefined();
+      expect(systemFontFamilies.bold).toBeDefined();
+
+      expect(systemTypography.headlineXl.fontSize).toBe(32);
+      expect(systemTypography.headlineXl.fontFamily).toBe(systemFontFamilies.bold);
+
+      expect(getTypography('headlineXl', false).fontFamily).toBe('PlusJakartaSans_700Bold');
+      expect(getTypography('headlineXl', true).fontFamily).toBe(systemFontFamilies.bold);
+    });
   });
 });

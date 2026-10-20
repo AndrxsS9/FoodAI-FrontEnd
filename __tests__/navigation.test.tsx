@@ -96,34 +96,39 @@ describe('Phase 2A: Navigation & Mobile Screens (Google Stitch)', () => {
       expect(getByAccessibilityHint('Navega a la pantalla principal de la aplicación')).toBeTruthy();
     });
 
-    it('navigates to main application tabs when pressing "Comenzar"', async () => {
+    it('navigates to main application tabs using replace when pressing "Comenzar"', async () => {
       const { getByTestId } = await renderWithProviders(<WelcomeScreen />);
 
       const startButton = getByTestId('welcome-start-button');
       fireEvent.press(startButton);
 
-      expect(mockPush).toHaveBeenCalledTimes(1);
-      expect(mockPush).toHaveBeenCalledWith('/(tabs)');
+      expect(mockReplace).toHaveBeenCalledTimes(1);
+      expect(mockReplace).toHaveBeenCalledWith('/(tabs)');
     });
 
-    it('navigates to main application tabs when pressing "Omitir"', async () => {
+    it('navigates to main application tabs using replace when pressing "Omitir"', async () => {
       const { getByTestId } = await renderWithProviders(<WelcomeScreen />);
 
       const skipButton = getByTestId('welcome-skip-button');
       fireEvent.press(skipButton);
 
-      expect(mockPush).toHaveBeenCalledTimes(1);
-      expect(mockPush).toHaveBeenCalledWith('/(tabs)');
+      expect(mockReplace).toHaveBeenCalledTimes(1);
+      expect(mockReplace).toHaveBeenCalledWith('/(tabs)');
     });
   });
 
   describe('Home Screen (2. Inicio - Stitch #7ca48a7c29fb4461b3d41c5eca804385)', () => {
-    it('renders brand header, greeting, and all 4 Stitch dashboard sections', async () => {
-      const { getByText } = await renderWithProviders(<HomeScreen />);
+    it('renders brand header, demo notice, greeting, and all 4 Stitch dashboard sections', async () => {
+      const { getByText, getByTestId } = await renderWithProviders(<HomeScreen />);
 
       // Top brand header
       expect(getByText('RECETARIO POR PRESUPUESTO')).toBeTruthy();
       expect(getByText('Inicio')).toBeTruthy();
+
+      // Demo data banner
+      expect(getByTestId('demo-data-banner')).toBeTruthy();
+      expect(getByText('Vista de ejemplo')).toBeTruthy();
+      expect(getByText('Datos de demostración para evaluación visual')).toBeTruthy();
 
       // Supportive prompt
       expect(getByText('COCINA INTELIGENTE Y CONSCIENTE')).toBeTruthy();
@@ -135,7 +140,7 @@ describe('Phase 2A: Navigation & Mobile Screens (Google Stitch)', () => {
       expect(getByText('Muéstrame qué tienes')).toBeTruthy();
       expect(getByText('Tomar foto')).toBeTruthy();
 
-      // Card 2: Pantry summary
+      // Card 2: Pantry summary with demo data
       expect(getByText('Tu despensa')).toBeTruthy();
       expect(getByText('14 productos')).toBeTruthy();
       expect(getByText('3 consumir pronto')).toBeTruthy();
@@ -170,21 +175,110 @@ describe('Phase 2A: Navigation & Mobile Screens (Google Stitch)', () => {
       expect(mockPush).toHaveBeenCalledWith('/(tabs)/perfil');
     });
 
-    it('cycles budget amount when pressing "Ajustar"', async () => {
-      const { getByText, queryByText } = await renderWithProviders(<HomeScreen />);
+    it('opens budget adjustment modal and updates budget upon confirmation with valid input', async () => {
+      const { getByText, getByTestId, queryByTestId } = await renderWithProviders(<HomeScreen />);
 
       expect(getByText(/20\.000/)).toBeTruthy();
 
-      const adjustButton = getByText('Ajustar');
-      await fireEvent.press(adjustButton);
-      await waitFor(() => {
-        expect(getByText(/25\.000/)).toBeTruthy();
-      });
-      expect(queryByText(/20\.000/)).toBeNull();
+      // Open budget modal
+      const adjustButton = getByTestId('home-adjust-budget-button');
+      fireEvent.press(adjustButton);
 
-      await fireEvent.press(adjustButton);
       await waitFor(() => {
-        expect(getByText(/30\.000/)).toBeTruthy();
+        expect(getByTestId('budget-modal-backdrop')).toBeTruthy();
+      });
+      expect(getByText('Ajustar presupuesto')).toBeTruthy();
+
+      // Change input value to 35000
+      const inputField = getByTestId('budget-input-field');
+      fireEvent.changeText(inputField, '35000');
+
+      await waitFor(() => {
+        expect(inputField.props.value).toBe('35000');
+      });
+
+      // Confirm
+      const confirmButton = getByTestId('budget-confirm-button');
+      fireEvent.press(confirmButton);
+
+      // Verify modal is closed and budget is updated
+      await waitFor(() => {
+        expect(queryByTestId('budget-modal-backdrop')).toBeNull();
+        expect(getByText(/35\.000/)).toBeTruthy();
+      });
+    });
+
+    it('cancels budget adjustment without changing the existing budget', async () => {
+      const { getByText, getByTestId, queryByTestId } = await renderWithProviders(<HomeScreen />);
+
+      expect(getByText(/20\.000/)).toBeTruthy();
+
+      const adjustButton = getByTestId('home-adjust-budget-button');
+      fireEvent.press(adjustButton);
+
+      await waitFor(() => {
+        expect(getByTestId('budget-modal-backdrop')).toBeTruthy();
+      });
+
+      const inputField = getByTestId('budget-input-field');
+      fireEvent.changeText(inputField, '99999');
+
+      await waitFor(() => {
+        expect(inputField.props.value).toBe('99999');
+      });
+
+      // Cancel
+      const cancelButton = getByTestId('budget-cancel-button');
+      fireEvent.press(cancelButton);
+
+      // Modal is closed and original budget remains
+      await waitFor(() => {
+        expect(queryByTestId('budget-modal-backdrop')).toBeNull();
+        expect(getByText(/20\.000/)).toBeTruthy();
+      });
+    });
+
+    it('displays error validation when entering invalid or empty budget input', async () => {
+      const { getByText, getByTestId } = await renderWithProviders(<HomeScreen />);
+
+      const adjustButton = getByTestId('home-adjust-budget-button');
+      fireEvent.press(adjustButton);
+
+      await waitFor(() => {
+        expect(getByTestId('budget-modal-backdrop')).toBeTruthy();
+      });
+
+      const inputField = getByTestId('budget-input-field');
+      const confirmButton = getByTestId('budget-confirm-button');
+
+      // Test empty input
+      fireEvent.changeText(inputField, '   ');
+      await waitFor(() => {
+        expect(inputField.props.value).toBe('   ');
+      });
+      fireEvent.press(confirmButton);
+      await waitFor(() => {
+        expect(getByText('Por favor ingresa un monto de presupuesto.')).toBeTruthy();
+      });
+
+      // Test invalid non-numeric input
+      fireEvent.changeText(inputField, 'abc');
+      await waitFor(() => {
+        expect(inputField.props.value).toBe('abc');
+      });
+      fireEvent.press(confirmButton);
+      await waitFor(() => {
+        expect(getByText('Por favor ingresa un número válido.')).toBeTruthy();
+      });
+
+      // Test negative value
+      fireEvent.changeText(inputField, '-5000');
+      await waitFor(() => {
+        expect(inputField.props.value).toBe('-5000');
+      });
+      fireEvent.press(confirmButton);
+      await waitFor(() => {
+        expect(getByText('El presupuesto no puede ser un valor negativo.')).toBeTruthy();
       });
     });
 

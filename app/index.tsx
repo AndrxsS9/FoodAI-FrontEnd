@@ -18,7 +18,7 @@ export default function WelcomeScreen() {
   const router = useRouter();
 
   const handleNavigateToHome = () => {
-    router.push('/(tabs)');
+    router.replace('/(tabs)');
   };
 
   return (
@@ -144,7 +144,12 @@ export default function WelcomeScreen() {
             rightIcon={<MaterialIcons name="arrow-forward" size={20} color={colors.onPrimary} />}
           />
 
-          <View style={styles.pagerDots} accessibilityLabel="Página 1 de 3">
+          <View
+            style={styles.pagerDots}
+            accessible={false}
+            importantForAccessibility="no"
+            aria-hidden={true}
+          >
             <View style={[styles.dot, styles.dotActive]} />
             <View style={styles.dot} />
             <View style={styles.dot} />

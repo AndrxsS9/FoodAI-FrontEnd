@@ -3,10 +3,11 @@ import { StyleSheet, Platform } from 'react-native';
 import { Tabs } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { colors, typography } from '../../src/theme';
+import { colors, useTypography } from '../../src/theme';
 
 export default function TabsLayout() {
   const insets = useSafeAreaInsets();
+  const typography = useTypography();
 
   return (
     <Tabs

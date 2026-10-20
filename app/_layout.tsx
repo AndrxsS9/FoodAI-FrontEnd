@@ -41,6 +41,8 @@ export default function RootLayout() {
           }}
         >
           <Stack.Screen name="index" />
+          <Stack.Screen name="(tabs)" />
+          <Stack.Screen name="design-system" />
         </Stack>
       </TypographyProvider>
     </SafeAreaProvider>

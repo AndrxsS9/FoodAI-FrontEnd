@@ -31,6 +31,7 @@ export interface ButtonProps {
   fullWidth?: boolean;
   accessibilityLabel?: string;
   accessibilityHint?: string;
+  testID?: string;
   style?: ViewStyle;
   textStyle?: TextStyle;
 }
@@ -47,6 +48,7 @@ export const Button: React.FC<ButtonProps> = ({
   fullWidth = false,
   accessibilityLabel,
   accessibilityHint,
+  testID,
   style,
   textStyle,
 }) => {
@@ -58,6 +60,7 @@ export const Button: React.FC<ButtonProps> = ({
 
   return (
     <Pressable
+      testID={testID}
       onPress={isInteractive ? onPress : undefined}
       disabled={!isInteractive}
       accessibilityRole="button"

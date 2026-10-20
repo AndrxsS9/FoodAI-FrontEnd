@@ -1,5 +1,7 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
+  Image,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -7,174 +9,146 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
-import {
-  Button,
-  Card,
-  Chip,
-  Header,
-  Input,
-  Stepper,
-} from '../src/components/common';
-import { colors, radius, spacing, typography, useTypography } from '../src/theme';
+import { useRouter } from 'expo-router';
+import { Button } from '../src/components/common';
+import { colors, radius, spacing, useTypography } from '../src/theme';
 
-export default function DesignSystemScreen() {
+export default function WelcomeScreen() {
   const typography = useTypography();
-  const [inputText, setInputText] = useState('');
-  const [selectedChip, setSelectedChip] = useState<'todos' | 'urgente' | 'bajo'>('todos');
-  const [stepperValue, setStepperValue] = useState(2);
-  const [pressCount, setPressCount] = useState(0);
+  const router = useRouter();
+
+  const handleNavigateToHome = () => {
+    router.push('/(tabs)');
+  };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <Header
-        title="FoodAI Design System"
-        subtitle="Fase 1: Inicialización & Tokens"
-        rightElement={
-          <View style={styles.badgeWrapper}>
-            <Text style={[styles.badgeText, typography.labelSm]}>v1.0</Text>
-          </View>
-        }
-      />
-
+    <SafeAreaView style={styles.safeArea} edges={['top', 'bottom', 'left', 'right']}>
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        bounces={false}
       >
-        {/* Brand Banner */}
-        <Card variant="flat" style={styles.brandCard}>
-          <View style={styles.brandRow}>
-            <View style={styles.logoCircle}>
-              <MaterialIcons name="restaurant-menu" size={24} color={colors.onPrimary} />
-            </View>
-            <View style={styles.brandTextCol}>
-              <Text style={typography.headlineMd}>Recetario por Presupuesto</Text>
-              <Text style={[typography.bodySm, styles.brandMotto]}>
-                {'"Primero usa lo que tienes. Después decide qué comprar."'}
+        {/* Top bar: Category badge and Skip button */}
+        <View style={styles.topBar}>
+          <View
+            style={styles.categoryBadge}
+            accessibilityRole="text"
+            accessibilityLabel="Categoría: Hogar inteligente"
+          >
+            <MaterialIcons name="eco" size={18} color={colors.primary} />
+            <Text style={[styles.categoryBadgeText, typography.labelSm]}>
+              HOGAR INTELIGENTE
+            </Text>
+          </View>
+
+          <Pressable
+            testID="welcome-skip-button"
+            accessibilityRole="button"
+            accessibilityLabel="Omitir introducción"
+            accessibilityHint="Ir directamente a la pantalla de inicio"
+            onPress={handleNavigateToHome}
+            hitSlop={{ top: 12, bottom: 12, left: 16, right: 16 }}
+            style={({ pressed }) => [
+              styles.skipButton,
+              pressed && styles.buttonPressed,
+            ]}
+          >
+            <Text style={[styles.skipButtonText, typography.labelMd]}>
+              Omitir
+            </Text>
+          </Pressable>
+        </View>
+
+        {/* Hero Illustration Card */}
+        <View style={styles.heroCard} testID="welcome-hero-card">
+          <View style={styles.heroGlowTop} />
+          <View style={styles.heroGlowBottom} />
+          <View style={styles.heroImageWrapper}>
+            <Image
+              source={require('../assets/images/welcome-hero.png')}
+              style={styles.heroImage}
+              resizeMode="contain"
+              accessibilityLabel="Ilustración de cocina inteligente con despensa, sartén e ingredientes frescos"
+            />
+            <View style={styles.heroPillBadge}>
+              <MaterialIcons name="auto-awesome" size={15} color={colors.tertiaryContainer} />
+              <Text style={[styles.heroPillText, typography.labelSm]}>
+                Aprovecha mejor tu despensa
               </Text>
             </View>
           </View>
-        </Card>
+        </View>
 
-        {/* Color Palette Tokens */}
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, typography.headlineMd]}>Paleta Cromática (Stitch)</Text>
-          <View style={styles.paletteRow}>
-            <View style={[styles.colorBox, { backgroundColor: colors.primary }]}>
-              <Text style={[styles.colorBoxText, typography.labelSm]}>Primary</Text>
-              <Text style={styles.colorHexText}>#5B4B8A</Text>
+        {/* Value Proposition */}
+        <View style={styles.valueSection}>
+          <View style={styles.ecoPill}>
+            <MaterialIcons name="eco" size={14} color={colors.secondary} />
+            <Text style={[styles.ecoPillText, typography.labelSm]}>
+              Menos desperdicio. Más aprovechamiento.
+            </Text>
+          </View>
+
+          <Text
+            style={[styles.headline, typography.headlineXl]}
+            accessibilityRole="header"
+          >
+            Aprovecha lo que ya tienes.
+          </Text>
+
+          <Text style={[styles.subtitle, typography.bodyLg]}>
+            Muéstranos tus alimentos y descubre qué puedes preparar sin gastar de más.
+          </Text>
+        </View>
+
+        {/* 3 Step Features */}
+        <View style={styles.stepsRow}>
+          {/* Step 1 */}
+          <View style={styles.stepCard} testID="step-1">
+            <View style={[styles.stepIconCircle, { backgroundColor: colors.surfaceContainerHighest }]}>
+              <MaterialIcons name="photo-camera" size={18} color={colors.primary} />
             </View>
-            <View style={[styles.colorBox, { backgroundColor: colors.secondary }]}>
-              <Text style={[styles.colorBoxText, typography.labelSm]}>Coral</Text>
-              <Text style={styles.colorHexText}>#E9775E</Text>
+            <Text style={[styles.stepTitle, typography.labelSm]}>1. Escanea</Text>
+            <Text style={[styles.stepDesc, typography.bodySm]}>Tus alimentos</Text>
+          </View>
+
+          {/* Step 2 */}
+          <View style={styles.stepCard} testID="step-2">
+            <View style={[styles.stepIconCircle, { backgroundColor: colors.surfaceContainerHighest }]}>
+              <MaterialIcons name="auto-awesome" size={18} color={colors.secondary} />
             </View>
-            <View style={[styles.colorBox, { backgroundColor: colors.tertiary }]}>
-              <Text style={[styles.colorBoxText, typography.labelSm, { color: colors.textPrimary }]}>Butter</Text>
-              <Text style={[styles.colorHexText, { color: colors.textPrimary }]}>#F3C969</Text>
+            <Text style={[styles.stepTitle, typography.labelSm]}>2. Elige</Text>
+            <Text style={[styles.stepDesc, typography.bodySm]}>Tu presupuesto</Text>
+          </View>
+
+          {/* Step 3 */}
+          <View style={styles.stepCard} testID="step-3">
+            <View style={[styles.stepIconCircle, { backgroundColor: colors.surfaceContainerHighest }]}>
+              <MaterialIcons name="savings" size={18} color={colors.tertiaryContainer} />
             </View>
-            <View style={[styles.colorBox, { backgroundColor: colors.canvas, borderWidth: 1, borderColor: colors.border }]}>
-              <Text style={[styles.colorBoxText, typography.labelSm, { color: colors.textPrimary }]}>Ivory</Text>
-              <Text style={[styles.colorHexText, { color: colors.textSecondary }]}>#FAF7F2</Text>
-            </View>
+            <Text style={[styles.stepTitle, typography.labelSm]}>3. Cocina</Text>
+            <Text style={[styles.stepDesc, typography.bodySm]}>Aprovecha lo que tienes</Text>
           </View>
         </View>
 
-        {/* Buttons Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Componentes: Botones</Text>
-          <View style={styles.buttonStack}>
-            <Button
-              title="Cocinar con esto (Primary)"
-              variant="primary"
-              size="lg"
-              fullWidth
-              onPress={() => setPressCount((c) => c + 1)}
-              leftIcon={<MaterialIcons name="local-dining" size={20} color={colors.onPrimary} />}
-            />
-            <Button
-              title="Añadir sobrantes urgentes (Secondary)"
-              variant="secondary"
-              size="md"
-              fullWidth
-              onPress={() => setPressCount((c) => c + 1)}
-              leftIcon={<MaterialIcons name="alarm" size={20} color={colors.onSecondary} />}
-            />
-            <Button
-              title="Bajo presupuesto (Tertiary)"
-              variant="tertiary"
-              size="md"
-              fullWidth
-              onPress={() => setPressCount((c) => c + 1)}
-              leftIcon={<MaterialIcons name="savings" size={20} color={colors.textPrimary} />}
-            />
-            <Button
-              title="Configurar opciones (Outline)"
-              variant="outline"
-              size="md"
-              fullWidth
-              onPress={() => setPressCount((c) => c + 1)}
-            />
-          </View>
-          {pressCount > 0 && (
-            <Text style={[styles.feedbackText, typography.bodySm]}>Botones pulsados: {pressCount} veces</Text>
-          )}
-        </View>
-
-        {/* Chips Section */}
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, typography.headlineMd]}>Componentes: Chips & Badges</Text>
-          <View style={styles.chipsRow}>
-            <Chip
-              label="Todos los ingredientes"
-              selected={selectedChip === 'todos'}
-              variant="filter"
-              onPress={() => setSelectedChip('todos')}
-            />
-            <Chip
-              label="Consumir pronto"
-              variant="urgent"
-              selected={selectedChip === 'urgente'}
-              onPress={() => setSelectedChip('urgente')}
-              leftIcon={<MaterialIcons name="priority-high" size={14} color={colors.secondary} />}
-            />
-            <Chip
-              label="Económico"
-              variant="budget"
-              selected={selectedChip === 'bajo'}
-              onPress={() => setSelectedChip('bajo')}
-              leftIcon={<MaterialIcons name="monetization-on" size={14} color={colors.textPrimary} />}
-            />
-          </View>
-        </View>
-
-        {/* Inputs & Stepper Section */}
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, typography.headlineMd]}>Componentes: Formularios y Controles</Text>
-          <Input
-            label="Presupuesto objetivo"
-            placeholder="Ej. $20.000 COP"
-            value={inputText}
-            onChangeText={setInputText}
-            helperText="Define cuánto deseas gastar como máximo en compras adicionales."
-            leftElement={<MaterialIcons name="payments" size={20} color={colors.textSecondary} />}
+        {/* Primary CTA and Pager dots */}
+        <View style={styles.actionContainer}>
+          <Button
+            testID="welcome-start-button"
+            title="Comenzar"
+            variant="primary"
+            size="lg"
+            fullWidth
+            onPress={handleNavigateToHome}
+            accessibilityLabel="Comenzar con FoodAI"
+            accessibilityHint="Navega a la pantalla principal de la aplicación"
+            rightIcon={<MaterialIcons name="arrow-forward" size={20} color={colors.onPrimary} />}
           />
 
-          <Card variant="elevated" style={styles.controlCard}>
-            <View style={styles.controlRow}>
-              <View>
-                <Text style={typography.labelLg}>Número de porciones</Text>
-                <Text style={[typography.bodySm, { color: colors.textSecondary }]}>
-                  Calcula ingredientes proporcionalmente
-                </Text>
-              </View>
-              <Stepper
-                value={stepperValue}
-                onChange={setStepperValue}
-                min={1}
-                max={12}
-                unit="personas"
-              />
-            </View>
-          </Card>
+          <View style={styles.pagerDots} accessibilityLabel="Página 1 de 3">
+            <View style={[styles.dot, styles.dotActive]} />
+            <View style={styles.dot} />
+            <View style={styles.dot} />
+          </View>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -187,93 +161,189 @@ const styles = StyleSheet.create({
     backgroundColor: colors.canvas,
   },
   scrollContent: {
-    padding: spacing.margin,
-    paddingBottom: spacing.xxl,
+    flexGrow: 1,
+    paddingHorizontal: spacing.margin,
+    paddingBottom: spacing.lg,
+    justifyContent: 'space-between',
   },
-  badgeWrapper: {
-    backgroundColor: colors.surfaceContainerHigh,
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.sm,
+  },
+  categoryBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    backgroundColor: colors.surfaceContainerLow,
     paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
+    paddingVertical: 5,
     borderRadius: radius.full,
   },
-  badgeText: {
-    ...typography.labelSm,
-    color: colors.primary,
+  categoryBadgeText: {
+    color: colors.textSecondary,
+    fontWeight: '600',
+    letterSpacing: 0.5,
   },
-  brandCard: {
-    marginBottom: spacing.lg,
+  skipButton: {
+    paddingVertical: 4,
+    paddingHorizontal: spacing.xs,
   },
-  brandRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  buttonPressed: {
+    opacity: 0.7,
   },
-  logoCircle: {
-    width: 48,
-    height: 48,
+  skipButtonText: {
+    color: colors.textSecondary,
+  },
+  heroCard: {
+    backgroundColor: colors.surface,
     borderRadius: radius.lg,
-    backgroundColor: colors.primary,
+    padding: spacing.md,
+    marginTop: spacing.xs,
+    marginBottom: spacing.sm,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    shadowColor: '#5B4B8A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 2,
+    position: 'relative',
+    overflow: 'hidden',
   },
-  brandTextCol: {
-    flex: 1,
+  heroGlowTop: {
+    position: 'absolute',
+    top: -30,
+    right: -30,
+    width: 120,
+    height: 120,
+    borderRadius: radius.full,
+    backgroundColor: 'rgba(243, 201, 105, 0.25)',
   },
-  brandMotto: {
-    color: colors.textSecondary,
-    fontStyle: 'italic',
-    marginTop: 2,
+  heroGlowBottom: {
+    position: 'absolute',
+    bottom: -20,
+    left: -20,
+    width: 110,
+    height: 110,
+    borderRadius: radius.full,
+    backgroundColor: 'rgba(233, 119, 94, 0.2)',
   },
-  section: {
-    marginBottom: spacing.xl,
+  heroImageWrapper: {
+    width: '100%',
+    alignItems: 'center',
+    zIndex: 1,
   },
-  sectionTitle: {
-    ...typography.headlineMd,
-    color: colors.textPrimary,
-    marginBottom: spacing.md,
+  heroImage: {
+    width: '100%',
+    height: 170,
+    maxHeight: 190,
   },
-  paletteRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: spacing.sm,
-  },
-  colorBox: {
-    flex: 1,
-    height: 64,
-    borderRadius: radius.md,
-    padding: spacing.xs,
-    justifyContent: 'flex-end',
-  },
-  colorBoxText: {
-    ...typography.labelSm,
-    color: colors.onPrimary,
-    fontSize: 10,
-  },
-  colorHexText: {
-    fontSize: 9,
-    color: colors.onPrimary,
-    opacity: 0.85,
-  },
-  buttonStack: {
-    gap: spacing.sm,
-  },
-  feedbackText: {
-    ...typography.bodySm,
-    color: colors.primary,
-    marginTop: spacing.xs,
-    textAlign: 'center',
-  },
-  chipsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-  },
-  controlCard: {
-    marginTop: spacing.sm,
-  },
-  controlRow: {
+  heroPillBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    gap: 6,
+    backgroundColor: 'rgba(255, 223, 155, 0.7)',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    borderRadius: radius.full,
+    marginTop: spacing.xs,
+  },
+  heroPillText: {
+    color: colors.tertiaryContainer,
+    fontWeight: '700',
+    fontSize: 11,
+  },
+  valueSection: {
+    alignItems: 'center',
+    textAlign: 'center',
+    marginVertical: spacing.xs,
+  },
+  ecoPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: 5,
+    borderRadius: radius.full,
+    backgroundColor: 'rgba(255, 218, 211, 0.7)',
+    marginBottom: spacing.xs,
+  },
+  ecoPillText: {
+    color: '#802916',
+    fontWeight: '700',
+  },
+  headline: {
+    color: colors.textPrimary,
+    textAlign: 'center',
+    fontWeight: '700',
+    marginTop: 4,
+    marginBottom: spacing.xs,
+    maxWidth: 320,
+  },
+  subtitle: {
+    color: colors.textSecondary,
+    textAlign: 'center',
+    maxWidth: 310,
+    lineHeight: 22,
+  },
+  stepsRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginVertical: spacing.sm,
+    width: '100%',
+  },
+  stepCard: {
+    flex: 1,
+    backgroundColor: colors.surfaceContainerLow,
+    borderRadius: radius.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.xs,
+    alignItems: 'center',
+    textAlign: 'center',
+  },
+  stepIconCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: radius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 6,
+  },
+  stepTitle: {
+    color: colors.textPrimary,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  stepDesc: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    textAlign: 'center',
+    marginTop: 2,
+  },
+  actionContainer: {
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+    paddingTop: spacing.xs,
+  },
+  pagerDots: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 4,
+  },
+  dot: {
+    width: 8,
+    height: 6,
+    borderRadius: radius.full,
+    backgroundColor: colors.surfaceContainerHighest,
+  },
+  dotActive: {
+    width: 24,
+    backgroundColor: colors.primary,
   },
 });

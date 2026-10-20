@@ -10,7 +10,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { Button, Card, Chip } from '../../src/components/common';
+import { Button, Card, Chip, Input } from '../../src/components/common';
+import { DEMO_DASHBOARD_DATA } from '../../src/fixtures/demoDashboardData';
 import { colors, radius, spacing, useTypography } from '../../src/theme';
 
 export default function HomeScreen() {
@@ -18,7 +19,7 @@ export default function HomeScreen() {
   const router = useRouter();
 
   // Dialog state for feature preview announcements
-  const [modalVisible, setModalVisible] = useState(false);
+  const [featureModalVisible, setFeatureModalVisible] = useState(false);
   const [modalContent, setModalContent] = useState<{
     title: string;
     description: string;
@@ -29,8 +30,11 @@ export default function HomeScreen() {
     icon: 'info',
   });
 
-  // Dynamic budget state for interactive "Ajustar" button
-  const [budget, setBudget] = useState(20000);
+  // Dynamic budget state with explicit user input modal
+  const [budget, setBudget] = useState(DEMO_DASHBOARD_DATA.initialBudgetCop);
+  const [budgetModalVisible, setBudgetModalVisible] = useState(false);
+  const [tempBudgetText, setTempBudgetText] = useState(String(DEMO_DASHBOARD_DATA.initialBudgetCop));
+  const [budgetError, setBudgetError] = useState<string | undefined>(undefined);
 
   const showFeatureNotice = (
     title: string,
@@ -38,16 +42,50 @@ export default function HomeScreen() {
     icon: keyof typeof MaterialIcons.glyphMap = 'info'
   ) => {
     setModalContent({ title, description, icon });
-    setModalVisible(true);
+    setFeatureModalVisible(true);
   };
 
-  const handleAdjustBudget = () => {
-    // Cycle between typical realistic sample budgets: 15.000, 20.000, 25.000, 30.000 COP
-    const nextBudgets = [15000, 20000, 25000, 30000];
-    const currentIndex = nextBudgets.indexOf(budget);
-    const nextValue = nextBudgets[(currentIndex + 1) % nextBudgets.length];
-    setBudget(nextValue);
+  const handleOpenBudgetModal = () => {
+    setTempBudgetText(String(budget));
+    setBudgetError(undefined);
+    setBudgetModalVisible(true);
   };
+
+  const handleCloseBudgetModal = () => {
+    setBudgetError(undefined);
+    setBudgetModalVisible(false);
+  };
+
+  const handleSaveBudget = () => {
+    const sanitized = tempBudgetText.trim().replace(/[.,\s]/g, '');
+    if (!sanitized) {
+      setBudgetError('Por favor ingresa un monto de presupuesto.');
+      return;
+    }
+
+    const parsed = Number(sanitized);
+    if (isNaN(parsed) || !isFinite(parsed)) {
+      setBudgetError('Por favor ingresa un número válido.');
+      return;
+    }
+
+    if (parsed < 0) {
+      setBudgetError('El presupuesto no puede ser un valor negativo.');
+      return;
+    }
+
+    if (parsed > 100000000) {
+      setBudgetError('El presupuesto supera el monto razonable permitido.');
+      return;
+    }
+
+    setBudget(parsed);
+    setBudgetModalVisible(false);
+    setBudgetError(undefined);
+  };
+
+  const demoPantry = DEMO_DASHBOARD_DATA.pantrySummary;
+  const demoRecipe = DEMO_DASHBOARD_DATA.dailyRecommendation;
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
@@ -97,6 +135,24 @@ export default function HomeScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
+        {/* Subtle demonstration data disclaimer banner */}
+        <View
+          style={styles.demoBanner}
+          testID="demo-data-banner"
+          accessibilityRole="text"
+          accessibilityLabel="Aviso: Vista de ejemplo con datos de demostración"
+        >
+          <View style={styles.demoBadge}>
+            <MaterialIcons name="science" size={14} color={colors.primary} />
+            <Text style={[styles.demoBadgeText, typography.labelSm]}>
+              {DEMO_DASHBOARD_DATA.badgeLabel}
+            </Text>
+          </View>
+          <Text style={[styles.demoNoticeText, typography.bodySm]}>
+            {DEMO_DASHBOARD_DATA.noticeText}
+          </Text>
+        </View>
+
         {/* Supportive Prompt & Greeting */}
         <View style={styles.greetingSection}>
           <Text style={[styles.greetingCategory, typography.labelMd]}>
@@ -176,12 +232,12 @@ export default function HomeScreen() {
           />
         </Card>
 
-        {/* 2. Pantry Summary Card */}
+        {/* 2. Pantry Summary Card (Identified as sample view) */}
         <Card
           variant="elevated"
           style={styles.pantryCard}
           onPress={() => router.push('/(tabs)/despensa')}
-          accessibilityLabel="Resumen de despensa: 14 productos, 3 por consumir pronto"
+          accessibilityLabel={`Resumen de despensa (datos de ejemplo): ${demoPantry.totalItems} productos, ${demoPantry.urgentItemsCount} por consumir pronto`}
           accessibilityHint="Toca para ir a la pantalla de despensa"
         >
           <View style={styles.cardHeaderRow}>
@@ -191,9 +247,11 @@ export default function HomeScreen() {
                 Tu despensa
               </Text>
             </View>
-            <Text style={[styles.countBadge, typography.labelMd]}>
-              14 productos
-            </Text>
+            <View style={styles.pantryBadgeRow}>
+              <Text style={[styles.countBadge, typography.labelMd]}>
+                {demoPantry.totalItems} productos
+              </Text>
+            </View>
           </View>
 
           {/* Urgent alert notice */}
@@ -201,7 +259,7 @@ export default function HomeScreen() {
             <View style={styles.urgentBannerLeft}>
               <MaterialIcons name="schedule" size={18} color={colors.secondary} />
               <Text style={[styles.urgentBannerTitle, typography.labelSm]}>
-                3 consumir pronto
+                {demoPantry.urgentItemsCount} consumir pronto
               </Text>
             </View>
             <Text style={[styles.urgentBannerTag, typography.labelSm]}>
@@ -211,31 +269,20 @@ export default function HomeScreen() {
 
           {/* Urgent items chips */}
           <View style={styles.chipsWrap}>
-            <Chip
-              label="Tomate"
-              variant="urgent"
-              selected={false}
-              leftIcon={<View style={styles.chipDot} />}
-              onPress={() => router.push('/(tabs)/despensa')}
-            />
-            <Chip
-              label="Pollo"
-              variant="urgent"
-              selected={false}
-              leftIcon={<View style={styles.chipDot} />}
-              onPress={() => router.push('/(tabs)/despensa')}
-            />
-            <Chip
-              label="Espinaca"
-              variant="urgent"
-              selected={false}
-              leftIcon={<View style={styles.chipDot} />}
-              onPress={() => router.push('/(tabs)/despensa')}
-            />
+            {demoPantry.urgentItems.map((item) => (
+              <Chip
+                key={item.id}
+                label={item.name}
+                variant="urgent"
+                selected={false}
+                leftIcon={<View style={styles.chipDot} />}
+                onPress={() => router.push('/(tabs)/despensa')}
+              />
+            ))}
           </View>
         </Card>
 
-        {/* 3. Available Budget Summary */}
+        {/* 3. Available Budget Summary with Interactive Adjustment */}
         <Card variant="elevated" style={styles.budgetCard}>
           <View style={styles.budgetRow}>
             <View style={styles.budgetCol}>
@@ -259,15 +306,15 @@ export default function HomeScreen() {
               title="Ajustar"
               variant="outline"
               size="sm"
-              onPress={handleAdjustBudget}
+              onPress={handleOpenBudgetModal}
               accessibilityLabel="Ajustar presupuesto disponible"
-              accessibilityHint="Alterna el presupuesto objetivo estimado"
+              accessibilityHint="Abre un formulario para ingresar un nuevo presupuesto temporal"
               leftIcon={<MaterialIcons name="tune" size={16} color={colors.textPrimary} />}
             />
           </View>
         </Card>
 
-        {/* 4. Recommendation of the Day */}
+        {/* 4. Recommendation of the Day (Identified as sample AI recommendation) */}
         <View style={styles.recommendationSection}>
           <View style={styles.sectionHeaderRow}>
             <Text style={[styles.sectionTitle, typography.headlineMd]}>
@@ -284,13 +331,17 @@ export default function HomeScreen() {
                 source={require('../../assets/images/recipe-pollo-verduras.jpg')}
                 style={styles.recipeImage}
                 resizeMode="cover"
-                accessibilityLabel="Foto del plato: Pollo con verduras preparado en sartén"
+                accessibilityLabel={`Foto del plato: ${demoRecipe.title} preparado en sartén`}
               />
               {/* Score pill */}
-              <View style={styles.convenienceBadge}>
+              <View
+                style={styles.convenienceBadge}
+                accessibilityRole="text"
+                accessibilityLabel={`Afinidad estimada de ejemplo: ${demoRecipe.convenienceScorePercent} por ciento`}
+              >
                 <MaterialIcons name="verified" size={16} color={colors.tertiaryContainer} />
                 <Text style={[styles.convenienceText, typography.labelSm]}>
-                  92 % conveniente
+                  {demoRecipe.convenienceScorePercent} % conveniente
                 </Text>
               </View>
 
@@ -299,13 +350,13 @@ export default function HomeScreen() {
                 <View style={styles.recipeMetaPill}>
                   <MaterialIcons name="timer" size={14} color={colors.textPrimary} />
                   <Text style={[styles.recipeMetaText, typography.labelSm]}>
-                    25 min
+                    {demoRecipe.prepTimeMinutes} min
                   </Text>
                 </View>
                 <View style={styles.recipeMetaPill}>
                   <MaterialIcons name="group" size={14} color={colors.textPrimary} />
                   <Text style={[styles.recipeMetaText, typography.labelSm]}>
-                    2 personas
+                    {demoRecipe.servings} personas
                   </Text>
                 </View>
               </View>
@@ -314,10 +365,10 @@ export default function HomeScreen() {
             {/* Recipe Content */}
             <View style={styles.recipeBody}>
               <Text style={[styles.recipeTitle, typography.headlineMd]}>
-                Pollo con verduras
+                {demoRecipe.title}
               </Text>
               <Text style={[styles.recipeDescription, typography.bodySm]}>
-                Una opción balanceada y lista en sartén sin compras innecesarias.
+                {demoRecipe.description}
               </Text>
 
               {/* Value metrics */}
@@ -327,7 +378,7 @@ export default function HomeScreen() {
                   <Text style={[styles.highlightText, typography.bodySm]}>
                     Solo necesitas aproximadamente{' '}
                     <Text style={[styles.highlightBold, { color: colors.primary }]}>
-                      $5.500
+                      ${demoRecipe.estimatedAdditionalCostCop.toLocaleString('es-CO')}
                     </Text>
                   </Text>
                 </View>
@@ -336,7 +387,10 @@ export default function HomeScreen() {
                   <MaterialIcons name="recycling" size={18} color={colors.secondary} />
                   <Text style={[styles.highlightText, typography.bodySm]}>
                     Aprovechas{' '}
-                    <Text style={styles.highlightBold}>2 productos</Text> que deberías consumir pronto
+                    <Text style={styles.highlightBold}>
+                      {demoRecipe.urgentIngredientsUsedCount} productos
+                    </Text>{' '}
+                    que deberías consumir pronto
                   </Text>
                 </View>
               </View>
@@ -363,8 +417,75 @@ export default function HomeScreen() {
         </View>
       </ScrollView>
 
+      {/* Accessible Budget Adjustment Modal */}
+      {budgetModalVisible && (
+        <View
+          style={[StyleSheet.absoluteFill, styles.modalBackdrop]}
+          testID="budget-modal-backdrop"
+          accessibilityRole="none"
+        >
+          <View
+            style={styles.budgetModalCard}
+            accessibilityRole="alert"
+            accessibilityLabel="Diálogo de ajuste de presupuesto"
+          >
+            <View style={styles.modalIconBox}>
+              <MaterialIcons name="account-balance-wallet" size={28} color={colors.primary} />
+            </View>
+
+            <Text style={[styles.modalTitle, typography.headlineMd]}>
+              Ajustar presupuesto
+            </Text>
+
+            <Text style={[styles.modalDescription, typography.bodySm]}>
+              Ingresa el presupuesto disponible en pesos colombianos (COP). Este valor se utiliza como referencia temporal para estimar tus recetas.
+            </Text>
+
+            <View style={styles.budgetInputContainer}>
+              <Input
+                testID="budget-input-field"
+                label="Presupuesto disponible (COP)"
+                placeholder="Ej. 25000"
+                keyboardType="numeric"
+                value={tempBudgetText}
+                onChangeText={(val) => {
+                  setTempBudgetText(val);
+                  if (budgetError) setBudgetError(undefined);
+                }}
+                errorMessage={budgetError}
+                helperText="Ingresa un valor mayor o igual a 0"
+                leftElement={
+                  <Text style={styles.currencyPrefix}>$</Text>
+                }
+              />
+            </View>
+
+            <View style={styles.modalButtonsRow}>
+              <Button
+                testID="budget-cancel-button"
+                title="Cancelar"
+                variant="outline"
+                size="md"
+                style={styles.modalButtonFlex}
+                onPress={handleCloseBudgetModal}
+                accessibilityLabel="Cancelar ajuste de presupuesto"
+              />
+              <Button
+                testID="budget-confirm-button"
+                title="Confirmar"
+                variant="primary"
+                size="md"
+                style={styles.modalButtonFlex}
+                onPress={handleSaveBudget}
+                accessibilityLabel="Confirmar nuevo presupuesto"
+              />
+            </View>
+          </View>
+        </View>
+      )}
+
       {/* Reusable modal overlay informing users about upcoming features without broken buttons */}
-      {modalVisible && (
+      {featureModalVisible && (
         <View
           style={[StyleSheet.absoluteFill, styles.modalBackdrop]}
           testID="modal-backdrop"
@@ -386,7 +507,7 @@ export default function HomeScreen() {
               variant="primary"
               size="md"
               fullWidth
-              onPress={() => setModalVisible(false)}
+              onPress={() => setFeatureModalVisible(false)}
             />
           </View>
         </View>
@@ -449,6 +570,36 @@ const styles = StyleSheet.create({
     padding: spacing.margin,
     paddingBottom: spacing.xxl + spacing.md,
     gap: spacing.md,
+  },
+  demoBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs + 2,
+    backgroundColor: colors.surfaceContainerLow,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+  },
+  demoBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(91, 75, 138, 0.1)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: radius.full,
+  },
+  demoBadgeText: {
+    color: colors.primary,
+    fontWeight: '700',
+    fontSize: 11,
+  },
+  demoNoticeText: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    flex: 1,
   },
   greetingSection: {
     paddingTop: spacing.xs,
@@ -543,6 +694,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs + 2,
+  },
+  pantryBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
   },
   countBadge: {
     color: colors.primary,
@@ -736,13 +892,27 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 6,
   },
+  budgetModalCard: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+    gap: spacing.sm,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 6,
+  },
   modalIconBox: {
-    width: 56,
-    height: 56,
+    width: 52,
+    height: 52,
     borderRadius: radius.full,
     backgroundColor: colors.surfaceContainerLow,
     alignItems: 'center',
     justifyContent: 'center',
+    alignSelf: 'center',
   },
   modalTitle: {
     color: colors.textPrimary,
@@ -753,5 +923,23 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     textAlign: 'center',
     lineHeight: 20,
+    marginBottom: spacing.xs,
+  },
+  budgetInputContainer: {
+    marginVertical: spacing.xs,
+  },
+  currencyPrefix: {
+    color: colors.textSecondary,
+    fontWeight: '700',
+    fontSize: 16,
+  },
+  modalButtonsRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: spacing.xs,
+  },
+  modalButtonFlex: {
+    flex: 1,
   },
 });
+

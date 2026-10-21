@@ -7,6 +7,8 @@ import PlanScreen from '../app/(tabs)/plan';
 import PerfilScreen from '../app/(tabs)/perfil';
 import TabsLayout from '../app/(tabs)/_layout';
 import { TypographyProvider } from '../src/theme';
+import { PantryProvider } from '../src/context/PantryContext';
+import { Ingredient } from '../src/types/pantry';
 
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
@@ -40,13 +42,58 @@ jest.mock('expo-router', () => {
   };
 });
 
+const TEST_INITIAL_INGREDIENTS: Ingredient[] = [
+  {
+    id: 'demo-1',
+    name: 'Tomate',
+    quantity: 4,
+    unit: 'unidad',
+    category: 'Verduras y frutas',
+    expirationDate: '2026-10-22',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: 'demo-2',
+    name: 'Pollo',
+    quantity: 1,
+    unit: 'unidad',
+    category: 'Carnes y proteínas',
+    expirationDate: '2026-10-22',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: 'demo-3',
+    name: 'Espinaca',
+    quantity: 200,
+    unit: 'g',
+    category: 'Verduras y frutas',
+    expirationDate: '2026-10-22',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  ...Array.from({ length: 11 }, (_, i) => ({
+    id: `item-${i + 4}`,
+    name: `Ingrediente ${i + 4}`,
+    quantity: 1,
+    unit: 'unidad' as const,
+    category: 'Alacena' as const,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  })),
+];
+
 describe('Phase 2A: Navigation & Mobile Screens (Google Stitch)', () => {
   afterEach(() => {
     cleanup();
     jest.clearAllMocks();
   });
 
-  const renderWithProviders = async (ui: React.ReactElement) => {
+  const renderWithProviders = async (
+    ui: React.ReactElement,
+    initialIngredients: Ingredient[] = TEST_INITIAL_INGREDIENTS
+  ) => {
     return await render(
       <SafeAreaProvider
         initialMetrics={{
@@ -55,7 +102,9 @@ describe('Phase 2A: Navigation & Mobile Screens (Google Stitch)', () => {
         }}
       >
         <TypographyProvider usingFallback={true}>
-          {ui}
+          <PantryProvider initialIngredients={initialIngredients}>
+            {ui}
+          </PantryProvider>
         </TypographyProvider>
       </SafeAreaProvider>
     );
@@ -324,18 +373,15 @@ describe('Phase 2A: Navigation & Mobile Screens (Google Stitch)', () => {
     });
   });
 
-  describe('Placeholder Screens (Despensa, Plan, Perfil)', () => {
-    it('renders Mi Despensa placeholder with Phase 2B development status', async () => {
-      const { getByText, getByTestId } = await renderWithProviders(<DespensaScreen />);
+  describe('Tabs Screens (Despensa, Plan, Perfil)', () => {
+    it('renders Despensa screen with functional inventory header and controls', async () => {
+      const { getByText, getByTestId, getByPlaceholderText } = await renderWithProviders(<DespensaScreen />);
 
-      expect(getByText('Mi Despensa')).toBeTruthy();
-      expect(getByText('Fase 2B')).toBeTruthy();
-      expect(getByText('Inventario de Despensa')).toBeTruthy();
-      expect(getByText(/Fase 2B con persistencia/)).toBeTruthy();
-
-      const backButton = getByTestId('despensa-back-home-button');
-      fireEvent.press(backButton);
-      expect(mockPush).toHaveBeenCalledWith('/(tabs)');
+      expect(getByText('RECETARIO POR PRESUPUESTO')).toBeTruthy();
+      expect(getByText('Despensa')).toBeTruthy();
+      expect(getByPlaceholderText('Buscar en mi despensa...')).toBeTruthy();
+      expect(getByTestId('pantry-add-ingredient-button')).toBeTruthy();
+      expect(getByTestId('pantry-scan-placeholder-button')).toBeTruthy();
     });
 
     it('renders Plan Semanal placeholder with Phase 3 development status', async () => {

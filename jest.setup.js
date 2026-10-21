@@ -1,3 +1,7 @@
+globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+// @ts-ignore
+global.IS_REACT_ACT_ENVIRONMENT = true;
+
 jest.mock('@expo/vector-icons', () => {
   const React = require('react');
   const { Text } = require('react-native');
@@ -12,3 +16,8 @@ jest.mock('@expo/vector-icons', () => {
     Feather: MockIcon,
   };
 });
+
+jest.mock('@react-native-async-storage/async-storage', () =>
+  require('@react-native-async-storage/async-storage/jest/async-storage-mock')
+);
+

@@ -17,6 +17,8 @@ export interface CardProps {
   onPress?: () => void;
   accessibilityLabel?: string;
   accessibilityHint?: string;
+  accessibilityRole?: 'button' | 'text' | 'header' | 'none';
+  testID?: string;
   style?: ViewStyle;
 }
 
@@ -50,6 +52,8 @@ export const Card: React.FC<CardProps> = ({
   onPress,
   accessibilityLabel,
   accessibilityHint,
+  accessibilityRole,
+  testID,
   style,
 }) => {
   const paddingValue = typeof padding === 'number' ? padding : spacing[padding];
@@ -64,9 +68,10 @@ export const Card: React.FC<CardProps> = ({
   if (onPress) {
     return (
       <Pressable
+        testID={testID}
         onPress={disabled ? undefined : onPress}
         disabled={disabled}
-        accessibilityRole="button"
+        accessibilityRole={accessibilityRole || 'button'}
         accessibilityLabel={accessibilityLabel}
         accessibilityHint={accessibilityHint}
         accessibilityState={{ disabled }}
@@ -81,7 +86,12 @@ export const Card: React.FC<CardProps> = ({
   }
 
   return (
-    <View style={combinedStyle} accessibilityLabel={accessibilityLabel}>
+    <View
+      testID={testID}
+      style={combinedStyle}
+      accessibilityRole={accessibilityRole}
+      accessibilityLabel={accessibilityLabel}
+    >
       {children}
     </View>
   );

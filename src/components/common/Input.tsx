@@ -14,9 +14,12 @@ export interface InputProps extends Omit<TextInputProps, 'style'> {
   label?: string;
   helperText?: string;
   errorMessage?: string;
+  error?: string;
   disabled?: boolean;
   leftElement?: React.ReactNode;
+  leftIcon?: React.ReactNode;
   rightElement?: React.ReactNode;
+  rightIcon?: React.ReactNode;
   containerStyle?: ViewStyle;
   inputStyle?: TextStyle;
 }
@@ -25,9 +28,12 @@ export const Input: React.FC<InputProps> = ({
   label,
   helperText,
   errorMessage,
+  error,
   disabled = false,
   leftElement,
+  leftIcon,
   rightElement,
+  rightIcon,
   containerStyle,
   inputStyle,
   onFocus,
@@ -37,7 +43,10 @@ export const Input: React.FC<InputProps> = ({
   const [isFocused, setIsFocused] = useState(false);
   const typography = useTypography();
 
-  const hasError = Boolean(errorMessage);
+  const effectiveErrorMessage = errorMessage || error;
+  const hasError = Boolean(effectiveErrorMessage);
+  const effectiveLeft = leftElement || leftIcon;
+  const effectiveRight = rightElement || rightIcon;
   const isEditable = !disabled && textInputProps.editable !== false;
 
   return (
@@ -59,7 +68,7 @@ export const Input: React.FC<InputProps> = ({
           disabled && styles.disabledWrapper,
         ]}
       >
-        {leftElement && <View style={styles.leftElement}>{leftElement}</View>}
+        {effectiveLeft && <View style={styles.leftElement}>{effectiveLeft}</View>}
 
         <TextInput
           placeholderTextColor={colors.textSecondary}
@@ -83,7 +92,7 @@ export const Input: React.FC<InputProps> = ({
           style={[styles.input, typography.bodyMd, disabled && styles.disabledInput, inputStyle]}
         />
 
-        {rightElement && <View style={styles.rightElement}>{rightElement}</View>}
+        {effectiveRight && <View style={styles.rightElement}>{effectiveRight}</View>}
       </View>
 
       {hasError ? (
@@ -92,7 +101,7 @@ export const Input: React.FC<InputProps> = ({
           accessibilityRole="alert"
           accessibilityLiveRegion="polite"
         >
-          {errorMessage}
+          {effectiveErrorMessage}
         </Text>
       ) : helperText ? (
         <Text style={[styles.helperText, typography.bodySm]}>{helperText}</Text>

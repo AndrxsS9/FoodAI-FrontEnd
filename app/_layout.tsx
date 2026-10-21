@@ -5,6 +5,7 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useAppFonts } from '../src/hooks/useAppFonts';
 import { TypographyProvider, colors } from '../src/theme';
+import { PantryProvider } from '../src/context/PantryContext';
 
 export default function RootLayout() {
   const { isReady, fontError, usingFallback } = useAppFonts();
@@ -33,17 +34,19 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <TypographyProvider usingFallback={usingFallback}>
-        <StatusBar style="dark" />
-        <Stack
-          screenOptions={{
-            headerShown: false,
-            contentStyle: { backgroundColor: colors.canvas },
-          }}
-        >
-          <Stack.Screen name="index" />
-          <Stack.Screen name="(tabs)" />
-          <Stack.Screen name="design-system" />
-        </Stack>
+        <PantryProvider>
+          <StatusBar style="dark" />
+          <Stack
+            screenOptions={{
+              headerShown: false,
+              contentStyle: { backgroundColor: colors.canvas },
+            }}
+          >
+            <Stack.Screen name="index" />
+            <Stack.Screen name="(tabs)" />
+            <Stack.Screen name="design-system" />
+          </Stack>
+        </PantryProvider>
       </TypographyProvider>
     </SafeAreaProvider>
   );

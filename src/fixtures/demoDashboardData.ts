@@ -49,15 +49,19 @@ export const DEMO_DASHBOARD_DATA: DemoDashboardData = {
       { id: 'item-3', name: 'Espinaca' },
     ],
   },
+  /**
+   * @deprecated Utilizar `RecipeContext` como fuente única autoritativa para recomendaciones.
+   * Este valor se mantiene sincronizado con `BASE_DEMO_RECIPES[0]` para compatibilidad visual.
+   */
   dailyRecommendation: {
     id: 'demo-rec-1',
-    title: 'Pollo con verduras',
-    description: 'Una opción balanceada y lista en sartén sin compras innecesarias.',
-    estimatedAdditionalCostCop: 5500,
-    prepTimeMinutes: 25,
+    title: 'Arroz con pollo y verduras',
+    description: 'Una preparación balanceada en sartén para aprovechar el pollo y vegetales de tu despensa con una compra mínima.',
+    estimatedAdditionalCostCop: 5800,
+    prepTimeMinutes: 30,
     servings: 2,
-    convenienceScorePercent: 92,
-    urgentIngredientsUsedCount: 2,
+    convenienceScorePercent: 94,
+    urgentIngredientsUsedCount: 3,
     isSimulatedAiScore: true,
   },
 };

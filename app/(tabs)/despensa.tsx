@@ -517,16 +517,30 @@ export default function DespensaScreen() {
               ¿Qué cocinamos con esto?
             </Text>
             <Text style={[styles.dialogDesc, typography.bodyMd]}>
-              El motor de sugerencias culinarias cruzará tus {ingredients.length} alimentos con tu presupuesto para sugerirte recetas ideales en una próxima actualización.
+              El motor de sugerencias culinarias cruza tus {ingredients.length} alimentos con tu presupuesto para sugerirte recetas ideales y ayudarte a ahorrar.
             </Text>
-            <Button
-              testID="close-cook-suggestion-button"
-              title="Volver a la despensa"
-              variant="primary"
-              size="md"
-              fullWidth
-              onPress={() => setCookSuggestionVisible(false)}
-            />
+            <View style={{ width: '100%', gap: spacing.sm }}>
+              <Button
+                testID="pantry-discover-recipes-button"
+                title="Descubrir recetas"
+                variant="primary"
+                size="md"
+                fullWidth
+                onPress={() => {
+                  setCookSuggestionVisible(false);
+                  router.push('/recetas' as any);
+                }}
+                leftIcon={<MaterialIcons name="restaurant-menu" size={20} color={colors.onPrimary} />}
+              />
+              <Button
+                testID="close-cook-suggestion-button"
+                title="Volver a la despensa"
+                variant="outline"
+                size="md"
+                fullWidth
+                onPress={() => setCookSuggestionVisible(false)}
+              />
+            </View>
           </View>
         </View>
       )}

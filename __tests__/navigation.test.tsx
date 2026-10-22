@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, fireEvent, cleanup, waitFor } from '@testing-library/react-native';
+import { render, fireEvent, cleanup, waitFor, act } from '@testing-library/react-native';
 import WelcomeScreen from '../app/index';
 import HomeScreen from '../app/(tabs)/index';
 import DespensaScreen from '../app/(tabs)/despensa';
@@ -8,6 +8,8 @@ import PerfilScreen from '../app/(tabs)/perfil';
 import TabsLayout from '../app/(tabs)/_layout';
 import { TypographyProvider } from '../src/theme';
 import { PantryProvider } from '../src/context/PantryContext';
+import { BudgetProvider } from '../src/context/BudgetContext';
+import { RecipeProvider } from '../src/context/RecipeContext';
 import { Ingredient } from '../src/types/pantry';
 
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -103,7 +105,11 @@ describe('Phase 2A: Navigation & Mobile Screens (Google Stitch)', () => {
       >
         <TypographyProvider usingFallback={true}>
           <PantryProvider initialIngredients={initialIngredients}>
-            {ui}
+            <BudgetProvider initialPreferences={{ budget: 20000, servings: 2 }}>
+              <RecipeProvider>
+                {ui}
+              </RecipeProvider>
+            </BudgetProvider>
           </PantryProvider>
         </TypographyProvider>
       </SafeAreaProvider>
@@ -203,15 +209,15 @@ describe('Phase 2A: Navigation & Mobile Screens (Google Stitch)', () => {
       expect(getByText(/20\.000/)).toBeTruthy();
       expect(getByText('Ajustar')).toBeTruthy();
 
-      // Card 4: Daily recommendation
+      // Card 4: Daily recommendation (Autoritativo desde RecipeContext)
       expect(getByText('Recomendación del día')).toBeTruthy();
       expect(getByText('Optimizado a tu despensa')).toBeTruthy();
-      expect(getByText('Pollo con verduras')).toBeTruthy();
-      expect(getByText('92 % conveniente')).toBeTruthy();
-      expect(getByText('25 min')).toBeTruthy();
+      expect(getByText('Arroz con pollo y verduras')).toBeTruthy();
+      expect(getByText('94% conveniente')).toBeTruthy();
+      expect(getByText('30 min')).toBeTruthy();
       expect(getByText('2 personas')).toBeTruthy();
       expect(getByText(/Solo necesitas aproximadamente/)).toBeTruthy();
-      expect(getByText(/Aprovechas/)).toBeTruthy();
+      expect(getByText(/Aprovecha alimentos urgentes/)).toBeTruthy();
       expect(getByText('Ver receta')).toBeTruthy();
     });
 
@@ -248,7 +254,9 @@ describe('Phase 2A: Navigation & Mobile Screens (Google Stitch)', () => {
 
       // Confirm
       const confirmButton = getByTestId('budget-confirm-button');
-      fireEvent.press(confirmButton);
+      await act(async () => {
+        fireEvent.press(confirmButton);
+      });
 
       // Verify modal is closed and budget is updated
       await waitFor(() => {

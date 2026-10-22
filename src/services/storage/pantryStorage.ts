@@ -469,7 +469,39 @@ export class AsyncStoragePantryAdapter implements PantryStorageAdapter {
   }
 
   async saveIngredients(ingredients: Ingredient[]): Promise<void> {
-    return this.enqueue(() => this.saveIngredientsInternal(ingredients));
+    return this.enqueue(async () => {
+      if (!Array.isArray(ingredients)) {
+        throw new Error(
+          'No fue posible guardar: la lista de ingredientes debe ser un arreglo válido.'
+        );
+      }
+
+      const seenIds = new Set<string>();
+      for (let i = 0; i < ingredients.length; i++) {
+        const item = ingredients[i];
+        if (!isValidStoredIngredient(item)) {
+          const detail =
+            item &&
+            typeof item === 'object' &&
+            'name' in item &&
+            typeof (item as Record<string, unknown>).name === 'string'
+              ? `«${(item as Record<string, unknown>).name}»`
+              : `en el índice ${i}`;
+          throw new Error(
+            `No es posible guardar ingredientes: el registro ${detail} contiene datos inválidos o no cumple con el esquema requerido.`
+          );
+        }
+
+        if (seenIds.has(item.id)) {
+          throw new Error(
+            `No es posible guardar ingredientes: se detectó un identificador duplicado («${item.id}»).`
+          );
+        }
+        seenIds.add(item.id);
+      }
+
+      await this.saveIngredientsInternal(ingredients);
+    });
   }
 
   async addIngredient(input: CreateIngredientInput): Promise<Ingredient> {

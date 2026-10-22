@@ -568,5 +568,50 @@ describe('Pantry Local Persistence & Storage Adapter', () => {
         })
       ).rejects.toThrow('número positivo menor o igual a 100000');
     });
+
+    it('rejects invalid direct-save records with explicit errors without silently losing user data (Issue 2)', async () => {
+      // 1. Rechazar arreglo con registro inválido (cantidad <= 0)
+      const invalidQuantityList: any = [
+        { id: 'ok-1', name: 'Arroz', quantity: 1, unit: 'kg', category: 'Granos y cereales' },
+        { id: 'bad-1', name: 'Aceite', quantity: -2, unit: 'l', category: 'Alacena' },
+      ];
+
+      await expect(adapter.saveIngredients(invalidQuantityList)).rejects.toThrow(
+        'No es posible guardar ingredientes: el registro «Aceite» contiene datos inválidos'
+      );
+
+      // 2. Rechazar identificadores duplicados en direct save
+      const duplicateIdsList: any = [
+        { id: 'dup-id', name: 'Manzana', quantity: 2, unit: 'unidad', category: 'Verduras y frutas' },
+        { id: 'dup-id', name: 'Manzana verde', quantity: 1, unit: 'unidad', category: 'Verduras y frutas' },
+      ];
+
+      await expect(adapter.saveIngredients(duplicateIdsList)).rejects.toThrow(
+        'se detectó un identificador duplicado («dup-id»)'
+      );
+
+      // 3. Rechazar entrada no arreglo
+      await expect(adapter.saveIngredients('invalido' as any)).rejects.toThrow(
+        'la lista de ingredientes debe ser un arreglo'
+      );
+
+      // 4. Guardar un arreglo completamente válido tiene éxito y persiste correctamente
+      const validList: Ingredient[] = [
+        {
+          id: 'valid-direct-1',
+          name: 'Lentejas',
+          quantity: 500,
+          unit: 'g',
+          category: 'Granos y cereales',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      ];
+
+      await adapter.saveIngredients(validList);
+      const saved = await adapter.getIngredients();
+      expect(saved).toHaveLength(1);
+      expect(saved[0].name).toBe('Lentejas');
+    });
   });
 });

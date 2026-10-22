@@ -7,6 +7,7 @@ import { useAppFonts } from '../src/hooks/useAppFonts';
 import { TypographyProvider, colors } from '../src/theme';
 import { PantryProvider } from '../src/context/PantryContext';
 import { BudgetProvider } from '../src/context/BudgetContext';
+import { RecipeProvider } from '../src/context/RecipeContext';
 
 export default function RootLayout() {
   const { isReady, fontError, usingFallback } = useAppFonts();
@@ -37,18 +38,20 @@ export default function RootLayout() {
       <TypographyProvider usingFallback={usingFallback}>
         <PantryProvider>
           <BudgetProvider>
-            <StatusBar style="dark" />
-            <Stack
-              screenOptions={{
-                headerShown: false,
-                contentStyle: { backgroundColor: colors.canvas },
-              }}
-            >
-              <Stack.Screen name="index" />
-              <Stack.Screen name="(tabs)" />
-              <Stack.Screen name="design-system" />
-              <Stack.Screen name="recetas" />
-            </Stack>
+            <RecipeProvider>
+              <StatusBar style="dark" />
+              <Stack
+                screenOptions={{
+                  headerShown: false,
+                  contentStyle: { backgroundColor: colors.canvas },
+                }}
+              >
+                <Stack.Screen name="index" />
+                <Stack.Screen name="(tabs)" />
+                <Stack.Screen name="design-system" />
+                <Stack.Screen name="recetas" />
+              </Stack>
+            </RecipeProvider>
           </BudgetProvider>
         </PantryProvider>
       </TypographyProvider>

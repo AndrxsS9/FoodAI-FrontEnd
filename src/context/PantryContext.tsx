@@ -157,22 +157,53 @@ export function PantryProvider({
     [storageAdapter]
   );
 
+  const ingredientsRef = React.useRef(ingredients);
+  useEffect(() => {
+    ingredientsRef.current = ingredients;
+  }, [ingredients]);
+
   const adjustQuantity = useCallback(
     async (id: string, delta: number): Promise<void> => {
-      const target = ingredients.find((item) => item.id === id);
-      if (!target) return;
+      setStorageError(null);
+      try {
+        if (storageAdapter.adjustQuantity) {
+          const updated = await storageAdapter.adjustQuantity(id, delta);
+          setIngredients((prev) =>
+            prev.map((item) => (item.id === updated.id ? updated : item))
+          );
+        } else {
+          const target = ingredientsRef.current.find((item) => item.id === id);
+          if (!target) return;
 
-      const newQty = target.quantity + delta;
-      if (newQty <= 0) {
-        // No se permite cantidad menor o igual a cero con el stepper
-        return;
+          const newQty = Math.round((target.quantity + delta) * 100) / 100;
+          if (newQty <= 0) {
+            return;
+          }
+
+          // Actualizar inmediatamente ingredientsRef para que llamadas consecutivas en la misma ráfaga
+          // lean la cantidad actualizada incluso antes del renderizado de React.
+          ingredientsRef.current = ingredientsRef.current.map((item) =>
+            item.id === id ? { ...item, quantity: newQty } : item
+          );
+
+          const updated = await storageAdapter.updateIngredient({
+            id,
+            quantity: newQty,
+          });
+          setIngredients((prev) =>
+            prev.map((item) => (item.id === updated.id ? updated : item))
+          );
+        }
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : 'Error al ajustar la cantidad del alimento.';
+        setStorageError(message);
+        throw error;
       }
-
-      // Redondear a 2 decimales para evitar problemas de precisión flotante
-      const rounded = Math.round(newQty * 100) / 100;
-      await updateIngredient({ id, quantity: rounded });
     },
-    [ingredients, updateIngredient]
+    [storageAdapter]
   );
 
   const clearStorageError = useCallback(() => {

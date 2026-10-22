@@ -54,9 +54,18 @@ class MockPantryAdapter implements PantryStorageAdapter {
   async updateIngredient(input: UpdateIngredientInput): Promise<Ingredient> {
     const idx = this.items.findIndex((i) => i.id === input.id);
     if (idx === -1) throw new Error('Not found');
+    const existing = this.items[idx];
+    const resolvedExp =
+      input.expirationDate === null
+        ? undefined
+        : input.expirationDate !== undefined
+          ? input.expirationDate
+          : existing.expirationDate;
+
     const updated: Ingredient = {
-      ...this.items[idx],
+      ...existing,
       ...input,
+      expirationDate: resolvedExp,
       updatedAt: new Date().toISOString(),
     };
     this.items[idx] = updated;
@@ -65,6 +74,20 @@ class MockPantryAdapter implements PantryStorageAdapter {
 
   async deleteIngredient(id: string): Promise<void> {
     this.items = this.items.filter((i) => i.id !== id);
+  }
+
+  async adjustQuantity(id: string, delta: number): Promise<Ingredient> {
+    const idx = this.items.findIndex((i) => i.id === id);
+    if (idx === -1) throw new Error('Not found');
+    const existing = this.items[idx];
+    const newQty = Math.round((existing.quantity + delta) * 100) / 100;
+    const updated: Ingredient = {
+      ...existing,
+      quantity: newQty > 0 ? newQty : existing.quantity,
+      updatedAt: new Date().toISOString(),
+    };
+    this.items[idx] = updated;
+    return updated;
   }
 
   async clearIngredients(): Promise<void> {
@@ -106,9 +129,12 @@ const SAMPLE_INGREDIENTS: Ingredient[] = [
 
 const renderScreen = async (
   ui: React.ReactElement,
-  initialIngredients: Ingredient[] = SAMPLE_INGREDIENTS
+  initialIngredients?: Ingredient[]
 ) => {
-  const adapter = new MockPantryAdapter(initialIngredients);
+  const items = (initialIngredients ?? SAMPLE_INGREDIENTS).map((i) => ({
+    ...i,
+  }));
+  const adapter = new MockPantryAdapter(items);
   return await render(
     <SafeAreaProvider
       initialMetrics={{
@@ -117,10 +143,7 @@ const renderScreen = async (
       }}
     >
       <TypographyProvider usingFallback={true}>
-        <PantryProvider
-          initialIngredients={initialIngredients}
-          storageAdapter={adapter}
-        >
+        <PantryProvider initialIngredients={items} storageAdapter={adapter}>
           {ui}
         </PantryProvider>
       </TypographyProvider>

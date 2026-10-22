@@ -26,10 +26,11 @@ import {
   DeleteConfirmationModal,
   IngredientCard,
   IngredientFormModal,
+  IngredientFormSaveData,
 } from '../../src/components/pantry';
 import { usePantry } from '../../src/context/PantryContext';
 import { colors, radius, spacing, useTypography } from '../../src/theme';
-import { CreateIngredientInput, Ingredient } from '../../src/types/pantry';
+import { Ingredient } from '../../src/types/pantry';
 
 export default function DespensaScreen() {
   const typography = useTypography();
@@ -97,7 +98,7 @@ export default function DespensaScreen() {
     setFormModalVisible(true);
   };
 
-  const handleSaveIngredient = async (data: CreateIngredientInput) => {
+  const handleSaveIngredient = async (data: IngredientFormSaveData) => {
     if (editingIngredient) {
       await updateIngredient({
         id: editingIngredient.id,
@@ -108,7 +109,13 @@ export default function DespensaScreen() {
         expirationDate: data.expirationDate,
       });
     } else {
-      await addIngredient(data);
+      await addIngredient({
+        name: data.name,
+        quantity: data.quantity,
+        unit: data.unit,
+        category: data.category,
+        expirationDate: data.expirationDate ?? undefined,
+      });
     }
   };
 
@@ -464,7 +471,7 @@ export default function DespensaScreen() {
         onConfirm={handleConfirmDelete}
       />
 
-      {/* Modal informativo para escáner (Fase 2B Arquitectura preparada) */}
+      {/* Modal informativo para escáner (función en desarrollo) */}
       {scannerNoticeVisible && (
         <View style={[StyleSheet.absoluteFill, styles.dialogBackdrop]}>
           <Pressable
@@ -480,7 +487,7 @@ export default function DespensaScreen() {
               Escanear nuevos alimentos
             </Text>
             <Text style={[styles.dialogDesc, typography.bodyMd]}>
-              La arquitectura del escáner visual con cámara y reconocimiento con inteligencia artificial está preparada para fases posteriores. En esta Fase 2B puedes gestionar todos tus ingredientes de forma manual con persistencia local garantizada.
+              El escáner visual con cámara y reconocimiento inteligente es una función en desarrollo que estará disponible en una próxima actualización. Actualmente puedes registrar y gestionar todos tus ingredientes de forma manual con guardado local garantizado.
             </Text>
             <Button
               testID="close-scanner-notice-button"
@@ -510,7 +517,7 @@ export default function DespensaScreen() {
               ¿Qué cocinamos con esto?
             </Text>
             <Text style={[styles.dialogDesc, typography.bodyMd]}>
-              El motor de recomendación inteligente cruzará tus {ingredients.length} alimentos con tu presupuesto para sugerirte el menú ideal en la siguiente fase de recetas.
+              El motor de sugerencias culinarias cruzará tus {ingredients.length} alimentos con tu presupuesto para sugerirte recetas ideales en una próxima actualización.
             </Text>
             <Button
               testID="close-cook-suggestion-button"

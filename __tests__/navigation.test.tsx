@@ -340,7 +340,7 @@ describe('Phase 2A: Navigation & Mobile Screens (Google Stitch)', () => {
       await waitFor(() => {
         expect(getByText('Captura de cámara en preparación')).toBeTruthy();
       });
-      expect(getByText(/Fase 2B/)).toBeTruthy();
+      expect(getByText(/próxima actualización/)).toBeTruthy();
 
       // Close modal
       const closeButton = getByText('Entendido');

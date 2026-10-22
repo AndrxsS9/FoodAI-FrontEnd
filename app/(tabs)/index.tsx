@@ -194,8 +194,8 @@ export default function HomeScreen() {
             accessibilityHint="Muestra la vista previa del escáner"
             onPress={() =>
               showFeatureNotice(
-                'Escáner de alimentos (Fase 2B)',
-                'La captura de cámara y el reconocimiento de ingredientes con Gemini Vision se habilitarán en la Fase 2B.',
+                'Escáner de alimentos',
+                'La captura de cámara y el reconocimiento de ingredientes con inteligencia artificial están en desarrollo y estarán disponibles en una próxima actualización.',
                 'photo-camera'
               )
             }
@@ -223,7 +223,7 @@ export default function HomeScreen() {
             onPress={() =>
               showFeatureNotice(
                 'Captura de cámara en preparación',
-                'El módulo de cámara y detección fotográfica estará disponible en la Fase 2B.',
+                'El módulo de cámara y detección fotográfica estará disponible en una próxima actualización.',
                 'photo-camera'
               )
             }

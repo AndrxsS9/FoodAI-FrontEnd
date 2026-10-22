@@ -40,9 +40,18 @@ class MockPantryAdapter implements PantryStorageAdapter {
   async updateIngredient(input: UpdateIngredientInput): Promise<Ingredient> {
     const idx = this.items.findIndex((i) => i.id === input.id);
     if (idx === -1) throw new Error('Not found');
+    const existing = this.items[idx];
+    const resolvedExp =
+      input.expirationDate === null
+        ? undefined
+        : input.expirationDate !== undefined
+          ? input.expirationDate
+          : existing.expirationDate;
+
     const updated: Ingredient = {
-      ...this.items[idx],
+      ...existing,
       ...input,
+      expirationDate: resolvedExp,
       updatedAt: new Date().toISOString(),
     };
     this.items[idx] = updated;
@@ -51,6 +60,20 @@ class MockPantryAdapter implements PantryStorageAdapter {
 
   async deleteIngredient(id: string): Promise<void> {
     this.items = this.items.filter((i) => i.id !== id);
+  }
+
+  async adjustQuantity(id: string, delta: number): Promise<Ingredient> {
+    const idx = this.items.findIndex((i) => i.id === id);
+    if (idx === -1) throw new Error('Not found');
+    const existing = this.items[idx];
+    const newQty = Math.round((existing.quantity + delta) * 100) / 100;
+    const updated: Ingredient = {
+      ...existing,
+      quantity: newQty > 0 ? newQty : existing.quantity,
+      updatedAt: new Date().toISOString(),
+    };
+    this.items[idx] = updated;
+    return updated;
   }
 
   async clearIngredients(): Promise<void> {
@@ -207,5 +230,67 @@ describe('PantryContext State Management', () => {
       await result.current.adjustQuantity('adj-1', -2);
     });
     expect(result.current.ingredients[0].quantity).toBe(1);
+  });
+
+  // --- CORRECCIÓN 5: RAPID QUANTITY UPDATES & RECOVERY (Escenario D) ---
+  it('updates quantity several times consecutively and preserves exact final value (Escenario D)', async () => {
+    const initial: Ingredient[] = [
+      { id: 'rapid-1', name: 'Huevos', quantity: 6, unit: 'unidad', category: 'Lácteos', createdAt: '', updatedAt: '' },
+    ];
+    const adapter = new MockPantryAdapter(initial);
+
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <PantryProvider storageAdapter={adapter} initialIngredients={initial}>
+        {children}
+      </PantryProvider>
+    );
+
+    const { result } = await renderHook(() => usePantry(), { wrapper });
+
+    await act(async () => {
+      await result.current.adjustQuantity('rapid-1', 1);
+      await result.current.adjustQuantity('rapid-1', 1);
+      await result.current.adjustQuantity('rapid-1', 2);
+    });
+
+    expect(result.current.ingredients[0].quantity).toBe(10);
+  });
+
+  it('recalculates expiration urgency reactively when removing an expiration date (Escenario B & E)', async () => {
+    const initial: Ingredient[] = [
+      {
+        id: 'urg-1',
+        name: 'Carne fresca',
+        quantity: 500,
+        unit: 'g',
+        category: 'Carnes y proteínas',
+        expirationDate: '2020-01-01', // Vencido -> Urgente
+        createdAt: '',
+        updatedAt: '',
+      },
+    ];
+    const adapter = new MockPantryAdapter(initial);
+
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <PantryProvider storageAdapter={adapter} initialIngredients={initial}>
+        {children}
+      </PantryProvider>
+    );
+
+    const { result } = await renderHook(() => usePantry(), { wrapper });
+
+    expect(result.current.summary.urgentCount).toBe(1);
+
+    // Editar y remover fecha de vencimiento (null)
+    await act(async () => {
+      await result.current.updateIngredient({
+        id: 'urg-1',
+        expirationDate: null,
+      });
+    });
+
+    expect(result.current.ingredients[0].expirationDate).toBeUndefined();
+    expect(result.current.summary.urgentCount).toBe(0);
+    expect(result.current.summary.availableIngredients).toHaveLength(1);
   });
 });

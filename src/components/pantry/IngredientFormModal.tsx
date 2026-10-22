@@ -26,11 +26,18 @@ import { Button } from '../common/Button';
 import { Input } from '../common/Input';
 import { validateIngredientForm } from '../../utils/pantryValidation';
 
+export type IngredientFormSaveData = Omit<
+  CreateIngredientInput,
+  'expirationDate'
+> & {
+  expirationDate?: string | null;
+};
+
 export interface IngredientFormModalProps {
   visible: boolean;
   initialIngredient?: Ingredient | null;
   onClose: () => void;
-  onSave: (data: CreateIngredientInput) => Promise<void>;
+  onSave: (data: IngredientFormSaveData) => Promise<void>;
   onDeleteRequest?: (ingredient: Ingredient) => void;
 }
 
@@ -89,12 +96,19 @@ function IngredientFormSheet({
     }
 
     setErrors({});
-    const dataToSave: CreateIngredientInput = {
+    const sanitizedExp = validation.sanitizedData.expirationDate;
+    // Si se está editando y el campo quedó vacío, se envía null para eliminar la fecha previa.
+    // Si es un nuevo registro, se omite (undefined).
+    const expirationDateToSave = isEditing
+      ? (sanitizedExp ?? null)
+      : sanitizedExp;
+
+    const dataToSave: IngredientFormSaveData = {
       name: validation.sanitizedData.name,
       quantity: validation.sanitizedData.quantity,
       unit: validation.sanitizedData.unit,
       category: validation.sanitizedData.category,
-      expirationDate: validation.sanitizedData.expirationDate,
+      expirationDate: expirationDateToSave,
     };
 
     setIsSubmitting(true);

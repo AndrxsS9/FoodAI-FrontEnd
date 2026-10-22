@@ -9,6 +9,8 @@ import {
 } from '../src/types/pantry';
 import {
   isValidDateString,
+  isValidQuantityValue,
+  parseQuantityInput,
   validateIngredientForm,
 } from '../src/utils/pantryValidation';
 
@@ -236,6 +238,94 @@ describe('Pantry Domain & Expiration Calculation', () => {
     it('rejects invalid year ranges', () => {
       expect(isValidDateString('1899-01-01')).toBe(false);
       expect(isValidDateString('2150-01-01')).toBe(false);
+    });
+  });
+
+  // --- CORRECCIÓN 3: VALIDACIÓN ESTRICTA DE CANTIDADES (Escenario C) ---
+  describe('Quantity Parser & Strict Validation (parseQuantityInput)', () => {
+    it('accepts valid positive integers and decimals with dot or comma', () => {
+      expect(parseQuantityInput('1')).toEqual({ ok: true, value: 1 });
+      expect(parseQuantityInput('2.5')).toEqual({ ok: true, value: 2.5 });
+      expect(parseQuantityInput('0,75')).toEqual({ ok: true, value: 0.75 });
+      expect(parseQuantityInput('100')).toEqual({ ok: true, value: 100 });
+      expect(parseQuantityInput('100000')).toEqual({ ok: true, value: 100000 });
+      expect(parseQuantityInput(' 3.25 ')).toEqual({ ok: true, value: 3.25 });
+    });
+
+    it('rejects malformed and alphanumeric input (Escenario C: 2abc, 1kg, 3.5xyz)', () => {
+      expect(parseQuantityInput('2abc').ok).toBe(false);
+      expect(parseQuantityInput('1kg').ok).toBe(false);
+      expect(parseQuantityInput('3.5xyz').ok).toBe(false);
+      expect(parseQuantityInput('1.2.3').ok).toBe(false);
+      expect(parseQuantityInput('Infinity').ok).toBe(false);
+      expect(parseQuantityInput('-Infinity').ok).toBe(false);
+      expect(parseQuantityInput('NaN').ok).toBe(false);
+    });
+
+    it('rejects zero and negative values (Escenario C: 0, -5)', () => {
+      expect(parseQuantityInput('0').ok).toBe(false);
+      expect(parseQuantityInput('0.0').ok).toBe(false);
+      expect(parseQuantityInput('0,00').ok).toBe(false);
+      expect(parseQuantityInput('-5').ok).toBe(false);
+      expect(parseQuantityInput('-0.5').ok).toBe(false);
+    });
+
+    it('rejects empty input or whitespace', () => {
+      expect(parseQuantityInput('').ok).toBe(false);
+      expect(parseQuantityInput('   ').ok).toBe(false);
+    });
+
+    it('rejects values exceeding documented maximum limit', () => {
+      expect(parseQuantityInput('100001').ok).toBe(false);
+      expect(parseQuantityInput('999999').ok).toBe(false);
+    });
+
+    it('rejects excessive decimal precision (more than 3 decimal places)', () => {
+      expect(parseQuantityInput('1.2345').ok).toBe(false);
+    });
+
+    it('strictly validates form submissions with invalid values (Escenario C)', () => {
+      // 2abc
+      const result2abc = validateIngredientForm({
+        name: 'Arroz',
+        quantityText: '2abc',
+        unit: 'kg',
+        category: 'Granos y cereales',
+      });
+      expect(result2abc.isValid).toBe(false);
+      expect(result2abc.errors.quantity).toBe('La cantidad debe ser un número mayor a cero.');
+
+      // 0
+      const result0 = validateIngredientForm({
+        name: 'Arroz',
+        quantityText: '0',
+        unit: 'kg',
+        category: 'Granos y cereales',
+      });
+      expect(result0.isValid).toBe(false);
+      expect(result0.errors.quantity).toBe('La cantidad debe ser un número mayor a cero.');
+
+      // Infinity
+      const resultInf = validateIngredientForm({
+        name: 'Arroz',
+        quantityText: 'Infinity',
+        unit: 'kg',
+        category: 'Granos y cereales',
+      });
+      expect(resultInf.isValid).toBe(false);
+      expect(resultInf.errors.quantity).toBe('La cantidad debe ser un número mayor a cero.');
+    });
+
+    it('validates numeric quantities with isValidQuantityValue', () => {
+      expect(isValidQuantityValue(1)).toBe(true);
+      expect(isValidQuantityValue(100000)).toBe(true);
+      expect(isValidQuantityValue(0.25)).toBe(true);
+      expect(isValidQuantityValue(0)).toBe(false);
+      expect(isValidQuantityValue(-1)).toBe(false);
+      expect(isValidQuantityValue(100001)).toBe(false);
+      expect(isValidQuantityValue(NaN)).toBe(false);
+      expect(isValidQuantityValue(Infinity)).toBe(false);
+      expect(isValidQuantityValue('10')).toBe(false);
     });
   });
 });

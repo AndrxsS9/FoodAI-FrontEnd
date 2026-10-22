@@ -7,6 +7,8 @@ import PlanScreen from '../app/(tabs)/plan';
 import PerfilScreen from '../app/(tabs)/perfil';
 import TabsLayout from '../app/(tabs)/_layout';
 import { TypographyProvider } from '../src/theme';
+import { PantryProvider } from '../src/context/PantryContext';
+import { Ingredient } from '../src/types/pantry';
 
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
@@ -40,14 +42,59 @@ jest.mock('expo-router', () => {
   };
 });
 
+const TEST_INITIAL_INGREDIENTS: Ingredient[] = [
+  {
+    id: 'demo-1',
+    name: 'Tomate',
+    quantity: 4,
+    unit: 'unidad',
+    category: 'Verduras y frutas',
+    expirationDate: '2026-10-22',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: 'demo-2',
+    name: 'Pollo',
+    quantity: 1,
+    unit: 'unidad',
+    category: 'Carnes y proteínas',
+    expirationDate: '2026-10-22',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: 'demo-3',
+    name: 'Espinaca',
+    quantity: 200,
+    unit: 'g',
+    category: 'Verduras y frutas',
+    expirationDate: '2026-10-22',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  ...Array.from({ length: 11 }, (_, i) => ({
+    id: `item-${i + 4}`,
+    name: `Ingrediente ${i + 4}`,
+    quantity: 1,
+    unit: 'unidad' as const,
+    category: 'Alacena' as const,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  })),
+];
+
 describe('Phase 2A: Navigation & Mobile Screens (Google Stitch)', () => {
   afterEach(() => {
     cleanup();
     jest.clearAllMocks();
   });
 
-  const renderWithProviders = async (ui: React.ReactElement) => {
-    return await render(
+  const renderWithProviders = (
+    ui: React.ReactElement,
+    initialIngredients: Ingredient[] = TEST_INITIAL_INGREDIENTS
+  ) => {
+    return render(
       <SafeAreaProvider
         initialMetrics={{
           insets: { top: 0, left: 0, right: 0, bottom: 0 },
@@ -55,7 +102,9 @@ describe('Phase 2A: Navigation & Mobile Screens (Google Stitch)', () => {
         }}
       >
         <TypographyProvider usingFallback={true}>
-          {ui}
+          <PantryProvider initialIngredients={initialIngredients}>
+            {ui}
+          </PantryProvider>
         </TypographyProvider>
       </SafeAreaProvider>
     );
@@ -286,16 +335,16 @@ describe('Phase 2A: Navigation & Mobile Screens (Google Stitch)', () => {
       const { getByText, queryByText } = await renderWithProviders(<HomeScreen />);
 
       const scanButton = getByText('Tomar foto');
-      await fireEvent.press(scanButton);
+      fireEvent.press(scanButton);
 
       await waitFor(() => {
         expect(getByText('Captura de cámara en preparación')).toBeTruthy();
       });
-      expect(getByText(/Fase 2B/)).toBeTruthy();
+      expect(getByText(/próxima actualización/)).toBeTruthy();
 
       // Close modal
       const closeButton = getByText('Entendido');
-      await fireEvent.press(closeButton);
+      fireEvent.press(closeButton);
 
       await waitFor(() => {
         expect(queryByText('Captura de cámara en preparación')).toBeNull();
@@ -324,18 +373,15 @@ describe('Phase 2A: Navigation & Mobile Screens (Google Stitch)', () => {
     });
   });
 
-  describe('Placeholder Screens (Despensa, Plan, Perfil)', () => {
-    it('renders Mi Despensa placeholder with Phase 2B development status', async () => {
-      const { getByText, getByTestId } = await renderWithProviders(<DespensaScreen />);
+  describe('Tabs Screens (Despensa, Plan, Perfil)', () => {
+    it('renders Despensa screen with functional inventory header and controls', async () => {
+      const { getByText, getByTestId, getByPlaceholderText } = await renderWithProviders(<DespensaScreen />);
 
-      expect(getByText('Mi Despensa')).toBeTruthy();
-      expect(getByText('Fase 2B')).toBeTruthy();
-      expect(getByText('Inventario de Despensa')).toBeTruthy();
-      expect(getByText(/Fase 2B con persistencia/)).toBeTruthy();
-
-      const backButton = getByTestId('despensa-back-home-button');
-      fireEvent.press(backButton);
-      expect(mockPush).toHaveBeenCalledWith('/(tabs)');
+      expect(getByText('RECETARIO POR PRESUPUESTO')).toBeTruthy();
+      expect(getByText('Despensa')).toBeTruthy();
+      expect(getByPlaceholderText('Buscar en mi despensa...')).toBeTruthy();
+      expect(getByTestId('pantry-add-ingredient-button')).toBeTruthy();
+      expect(getByTestId('pantry-scan-placeholder-button')).toBeTruthy();
     });
 
     it('renders Plan Semanal placeholder with Phase 3 development status', async () => {
@@ -359,17 +405,17 @@ describe('Phase 2A: Navigation & Mobile Screens (Google Stitch)', () => {
 
       // Test replay welcome
       const welcomeLink = getByTestId('perfil-welcome-button');
-      fireEvent.press(welcomeLink);
+      await fireEvent.press(welcomeLink);
       expect(mockPush).toHaveBeenCalledWith('/');
 
       // Test design system showcase link
       const dsLink = getByTestId('perfil-design-system-button');
-      fireEvent.press(dsLink);
+      await fireEvent.press(dsLink);
       expect(mockPush).toHaveBeenCalledWith('/design-system');
 
       // Test back to home
       const backHome = getByTestId('perfil-back-home-button');
-      fireEvent.press(backHome);
+      await fireEvent.press(backHome);
       expect(mockPush).toHaveBeenCalledWith('/(tabs)');
     });
   });

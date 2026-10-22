@@ -11,6 +11,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Button, Card, Chip, Input } from '../../src/components/common';
+import { usePantry } from '../../src/context/PantryContext';
 import { DEMO_DASHBOARD_DATA } from '../../src/fixtures/demoDashboardData';
 import { colors, radius, spacing, useTypography } from '../../src/theme';
 
@@ -84,7 +85,7 @@ export default function HomeScreen() {
     setBudgetError(undefined);
   };
 
-  const demoPantry = DEMO_DASHBOARD_DATA.pantrySummary;
+  const { summary } = usePantry();
   const demoRecipe = DEMO_DASHBOARD_DATA.dailyRecommendation;
 
   return (
@@ -193,8 +194,8 @@ export default function HomeScreen() {
             accessibilityHint="Muestra la vista previa del escáner"
             onPress={() =>
               showFeatureNotice(
-                'Escáner de alimentos (Fase 2B)',
-                'La captura de cámara y el reconocimiento de ingredientes con Gemini Vision se habilitarán en la Fase 2B.',
+                'Escáner de alimentos',
+                'La captura de cámara y el reconocimiento de ingredientes con inteligencia artificial están en desarrollo y estarán disponibles en una próxima actualización.',
                 'photo-camera'
               )
             }
@@ -222,7 +223,7 @@ export default function HomeScreen() {
             onPress={() =>
               showFeatureNotice(
                 'Captura de cámara en preparación',
-                'El módulo de cámara y detección fotográfica estará disponible en la Fase 2B.',
+                'El módulo de cámara y detección fotográfica estará disponible en una próxima actualización.',
                 'photo-camera'
               )
             }
@@ -232,13 +233,18 @@ export default function HomeScreen() {
           />
         </Card>
 
-        {/* 2. Pantry Summary Card (Identified as sample view) */}
+        {/* 2. Pantry Summary Card (Sincronización real con estado local) */}
         <Card
           variant="elevated"
           style={styles.pantryCard}
           onPress={() => router.push('/(tabs)/despensa')}
-          accessibilityLabel={`Resumen de despensa (datos de ejemplo): ${demoPantry.totalItems} productos, ${demoPantry.urgentItemsCount} por consumir pronto`}
+          accessibilityLabel={
+            summary.totalCount === 0
+              ? 'Resumen de despensa: sin alimentos registrados. Toca para registrar ingredientes.'
+              : `Resumen de despensa: ${summary.totalCount} productos, ${summary.urgentCount} por consumir pronto`
+          }
           accessibilityHint="Toca para ir a la pantalla de despensa"
+          testID="home-pantry-card"
         >
           <View style={styles.cardHeaderRow}>
             <View style={styles.iconTitleRow}>
@@ -248,38 +254,82 @@ export default function HomeScreen() {
               </Text>
             </View>
             <View style={styles.pantryBadgeRow}>
-              <Text style={[styles.countBadge, typography.labelMd]}>
-                {demoPantry.totalItems} productos
+              <Text
+                style={[styles.countBadge, typography.labelMd]}
+                testID="home-pantry-total-count"
+              >
+                {summary.totalCount} producto{summary.totalCount === 1 ? '' : 's'}
               </Text>
             </View>
           </View>
 
-          {/* Urgent alert notice */}
-          <View style={styles.urgentBanner}>
-            <View style={styles.urgentBannerLeft}>
-              <MaterialIcons name="schedule" size={18} color={colors.secondary} />
-              <Text style={[styles.urgentBannerTitle, typography.labelSm]}>
-                {demoPantry.urgentItemsCount} consumir pronto
+          {summary.totalCount === 0 ? (
+            <View style={styles.emptyPantryBox} testID="home-pantry-empty-state">
+              <Text style={[styles.emptyPantryTitle, typography.bodyMd]}>
+                Sin alimentos registrados
+              </Text>
+              <Text style={[styles.emptyPantryText, typography.bodySm]}>
+                Toca aquí para registrar tus ingredientes y optimizar tu presupuesto.
               </Text>
             </View>
-            <Text style={[styles.urgentBannerTag, typography.labelSm]}>
-              Prioritarios
-            </Text>
-          </View>
+          ) : summary.urgentCount > 0 ? (
+            <>
+              {/* Urgent alert notice */}
+              <View style={styles.urgentBanner} testID="home-urgent-banner">
+                <View style={styles.urgentBannerLeft}>
+                  <MaterialIcons name="schedule" size={18} color={colors.secondary} />
+                  <Text style={[styles.urgentBannerTitle, typography.labelSm]}>
+                    {summary.urgentCount} consumir pronto
+                  </Text>
+                </View>
+                <Text style={[styles.urgentBannerTag, typography.labelSm]}>
+                  Prioritarios
+                </Text>
+              </View>
 
-          {/* Urgent items chips */}
-          <View style={styles.chipsWrap}>
-            {demoPantry.urgentItems.map((item) => (
-              <Chip
-                key={item.id}
-                label={item.name}
-                variant="urgent"
-                selected={false}
-                leftIcon={<View style={styles.chipDot} />}
-                onPress={() => router.push('/(tabs)/despensa')}
-              />
-            ))}
-          </View>
+              {/* Urgent items chips */}
+              <View style={styles.chipsWrap}>
+                {summary.urgentIngredients.map((item) => (
+                  <Chip
+                    key={item.id}
+                    label={item.name}
+                    variant="urgent"
+                    selected={false}
+                    leftIcon={<View style={styles.chipDot} />}
+                    onPress={() => router.push('/(tabs)/despensa')}
+                  />
+                ))}
+              </View>
+            </>
+          ) : (
+            <>
+              {/* All items are up to date notice */}
+              <View style={styles.okBanner} testID="home-pantry-all-ok-banner">
+                <View style={styles.okBannerLeft}>
+                  <MaterialIcons name="check-circle" size={18} color={colors.primary} />
+                  <Text style={[styles.okBannerTitle, typography.labelSm]}>
+                    Todos al día
+                  </Text>
+                </View>
+                <Text style={[styles.okBannerTag, typography.labelSm]}>
+                  Sin urgencias
+                </Text>
+              </View>
+
+              {/* Available items preview chips */}
+              <View style={styles.chipsWrap}>
+                {summary.availableIngredients.slice(0, 4).map((item) => (
+                  <Chip
+                    key={item.id}
+                    label={item.name}
+                    variant="filter"
+                    selected={false}
+                    onPress={() => router.push('/(tabs)/despensa')}
+                  />
+                ))}
+              </View>
+            </>
+          )}
         </Card>
 
         {/* 3. Available Budget Summary with Interactive Adjustment */}
@@ -314,15 +364,22 @@ export default function HomeScreen() {
           </View>
         </Card>
 
-        {/* 4. Recommendation of the Day (Identified as sample AI recommendation) */}
+        {/* 4. Recommendation of the Day (Identified as sample demonstration recipe) */}
         <View style={styles.recommendationSection}>
           <View style={styles.sectionHeaderRow}>
-            <Text style={[styles.sectionTitle, typography.headlineMd]}>
-              Recomendación del día
-            </Text>
-            <Text style={[styles.sectionSubtitle, typography.labelSm]}>
-              Optimizado a tu despensa
-            </Text>
+            <View>
+              <Text style={[styles.sectionTitle, typography.headlineMd]}>
+                Recomendación del día
+              </Text>
+              <Text style={[styles.sectionSubtitle, typography.labelSm]}>
+                Optimizado a tu despensa
+              </Text>
+            </View>
+            <View style={styles.demoBadge}>
+              <Text style={[styles.demoBadgeText, typography.labelSm]}>
+                Receta de ejemplo
+              </Text>
+            </View>
           </View>
 
           <Card variant="elevated" style={styles.recipeCard}>
@@ -331,7 +388,7 @@ export default function HomeScreen() {
                 source={require('../../assets/images/recipe-pollo-verduras.jpg')}
                 style={styles.recipeImage}
                 resizeMode="cover"
-                accessibilityLabel={`Foto del plato: ${demoRecipe.title} preparado en sartén`}
+                accessibilityLabel={`Foto del plato de ejemplo: ${demoRecipe.title}`}
               />
               {/* Score pill */}
               <View
@@ -390,7 +447,7 @@ export default function HomeScreen() {
                     <Text style={styles.highlightBold}>
                       {demoRecipe.urgentIngredientsUsedCount} productos
                     </Text>{' '}
-                    que deberías consumir pronto
+                    que deberías consumir pronto (ejemplo demostrativo)
                   </Text>
                 </View>
               </View>
@@ -408,8 +465,8 @@ export default function HomeScreen() {
                     'restaurant-menu'
                   )
                 }
-                accessibilityLabel="Ver receta de pollo con verduras"
-                accessibilityHint="Muestra los pasos detallados de la receta"
+                accessibilityLabel="Ver receta de pollo con verduras (ejemplo)"
+                accessibilityHint="Muestra los pasos detallados de la receta de demostración"
                 rightIcon={<MaterialIcons name="arrow-forward" size={18} color={colors.onPrimary} />}
               />
             </View>
@@ -726,6 +783,44 @@ const styles = StyleSheet.create({
   urgentBannerTag: {
     color: colors.secondary,
     fontWeight: '600',
+  },
+  okBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(91, 75, 138, 0.08)',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 7,
+    borderRadius: radius.md,
+    marginBottom: spacing.sm,
+  },
+  okBannerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  okBannerTitle: {
+    color: colors.primary,
+    fontWeight: '700',
+  },
+  okBannerTag: {
+    color: colors.outline,
+    fontWeight: '600',
+  },
+  emptyPantryBox: {
+    backgroundColor: colors.surfaceContainerLow,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  emptyPantryTitle: {
+    color: colors.textPrimary,
+    fontWeight: '700',
+  },
+  emptyPantryText: {
+    color: colors.textSecondary,
+    textAlign: 'center',
   },
   chipsWrap: {
     flexDirection: 'row',

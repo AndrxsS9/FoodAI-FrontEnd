@@ -17,3 +17,16 @@ export interface BudgetPreferences {
   maxMinutes?: number; // tiempo máximo en minutos (1-240)
   updatedAt: string; // ISO 8601
 }
+
+export interface SaveBudgetPreferencesInput {
+  budget?: number;
+  servings?: number;
+  maxMinutes?: number | null;
+  resetMaxMinutes?: boolean;
+}
+
+export const defaultBudgetPreferences: BudgetPreferences = {
+  budget: DEFAULT_BUDGET_COP,
+  servings: DEFAULT_SERVINGS,
+  updatedAt: new Date(0).toISOString(),
+};

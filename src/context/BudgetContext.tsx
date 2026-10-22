@@ -2,6 +2,9 @@
  * FoodAI - Contexto global y proveedor de presupuesto compartido (Fase 2C).
  * Sincroniza el presupuesto disponible, número de comensales y tiempo preferido
  * entre el Inicio, la Despensa y el Descubrimiento de Recetas.
+ *
+ * Incluye protección contra condiciones de carrera, hidratación obsoleta,
+ * serialización de mutaciones y propagación explícita de errores de almacenamiento.
  */
 import React, {
   createContext,
@@ -9,6 +12,7 @@ import React, {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import {
@@ -32,10 +36,13 @@ export interface BudgetContextValue {
   servings: number;
   maxMinutes?: number;
   isLoading: boolean;
+  storageError: string | null;
   setBudget: (amount: number) => Promise<void>;
   setServings: (servings: number) => Promise<void>;
-  setMaxMinutes: (minutes?: number) => Promise<void>;
+  setMaxMinutes: (minutes?: number | null) => Promise<void>;
   resetBudget: () => Promise<void>;
+  clearStorageError: () => void;
+  refresh: () => Promise<void>;
 }
 
 const defaultBudgetContextValue: BudgetContextValue = {
@@ -43,10 +50,13 @@ const defaultBudgetContextValue: BudgetContextValue = {
   servings: DEFAULT_SERVINGS,
   maxMinutes: undefined,
   isLoading: false,
+  storageError: null,
   setBudget: async () => {},
   setServings: async () => {},
   setMaxMinutes: async () => {},
   resetBudget: async () => {},
+  clearStorageError: () => {},
+  refresh: async () => {},
 };
 
 const BudgetContext = createContext<BudgetContextValue | undefined>(undefined);
@@ -67,23 +77,70 @@ export function BudgetProvider({
     ...initialPreferences,
   }));
   const [isLoading, setIsLoading] = useState<boolean>(!initialPreferences);
+  const [storageError, setStorageError] = useState<string | null>(null);
+
+  // Rastreo de versión operacional para evitar que lecturas asíncronas
+  // lentas sobreescriban mutaciones de usuario más recientes
+  const activeLoadsCountRef = useRef<number>(!initialPreferences ? 1 : 0);
+  const lastAppliedVersionRef = useRef<number>(0);
+  const nextOperationVersionRef = useRef<number>(0);
+
+  const loadFromStorage = useCallback(async () => {
+    const opVersion = ++nextOperationVersionRef.current;
+    activeLoadsCountRef.current += 1;
+    setIsLoading(true);
+    setStorageError(null);
+    try {
+      const loaded = await storageAdapter.getPreferences();
+      if (opVersion >= lastAppliedVersionRef.current) {
+        lastAppliedVersionRef.current = opVersion;
+        setPreferences(loaded);
+      }
+    } catch (error) {
+      if (opVersion >= lastAppliedVersionRef.current) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : 'Error al cargar las preferencias de presupuesto.';
+        setStorageError(message);
+      }
+    } finally {
+      activeLoadsCountRef.current = Math.max(0, activeLoadsCountRef.current - 1);
+      if (activeLoadsCountRef.current === 0) {
+        setIsLoading(false);
+      }
+    }
+  }, [storageAdapter]);
 
   useEffect(() => {
     let isMounted = true;
     if (!initialPreferences) {
+      const opVersion = ++nextOperationVersionRef.current;
       storageAdapter
         .getPreferences()
         .then((loaded) => {
-          if (isMounted) {
+          if (!isMounted) return;
+          if (opVersion >= lastAppliedVersionRef.current) {
+            lastAppliedVersionRef.current = opVersion;
             setPreferences(loaded);
           }
         })
-        .catch(() => {
-          // Si falla lectura, se mantiene el valor por defecto seguro
+        .catch((error) => {
+          if (!isMounted) return;
+          if (opVersion >= lastAppliedVersionRef.current) {
+            const message =
+              error instanceof Error
+                ? error.message
+                : 'Error inesperado al cargar el presupuesto.';
+            setStorageError(message);
+          }
         })
         .finally(() => {
           if (isMounted) {
-            setIsLoading(false);
+            activeLoadsCountRef.current = Math.max(0, activeLoadsCountRef.current - 1);
+            if (activeLoadsCountRef.current === 0) {
+              setIsLoading(false);
+            }
           }
         });
     }
@@ -99,11 +156,22 @@ export function BudgetProvider({
         throw new Error(validation.error);
       }
       const safeAmount = Math.round(amount);
-      setPreferences((prev) => ({ ...prev, budget: safeAmount }));
+      const opVersion = ++nextOperationVersionRef.current;
+      setStorageError(null);
+
       try {
-        await storageAdapter.savePreferences({ budget: safeAmount });
-      } catch {
-        // En caso de fallo de guardado en disco, se preserva el estado en memoria para la sesión activa
+        const committed = await storageAdapter.savePreferences({ budget: safeAmount });
+        if (opVersion >= lastAppliedVersionRef.current) {
+          lastAppliedVersionRef.current = opVersion;
+          setPreferences(committed);
+        }
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : 'Error al persistir el nuevo presupuesto.';
+        setStorageError(message);
+        throw error;
       }
     },
     [storageAdapter]
@@ -116,70 +184,122 @@ export function BudgetProvider({
         throw new Error(validation.error);
       }
       const safeServings = Math.round(servings);
-      setPreferences((prev) => ({ ...prev, servings: safeServings }));
+      const opVersion = ++nextOperationVersionRef.current;
+      setStorageError(null);
+
       try {
-        await storageAdapter.savePreferences({ servings: safeServings });
-      } catch {
-        // Preserva el estado en memoria
+        const committed = await storageAdapter.savePreferences({ servings: safeServings });
+        if (opVersion >= lastAppliedVersionRef.current) {
+          lastAppliedVersionRef.current = opVersion;
+          setPreferences(committed);
+        }
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : 'Error al persistir el número de comensales.';
+        setStorageError(message);
+        throw error;
       }
     },
     [storageAdapter]
   );
 
   const setMaxMinutes = useCallback(
-    async (minutes?: number): Promise<void> => {
-      if (minutes !== undefined) {
+    async (minutes?: number | null): Promise<void> => {
+      if (minutes !== undefined && minutes !== null) {
         const validation = validateMaxMinutesInput(minutes);
         if (!validation.isValid) {
           throw new Error(validation.error);
         }
       }
-      const safeMinutes = minutes !== undefined ? Math.round(minutes) : undefined;
-      setPreferences((prev) => ({ ...prev, maxMinutes: safeMinutes }));
+
+      const opVersion = ++nextOperationVersionRef.current;
+      setStorageError(null);
+
       try {
-        await storageAdapter.savePreferences({ maxMinutes: safeMinutes });
-      } catch {
-        // Preserva en memoria
+        const committed = await storageAdapter.savePreferences(
+          minutes === null || minutes === undefined
+            ? { resetMaxMinutes: true }
+            : { maxMinutes: Math.round(minutes) }
+        );
+        if (opVersion >= lastAppliedVersionRef.current) {
+          lastAppliedVersionRef.current = opVersion;
+          setPreferences(committed);
+        }
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : 'Error al persistir el tiempo máximo de preparación.';
+        setStorageError(message);
+        throw error;
       }
     },
     [storageAdapter]
   );
 
   const resetBudget = useCallback(async (): Promise<void> => {
-    setPreferences(defaultBudgetPreferences);
+    const opVersion = ++nextOperationVersionRef.current;
+    setStorageError(null);
     try {
-      await storageAdapter.resetPreferences();
-    } catch {
-      // Preserva en memoria
-    }
+      const fresh = await storageAdapter.resetPreferences();
+      if (opVersion >= lastAppliedVersionRef.current) {
+        lastAppliedVersionRef.current = opVersion;
+        setPreferences(fresh);
+      }
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Error al reiniciar las preferencias de presupuesto.';
+      setStorageError(message);
+      throw error;
+      }
   }, [storageAdapter]);
 
-  const contextValue = useMemo<BudgetContextValue>(
+  const clearStorageError = useCallback(() => {
+    setStorageError(null);
+  }, []);
+
+  const value = useMemo<BudgetContextValue>(
     () => ({
       budget: preferences.budget,
       servings: preferences.servings,
       maxMinutes: preferences.maxMinutes,
       isLoading,
+      storageError,
       setBudget,
       setServings,
       setMaxMinutes,
       resetBudget,
+      clearStorageError,
+      refresh: loadFromStorage,
     }),
-    [preferences, isLoading, setBudget, setServings, setMaxMinutes, resetBudget]
+    [
+      preferences.budget,
+      preferences.servings,
+      preferences.maxMinutes,
+      isLoading,
+      storageError,
+      setBudget,
+      setServings,
+      setMaxMinutes,
+      resetBudget,
+      clearStorageError,
+      loadFromStorage,
+    ]
   );
 
   return (
-    <BudgetContext.Provider value={contextValue}>
-      {children}
-    </BudgetContext.Provider>
+    <BudgetContext.Provider value={value}>{children}</BudgetContext.Provider>
   );
 }
 
-/**
- * Hook de acceso al presupuesto y preferencias compartidas.
- * Si se invoca fuera de un BudgetProvider, retorna valores por defecto seguros sin generar excepciones.
- */
 export function useBudget(): BudgetContextValue {
   const context = useContext(BudgetContext);
-  return context ?? defaultBudgetContextValue;
+  if (!context) {
+    return defaultBudgetContextValue;
+  }
+  return context;
 }

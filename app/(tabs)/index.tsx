@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import {
   Image,
   Pressable,
@@ -32,16 +32,11 @@ export default function HomeScreen() {
     icon: 'info',
   });
 
-  // Dynamic shared budget state with explicit user input modal
-  const { budget: sharedBudget, setBudget: setSharedBudget } = useBudget();
-  const [budget, setLocalBudget] = useState(sharedBudget);
+  // Dynamic shared budget state from authoritative BudgetContext
+  const { budget, setBudget } = useBudget();
   const [budgetModalVisible, setBudgetModalVisible] = useState(false);
-  const [tempBudgetText, setTempBudgetText] = useState(String(sharedBudget));
+  const [tempBudgetText, setTempBudgetText] = useState(String(budget));
   const [budgetError, setBudgetError] = useState<string | undefined>(undefined);
-
-  useEffect(() => {
-    setLocalBudget(sharedBudget);
-  }, [sharedBudget]);
 
   const showFeatureNotice = (
     title: string,
@@ -63,7 +58,7 @@ export default function HomeScreen() {
     setBudgetModalVisible(false);
   };
 
-  const handleSaveBudget = () => {
+  const handleSaveBudget = async () => {
     const sanitized = tempBudgetText.trim().replace(/[.,\s]/g, '');
     if (!sanitized) {
       setBudgetError('Por favor ingresa un monto de presupuesto.');
@@ -86,10 +81,17 @@ export default function HomeScreen() {
       return;
     }
 
-    setLocalBudget(parsed);
-    setSharedBudget(parsed);
-    setBudgetModalVisible(false);
-    setBudgetError(undefined);
+    try {
+      await setBudget(parsed);
+      setBudgetModalVisible(false);
+      setBudgetError(undefined);
+    } catch (err) {
+      setBudgetError(
+        err instanceof Error
+          ? err.message
+          : 'Error al persistir el nuevo presupuesto en el almacenamiento.'
+      );
+    }
   };
 
   const { summary } = usePantry();

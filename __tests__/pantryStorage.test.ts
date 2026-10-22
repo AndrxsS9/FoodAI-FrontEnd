@@ -5,6 +5,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   AsyncStoragePantryAdapter,
+  PantryStorageCorruptionError,
+  PantryStorageVersionError,
   isValidStoredIngredient,
   parseAndValidateStoredIngredients,
 } from '../src/services/storage/pantryStorage';
@@ -376,15 +378,62 @@ describe('Pantry Local Persistence & Storage Adapter', () => {
       expect(rawStored).toBe(futurePayload);
     });
 
-    it('creates backup and throws on corrupted payload without destroying data (Escenario G)', async () => {
+    it('creates confirmed backup and throws on corrupted payload without destroying data (Escenario G)', async () => {
       const corruptedData = '{"version": 1, "ingredients": [{"id": "corrupto';
       await AsyncStorage.setItem('@foodai:test_pantry', corruptedData);
 
-      await expect(adapter.getIngredients()).rejects.toThrow(
-        'Almacenamiento corrupto'
-      );
+      let thrownError: PantryStorageCorruptionError | null = null;
+      try {
+        await adapter.getIngredients();
+      } catch (err) {
+        thrownError = err as PantryStorageCorruptionError;
+      }
 
-      // Los datos corruptos no se borran silenciosamente
+      expect(thrownError).toBeInstanceOf(PantryStorageCorruptionError);
+      expect(thrownError?.backupCreated).toBe(true);
+      expect(thrownError?.backupKey).toBeDefined();
+      expect(thrownError?.message).toContain('Se preservó copia de respaldo');
+
+      // Comprobar que la copia de respaldo existe en AsyncStorage y coincide con el payload original
+      const backupStored = await AsyncStorage.getItem(thrownError!.backupKey!);
+      expect(backupStored).toBe(corruptedData);
+
+      // Los datos corruptos originales no se borran silenciosamente
+      const rawStored = await AsyncStorage.getItem('@foodai:test_pantry');
+      expect(rawStored).toBe(corruptedData);
+    });
+
+    it('handles backup write failure properly without claiming backup was created (Concern 2)', async () => {
+      const corruptedData = '{"version": 1, "ingredients": [{"id": "corrupto';
+      await AsyncStorage.setItem('@foodai:test_pantry', corruptedData);
+
+      const originalSetItem = AsyncStorage.setItem;
+      AsyncStorage.setItem = jest.fn(async (key: string, value: string, ...rest: unknown[]) => {
+        if (key.includes('_backup_')) {
+          throw new Error('Disk full');
+        }
+        return (originalSetItem as any)(key, value, ...rest);
+      });
+
+      let thrownError: PantryStorageCorruptionError | null = null;
+      try {
+        await adapter.getIngredients();
+      } catch (err) {
+        thrownError = err as PantryStorageCorruptionError;
+      } finally {
+        AsyncStorage.setItem = originalSetItem;
+      }
+
+      expect(thrownError).toBeInstanceOf(PantryStorageCorruptionError);
+      expect(thrownError?.backupCreated).toBe(false);
+      expect(thrownError?.backupKey).toBeUndefined();
+      expect(thrownError?.backupError).toContain('Disk full');
+      expect(thrownError?.message).toContain(
+        'No fue posible crear la copia de respaldo adicional'
+      );
+      expect(thrownError?.message).not.toContain('Se preservó copia de respaldo');
+
+      // El payload corrupto original sigue preservado intacto en el almacenamiento principal
       const rawStored = await AsyncStorage.getItem('@foodai:test_pantry');
       expect(rawStored).toBe(corruptedData);
     });
@@ -416,6 +465,108 @@ describe('Pantry Local Persistence & Storage Adapter', () => {
       const raw = await AsyncStorage.getItem('@foodai:test_pantry');
       const parsed = JSON.parse(raw!);
       expect(parsed.quarantinedRecords).toHaveLength(1);
+    });
+
+    it('enforces maximum quantity limit (100000) and rejects excessive increments (Concern 4)', async () => {
+      const item = await adapter.addIngredient({
+        name: 'Arroz',
+        quantity: 99999,
+        unit: 'g',
+        category: 'Granos y cereales',
+      });
+
+      // Incremento que alcanza exactamente el límite máximo de 100000
+      const atMax = await adapter.adjustQuantity(item.id, 1);
+      expect(atMax.quantity).toBe(100000);
+
+      // Incremento excesivo que superaría el límite de 100000 es rechazado con error explícito
+      await expect(adapter.adjustQuantity(item.id, 1)).rejects.toThrow(
+        'supera el límite máximo permitido de 100000'
+      );
+
+      // El valor en almacenamiento se mantiene en 100000 sin corromperse ni sobreescribirse
+      const stored = await adapter.getIngredients();
+      expect(stored[0].quantity).toBe(100000);
+    });
+
+    it('rejects invalid deltas such as NaN, Infinity, and non-numeric values in adjustQuantity', async () => {
+      const item = await adapter.addIngredient({
+        name: 'Azúcar',
+        quantity: 500,
+        unit: 'g',
+        category: 'Alacena',
+      });
+
+      await expect(adapter.adjustQuantity(item.id, NaN)).rejects.toThrow(
+        'El incremento de cantidad debe ser un número finito válido.'
+      );
+      await expect(adapter.adjustQuantity(item.id, Infinity)).rejects.toThrow(
+        'El incremento de cantidad debe ser un número finito válido.'
+      );
+      await expect(adapter.adjustQuantity(item.id, -Infinity)).rejects.toThrow(
+        'El incremento de cantidad debe ser un número finito válido.'
+      );
+      await expect(
+        adapter.adjustQuantity(item.id, 'dos' as unknown as number)
+      ).rejects.toThrow(
+        'El incremento de cantidad debe ser un número finito válido.'
+      );
+    });
+
+    it('preserves consistent 3-decimal precision across adjustments', async () => {
+      const item = await adapter.addIngredient({
+        name: 'Canela',
+        quantity: 0.125,
+        unit: 'kg',
+        category: 'Alacena',
+      });
+
+      const updated = await adapter.adjustQuantity(item.id, 0.375);
+      expect(updated.quantity).toBe(0.5);
+
+      const updated2 = await adapter.adjustQuantity(item.id, 0.123);
+      expect(updated2.quantity).toBe(0.623);
+    });
+
+    it('rejects non-positive or above-max quantities in addIngredient and updateIngredient', async () => {
+      await expect(
+        adapter.addIngredient({
+          name: 'Sal',
+          quantity: 0,
+          unit: 'g',
+          category: 'Alacena',
+        })
+      ).rejects.toThrow('número positivo menor o igual a 100000');
+
+      await expect(
+        adapter.addIngredient({
+          name: 'Sal',
+          quantity: 150000,
+          unit: 'g',
+          category: 'Alacena',
+        })
+      ).rejects.toThrow('número positivo menor o igual a 100000');
+
+      const valid = await adapter.addIngredient({
+        name: 'Sal',
+        quantity: 100,
+        unit: 'g',
+        category: 'Alacena',
+      });
+
+      await expect(
+        adapter.updateIngredient({
+          id: valid.id,
+          quantity: -10,
+        })
+      ).rejects.toThrow('número positivo menor o igual a 100000');
+
+      await expect(
+        adapter.updateIngredient({
+          id: valid.id,
+          quantity: 200000,
+        })
+      ).rejects.toThrow('número positivo menor o igual a 100000');
     });
   });
 });

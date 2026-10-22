@@ -16,6 +16,7 @@ import {
 } from '../../types/pantry';
 import {
   MAX_INGREDIENT_NAME_LENGTH,
+  MAX_INGREDIENT_QUANTITY,
   MIN_INGREDIENT_NAME_LENGTH,
   isValidDateString,
   isValidIsoTimestamp,
@@ -53,12 +54,29 @@ export class PantryStorageVersionError extends Error {
   }
 }
 
+export interface PantryStorageCorruptionDetails {
+  backupCreated: boolean;
+  backupKey?: string;
+  backupError?: string;
+}
+
 export class PantryStorageCorruptionError extends Error {
   readonly rawPayload: string;
-  constructor(message: string, rawPayload: string) {
+  readonly backupCreated: boolean;
+  readonly backupKey?: string;
+  readonly backupError?: string;
+
+  constructor(
+    message: string,
+    rawPayload: string,
+    details?: PantryStorageCorruptionDetails
+  ) {
     super(message);
     this.name = 'PantryStorageCorruptionError';
     this.rawPayload = rawPayload;
+    this.backupCreated = details?.backupCreated ?? false;
+    this.backupKey = details?.backupKey;
+    this.backupError = details?.backupError;
   }
 }
 
@@ -219,7 +237,13 @@ export function parseStoredIngredientsEnvelope(
       };
     }
 
-    if (!Array.isArray(envelope.ingredients)) {
+    const rawIngredients = Array.isArray(envelope.ingredients)
+      ? envelope.ingredients
+      : Array.isArray(envelope.items)
+      ? envelope.items
+      : null;
+
+    if (!rawIngredients) {
       return {
         status: 'corrupt',
         error: 'El campo ingredients no es una lista válida.',
@@ -233,7 +257,7 @@ export function parseStoredIngredientsEnvelope(
       ? [...envelope.quarantinedRecords]
       : [];
 
-    for (const item of envelope.ingredients) {
+    for (const item of rawIngredients) {
       if (isValidStoredIngredient(item)) {
         if (!seenIds.has(item.id)) {
           seenIds.add(item.id);
@@ -333,7 +357,7 @@ export class AsyncStoragePantryAdapter implements PantryStorageAdapter {
   }
 
   /**
-   * Serializa la ejecución de operaciones de mutación (read-modify-write).
+   * Serializa la ejecución de operaciones de mutación y lectura (FIFO Mutex).
    * Cada operación espera que la anterior finalice (con éxito o fallo) antes de iniciar,
    * preservando el orden estricto de llegada y evitando que escrituras concurrentes
    * lean el mismo estado previo y se sobreescriban entre sí.
@@ -344,7 +368,11 @@ export class AsyncStoragePantryAdapter implements PantryStorageAdapter {
     return next;
   }
 
-  async getIngredients(): Promise<Ingredient[]> {
+  /**
+   * Lectura interna directa sin pasar por `enqueue`, diseñada para consumo
+   * de métodos que ya se ejecutan encolados y evitar deadlocks de autorreferencia.
+   */
+  private async getIngredientsInternal(): Promise<Ingredient[]> {
     try {
       const rawData = await AsyncStorage.getItem(this.storageKey);
       const parsed = parseStoredIngredientsEnvelope(rawData);
@@ -354,16 +382,42 @@ export class AsyncStoragePantryAdapter implements PantryStorageAdapter {
       }
 
       if (parsed.status === 'corrupt') {
-        // Preservar payload corrupto original antes de cualquier acción
+        /**
+         * DISTINCIÓN FUNDAMENTAL DE INTEGRIDAD DE DATOS:
+         * 1. Preservación del payload original: El contenido corrupto en `this.storageKey`
+         *    permanece intacto y JAMÁS se borra ni se sobreescribe con un estado vacío o regenerado.
+         * 2. Respaldo adicional: Se intenta escribir una copia de seguridad en una clave timestamped.
+         *    Se confirma explícitamente si la escritura del respaldo tuvo éxito o falló,
+         *    y NUNCA se reporta que existe un respaldo si la operación de escritura falló.
+         */
+        const backupKey = `${this.storageKey}_backup_${Date.now()}`;
+        let backupCreated = false;
+        let backupError: string | undefined;
+
         try {
-          await AsyncStorage.setItem(
-            `${this.storageKey}_backup_${Date.now()}`,
-            parsed.rawPayload
+          await AsyncStorage.setItem(backupKey, parsed.rawPayload);
+          backupCreated = true;
+        } catch (err) {
+          backupCreated = false;
+          backupError = err instanceof Error ? err.message : String(err);
+          console.warn(
+            `[PantryStorage] Advertencia: Fallo al crear la copia de respaldo en ${backupKey}:`,
+            err
           );
-        } catch {}
+        }
+
+        const errorMessage = backupCreated
+          ? `Almacenamiento corrupto: ${parsed.error}. Se preservó copia de respaldo en «${backupKey}». El payload original permanece intacto.`
+          : `Almacenamiento corrupto: ${parsed.error}. No fue posible crear la copia de respaldo adicional (${backupError}). El payload original permanece intacto sin sobreescribir.`;
+
         throw new PantryStorageCorruptionError(
-          `Almacenamiento corrupto: ${parsed.error}. Se preservó copia de respaldo.`,
-          parsed.rawPayload
+          errorMessage,
+          parsed.rawPayload,
+          {
+            backupCreated,
+            backupKey: backupCreated ? backupKey : undefined,
+            backupError,
+          }
         );
       }
 
@@ -384,6 +438,10 @@ export class AsyncStoragePantryAdapter implements PantryStorageAdapter {
         'No fue posible cargar los ingredientes desde el almacenamiento local.'
       );
     }
+  }
+
+  async getIngredients(): Promise<Ingredient[]> {
+    return this.enqueue(() => this.getIngredientsInternal());
   }
 
   private async saveIngredientsInternal(
@@ -416,12 +474,18 @@ export class AsyncStoragePantryAdapter implements PantryStorageAdapter {
 
   async addIngredient(input: CreateIngredientInput): Promise<Ingredient> {
     return this.enqueue(async () => {
-      const current = await this.getIngredients();
+      if (!isValidQuantityValue(input.quantity)) {
+        throw new Error(
+          `La cantidad del ingrediente debe ser un número positivo menor o igual a ${MAX_INGREDIENT_QUANTITY}.`
+        );
+      }
+
+      const current = await this.getIngredientsInternal();
       const now = new Date().toISOString();
       const newIngredient: Ingredient = {
         id: `ing-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
         name: input.name.trim(),
-        quantity: input.quantity,
+        quantity: Math.round(input.quantity * 1000) / 1000,
         unit: input.unit,
         category: input.category,
         expirationDate: input.expirationDate,
@@ -437,7 +501,13 @@ export class AsyncStoragePantryAdapter implements PantryStorageAdapter {
 
   async updateIngredient(input: UpdateIngredientInput): Promise<Ingredient> {
     return this.enqueue(async () => {
-      const current = await this.getIngredients();
+      if (input.quantity !== undefined && !isValidQuantityValue(input.quantity)) {
+        throw new Error(
+          `La cantidad debe ser un número positivo menor o igual a ${MAX_INGREDIENT_QUANTITY}.`
+        );
+      }
+
+      const current = await this.getIngredientsInternal();
       const index = current.findIndex((item) => item.id === input.id);
 
       if (index === -1) {
@@ -458,11 +528,15 @@ export class AsyncStoragePantryAdapter implements PantryStorageAdapter {
         resolvedExpirationDate = input.expirationDate;
       }
 
+      const resolvedQuantity =
+        input.quantity !== undefined
+          ? Math.round(input.quantity * 1000) / 1000
+          : existing.quantity;
+
       const updatedItem: Ingredient = {
         ...existing,
         name: input.name !== undefined ? input.name.trim() : existing.name,
-        quantity:
-          input.quantity !== undefined ? input.quantity : existing.quantity,
+        quantity: resolvedQuantity,
         unit: input.unit !== undefined ? input.unit : existing.unit,
         category:
           input.category !== undefined ? input.category : existing.category,
@@ -480,7 +554,7 @@ export class AsyncStoragePantryAdapter implements PantryStorageAdapter {
 
   async deleteIngredient(id: string): Promise<void> {
     return this.enqueue(async () => {
-      const current = await this.getIngredients();
+      const current = await this.getIngredientsInternal();
       const filtered = current.filter((item) => item.id !== id);
       await this.saveIngredientsInternal(filtered);
     });
@@ -488,7 +562,11 @@ export class AsyncStoragePantryAdapter implements PantryStorageAdapter {
 
   async adjustQuantity(id: string, delta: number): Promise<Ingredient> {
     return this.enqueue(async () => {
-      const current = await this.getIngredients();
+      if (typeof delta !== 'number' || !Number.isFinite(delta) || Number.isNaN(delta)) {
+        throw new Error('El incremento de cantidad debe ser un número finito válido.');
+      }
+
+      const current = await this.getIngredientsInternal();
       const index = current.findIndex((item) => item.id === id);
 
       if (index === -1) {
@@ -496,15 +574,30 @@ export class AsyncStoragePantryAdapter implements PantryStorageAdapter {
       }
 
       const existing = current[index];
-      const newQty = Math.round((existing.quantity + delta) * 100) / 100;
-      if (newQty <= 0) {
+      if (delta === 0) {
         return existing;
+      }
+
+      const rawNewQty = existing.quantity + delta;
+      const roundedNewQty = Math.round(rawNewQty * 1000) / 1000;
+
+      // Límite inferior explícito: la cantidad no puede ser menor o igual a cero.
+      // Se ignora el decremento inválido y se conserva el valor actual del ingrediente.
+      if (roundedNewQty <= 0) {
+        return existing;
+      }
+
+      // Límite superior explícito: la cantidad resultante no puede exceder MAX_INGREDIENT_QUANTITY (100000).
+      if (roundedNewQty > MAX_INGREDIENT_QUANTITY) {
+        throw new Error(
+          `La cantidad resultante (${roundedNewQty}) supera el límite máximo permitido de ${MAX_INGREDIENT_QUANTITY}.`
+        );
       }
 
       const now = new Date().toISOString();
       const updatedItem: Ingredient = {
         ...existing,
-        quantity: newQty,
+        quantity: roundedNewQty,
         updatedAt: now,
       };
 

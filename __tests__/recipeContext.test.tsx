@@ -6,7 +6,7 @@
 import React from 'react';
 import { renderHook, act } from '@testing-library/react-native';
 import { RecipeProvider, useRecipes } from '../src/context/RecipeContext';
-import { BudgetProvider } from '../src/context/BudgetContext';
+import { BudgetProvider, useBudget } from '../src/context/BudgetContext';
 import { BackendRecipe } from '../src/types/recipe';
 
 describe('RecipeContext & RecipeProvider (Fase 2C)', () => {
@@ -67,7 +67,7 @@ describe('RecipeContext & RecipeProvider (Fase 2C)', () => {
     expect(result.current.selectedRecipe).toBeDefined();
     expect(result.current.selectedRecipe?.id).toBe('demo-rec-1');
 
-    // La resolución prioriza la receta seleccionada en sesión
+    // La resolución prioriza la receta seleccionada en sesión si no está en la colección
     const resolved = result.current.getRecipeById('demo-rec-1');
     expect(resolved?.id).toBe('demo-rec-1');
 
@@ -129,5 +129,236 @@ describe('RecipeContext & RecipeProvider (Fase 2C)', () => {
     const second = result.current.getRecipeById('arroz-con-pollo-2');
     expect(first?.totalMinutes).toBe(35);
     expect(second?.totalMinutes).toBe(20);
+  });
+
+  it('desambigua colisiones complejas con Set de IDs reservados para nombres como Arroz, Arroz y Arroz 2', async () => {
+    const { result } = await renderHook(() => useRecipes(), {
+      wrapper: createWrapper(),
+    });
+
+    const collisionMockRecipes: BackendRecipe[] = [
+      {
+        name: 'Arroz',
+        description: 'Arroz blanco clásico',
+        totalMinutes: 20,
+        ingredients: [{ name: 'Arroz', quantity: 200, unit: 'g' }],
+        steps: ['Cocinar'],
+        availableIngredients: [{ name: 'Arroz', quantity: 200, unit: 'g' }],
+        missingIngredients: [],
+        estimatedMissingCost: 0,
+        budgetRemaining: 20000,
+        withinBudget: true,
+        convenience: 90,
+        reason: 'Básico',
+      },
+      {
+        name: 'Arroz',
+        description: 'Arroz frito',
+        totalMinutes: 25,
+        ingredients: [{ name: 'Arroz', quantity: 200, unit: 'g' }],
+        steps: ['Saltear'],
+        availableIngredients: [{ name: 'Arroz', quantity: 200, unit: 'g' }],
+        missingIngredients: [],
+        estimatedMissingCost: 0,
+        budgetRemaining: 20000,
+        withinBudget: true,
+        convenience: 85,
+        reason: 'Variante',
+      },
+      {
+        name: 'Arroz 2',
+        description: 'Arroz con ajo',
+        totalMinutes: 22,
+        ingredients: [{ name: 'Arroz', quantity: 200, unit: 'g' }],
+        steps: ['Dorar ajo y cocinar arroz'],
+        availableIngredients: [{ name: 'Arroz', quantity: 200, unit: 'g' }],
+        missingIngredients: [],
+        estimatedMissingCost: 0,
+        budgetRemaining: 20000,
+        withinBudget: true,
+        convenience: 80,
+        reason: 'Con ajo',
+      },
+    ];
+
+    await act(async () => {
+      result.current.setRealRecipes(collisionMockRecipes);
+    });
+
+    expect(result.current.recipes.length).toBe(3);
+    const ids = result.current.recipes.map((r) => r.id);
+    expect(ids[0]).toBe('arroz');
+    expect(ids[1]).toBe('arroz-2');
+    expect(ids[2]).toBe('arroz-2-2');
+
+    // Comprobar que los tres IDs son únicos en el conjunto
+    expect(new Set(ids).size).toBe(3);
+  });
+
+  it('prioriza IDs exactos de cliente sobre slugs y sobre la receta seleccionada en sesión (sin eclipsar)', async () => {
+    const { result } = await renderHook(() => useRecipes(), {
+      wrapper: createWrapper(),
+    });
+
+    const mockRecipes: BackendRecipe[] = [
+      {
+        name: 'Arroz',
+        description: 'Arroz blanco clásico',
+        totalMinutes: 20,
+        ingredients: [],
+        steps: [],
+        availableIngredients: [],
+        missingIngredients: [],
+        estimatedMissingCost: 0,
+        budgetRemaining: 20000,
+        withinBudget: true,
+        convenience: 90,
+        reason: '',
+      },
+      {
+        name: 'Arroz',
+        description: 'Arroz frito',
+        totalMinutes: 25,
+        ingredients: [],
+        steps: [],
+        availableIngredients: [],
+        missingIngredients: [],
+        estimatedMissingCost: 0,
+        budgetRemaining: 20000,
+        withinBudget: true,
+        convenience: 85,
+        reason: '',
+      },
+    ];
+
+    await act(async () => {
+      result.current.setRealRecipes(mockRecipes);
+    });
+
+    // Seleccionamos el segundo arroz ('arroz-2')
+    await act(async () => {
+      result.current.selectRecipe('arroz-2');
+    });
+
+    expect(result.current.selectedRecipe?.id).toBe('arroz-2');
+    expect(result.current.selectedRecipe?.description).toBe('Arroz frito');
+
+    // Resolver por el ID exacto 'arroz' (el primer arroz).
+    // NO debe ser eclipsado por la receta seleccionada 'arroz-2' (cuyo nombre también es 'Arroz')
+    const resolvedFirst = result.current.getRecipeById('arroz');
+    expect(resolvedFirst).toBeDefined();
+    expect(resolvedFirst?.id).toBe('arroz');
+    expect(resolvedFirst?.description).toBe('Arroz blanco clásico');
+  });
+
+  it('limpia o actualiza la receta seleccionada cuando cambia la colección de recetas reales', async () => {
+    const { result } = await renderHook(() => useRecipes(), {
+      wrapper: createWrapper(),
+    });
+
+    const initialCollection: BackendRecipe[] = [
+      {
+        name: 'Pollo al horno',
+        description: 'Pollo asado',
+        totalMinutes: 45,
+        ingredients: [],
+        steps: [],
+        availableIngredients: [],
+        missingIngredients: [],
+        estimatedMissingCost: 0,
+        budgetRemaining: 20000,
+        withinBudget: true,
+        convenience: 90,
+        reason: '',
+      },
+    ];
+
+    await act(async () => {
+      result.current.setRealRecipes(initialCollection);
+    });
+
+    await act(async () => {
+      result.current.selectRecipe('pollo-al-horno');
+    });
+
+    expect(result.current.selectedRecipe?.id).toBe('pollo-al-horno');
+
+    // Ahora se reemplaza la colección activa por una que NO incluye Pollo al horno
+    const newCollection: BackendRecipe[] = [
+      {
+        name: 'Sopa de verduras',
+        description: 'Sopa ligera',
+        totalMinutes: 20,
+        ingredients: [],
+        steps: [],
+        availableIngredients: [],
+        missingIngredients: [],
+        estimatedMissingCost: 0,
+        budgetRemaining: 20000,
+        withinBudget: true,
+        convenience: 80,
+        reason: '',
+      },
+    ];
+
+    await act(async () => {
+      result.current.setRealRecipes(newCollection);
+    });
+
+    // La receta seleccionada obsoleta debe haber sido limpiada a null
+    expect(result.current.selectedRecipe).toBeNull();
+  });
+
+  it('limpia la receta seleccionada al alternar entre modo demo y modo real', async () => {
+    const { result } = await renderHook(() => useRecipes(), {
+      wrapper: createWrapper(),
+    });
+
+    // En modo demo, seleccionar una receta demo
+    await act(async () => {
+      result.current.selectRecipe('demo-rec-1');
+    });
+    expect(result.current.selectedRecipe?.id).toBe('demo-rec-1');
+
+    // Desactivar modo demo
+    await act(async () => {
+      result.current.setDemoMode(false);
+    });
+    expect(result.current.selectedRecipe).toBeNull();
+  });
+
+  it('actualiza de forma reactiva las porciones y costos de la receta demo seleccionada al cambiar comensales', async () => {
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <BudgetProvider initialPreferences={{ budget: 20000, servings: 2 }}>
+        <RecipeProvider>{children}</RecipeProvider>
+      </BudgetProvider>
+    );
+
+    const useCombined = () => ({
+      budget: useBudget(),
+      recipes: useRecipes(),
+    });
+
+    const { result } = await renderHook(() => useCombined(), { wrapper });
+
+    // Seleccionar demo-rec-1 con 2 porciones iniciales
+    await act(async () => {
+      result.current.recipes.selectRecipe('demo-rec-1');
+    });
+
+    expect(result.current.recipes.selectedRecipe?.id).toBe('demo-rec-1');
+    expect(result.current.recipes.selectedRecipe?.servings).toBe(2);
+    const initialCost = result.current.recipes.selectedRecipe?.estimatedMissingCost ?? 0;
+    expect(initialCost).toBe(5800);
+
+    // Cambiar comensales a 4 (duplicar porciones)
+    await act(async () => {
+      await result.current.budget.setServings(4);
+    });
+
+    // La receta seleccionada NO debe quedar obsoleta: sus porciones y costo deben actualizarse automáticamente
+    expect(result.current.recipes.selectedRecipe?.id).toBe('demo-rec-1');
+    expect(result.current.recipes.selectedRecipe?.servings).toBe(4);
+    expect(result.current.recipes.selectedRecipe?.estimatedMissingCost).toBe(initialCost * 2);
   });
 });

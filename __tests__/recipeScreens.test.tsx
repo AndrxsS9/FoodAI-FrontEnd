@@ -36,6 +36,7 @@ import { BudgetProvider } from '../src/context/BudgetContext';
 import { RecipeProvider } from '../src/context/RecipeContext';
 import { Ingredient } from '../src/types/pantry';
 import { BudgetPreferences } from '../src/types/budget';
+import { ClientRecipe } from '../src/types/recipe';
 
 // Control de mock de Expo Router
 const mockPush = jest.fn();
@@ -102,6 +103,8 @@ const renderWithProviders = async (
   options?: {
     initialIngredients?: Ingredient[];
     initialBudgetPreferences?: Partial<BudgetPreferences>;
+    initialRecipes?: ClientRecipe[];
+    initialIsDemoMode?: boolean;
   }
 ) => {
   return await render(
@@ -120,7 +123,10 @@ const renderWithProviders = async (
               options?.initialBudgetPreferences ?? { budget: 20000, servings: 2 }
             }
           >
-            <RecipeProvider>
+            <RecipeProvider
+              initialRecipes={options?.initialRecipes}
+              initialIsDemoMode={options?.initialIsDemoMode}
+            >
               {ui}
             </RecipeProvider>
           </BudgetProvider>
@@ -160,6 +166,42 @@ describe('FoodAI Phase 2C - Recipe Discovery, Details & Cooking Mode Tests', () 
       const banner = getByTestId('recipes-demo-banner');
       expect(banner).toBeTruthy();
       expect(getByText(/Recetas de demostración para evaluación de interfaz/i)).toBeTruthy();
+    });
+
+    it('no muestra el banner de demostración cuando se cargan recomendaciones reales (isDemoMode es false)', async () => {
+      const realMockRecipe: ClientRecipe = {
+        id: 'receta-real-1',
+        name: 'Sopa casera de lentejas',
+        description: 'Preparación real basada en ingredientes actuales',
+        totalMinutes: 30,
+        servings: 2,
+        convenience: '90% conveniente',
+        estimatedMissingCost: 2000,
+        budgetRemaining: 18000,
+        withinBudget: true,
+        reason: 'Aprovecha lentejas en despensa',
+        isDemoFixture: false,
+        ingredients: [{ name: 'Lentejas', quantity: 200, unit: 'g' }],
+        availableIngredients: [{ name: 'Lentejas', quantity: 200, unit: 'g' }],
+        missingIngredients: [],
+        steps: ['Cocinar lentejas a fuego lento'],
+      };
+
+      const { queryByTestId, getByText, queryByText } = await renderWithProviders(
+        <RecipeDiscoveryScreen />,
+        {
+          initialIsDemoMode: false,
+          initialRecipes: [realMockRecipe],
+        }
+      );
+
+      // El banner de demostración NO debe aparecer en modo real
+      expect(queryByTestId('recipes-demo-banner')).toBeNull();
+      expect(queryByText(/Recetas de demostración para evaluación de interfaz/i)).toBeNull();
+
+      // La receta real debe mostrarse correctamente en la lista
+      expect(getByText('Sopa casera de lentejas')).toBeTruthy();
+      expect(getByText('$2.000 COP')).toBeTruthy();
     });
 
     it('permite filtrar recetas mediante el campo de búsqueda de texto', async () => {

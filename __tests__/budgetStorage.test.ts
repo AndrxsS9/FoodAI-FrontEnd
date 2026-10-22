@@ -146,4 +146,38 @@ describe('BudgetStorage Adapter (Fase 2C)', () => {
     const current = await budgetStorage.getPreferences();
     expect(current.budget).toBe(DEFAULT_BUDGET_COP);
   });
+
+  it('rechaza resetPreferences ante versiones futuras no compatibles y preserva los datos almacenados', async () => {
+    const futureEnvelope = {
+      version: 99,
+      updatedAt: '2099-01-01T00:00:00.000Z',
+      preferences: { budget: 99000, servings: 8 },
+    };
+    const futurePayload = JSON.stringify(futureEnvelope);
+    await AsyncStorage.setItem(BUDGET_STORAGE_KEY, futurePayload);
+
+    // Debe rechazar el reset con el error tipado correspondiente
+    await expect(budgetStorage.resetPreferences()).rejects.toThrow(BudgetStorageVersionError);
+
+    // El sobre de versión futura original NO debe haber sido sobreescrito
+    const rawStored = await AsyncStorage.getItem(BUDGET_STORAGE_KEY);
+    expect(rawStored).toBe(futurePayload);
+  });
+
+  it('rechaza resetPreferences ante almacenamiento corrupto y preserva el payload original', async () => {
+    const corruptPayload = 'CORRUPTED_JSON_DATA_FOR_RESET_{';
+    await AsyncStorage.setItem(BUDGET_STORAGE_KEY, corruptPayload);
+
+    // Debe rechazar el reset con el error tipado de corrupción
+    await expect(budgetStorage.resetPreferences()).rejects.toThrow(BudgetStorageCorruptionError);
+
+    // El payload corrupto original no debe ser sobreescrito silenciosamente
+    const rawStored = await AsyncStorage.getItem(BUDGET_STORAGE_KEY);
+    expect(rawStored).toBe(corruptPayload);
+
+    // Debe existir una copia de respaldo timestamped creada
+    const allKeys = await AsyncStorage.getAllKeys();
+    const backupKeys = allKeys.filter((k) => k.startsWith(`${BUDGET_STORAGE_KEY}_backup_`));
+    expect(backupKeys.length).toBeGreaterThan(0);
+  });
 });

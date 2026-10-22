@@ -297,6 +297,9 @@ export class AsyncStorageBudgetAdapter implements BudgetStorageAdapter {
   }
 
   private async resetPreferencesInternal(): Promise<BudgetPreferences> {
+    // Validar versión y estado de integridad previos antes de sobreescribir
+    await this.getPreferencesInternal();
+
     const fresh: BudgetPreferences = {
       ...defaultBudgetPreferences,
       updatedAt: new Date().toISOString(),

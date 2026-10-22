@@ -36,6 +36,7 @@ export default function RecipeDiscoveryScreen() {
   const { budget, servings, setServings } = useBudget();
   const {
     recipes,
+    isDemoMode,
     demoMeta,
     selectRecipe,
     isLoading,
@@ -153,23 +154,25 @@ export default function RecipeDiscoveryScreen() {
         showsVerticalScrollIndicator={false}
         testID="recipes-scroll-view"
       >
-        {/* 2. Banner de transparencia de datos demostrativos */}
-        <View
-          style={styles.demoBanner}
-          testID="recipes-demo-banner"
-          accessibilityRole="text"
-          accessibilityLabel={demoMeta.noticeText}
-        >
-          <View style={styles.demoBadge}>
-            <MaterialIcons name="science" size={14} color={colors.primary} />
-            <Text style={[styles.demoBadgeText, typography.labelSm]}>
-              {demoMeta.badgeLabel}
+        {/* 2. Banner de transparencia de datos demostrativos (solo en modo demo) */}
+        {isDemoMode && (
+          <View
+            style={styles.demoBanner}
+            testID="recipes-demo-banner"
+            accessibilityRole="text"
+            accessibilityLabel={demoMeta.noticeText}
+          >
+            <View style={styles.demoBadge}>
+              <MaterialIcons name="science" size={14} color={colors.primary} />
+              <Text style={[styles.demoBadgeText, typography.labelSm]}>
+                {demoMeta.badgeLabel}
+              </Text>
+            </View>
+            <Text style={[styles.demoNoticeText, typography.bodySm]}>
+              {demoMeta.noticeText}
             </Text>
           </View>
-          <Text style={[styles.demoNoticeText, typography.bodySm]}>
-            {demoMeta.noticeText}
-          </Text>
-        </View>
+        )}
 
         {/* 2.1. Aviso cuando la despensa está vacía */}
         {summary.totalCount === 0 && (

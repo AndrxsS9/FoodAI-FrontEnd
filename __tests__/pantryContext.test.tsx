@@ -347,6 +347,108 @@ describe('PantryContext State Management', () => {
     // La mutación más reciente ("Plátano") NO debe ser sobreescrita por la lectura obsoleta
     expect(result.current.ingredients).toHaveLength(1);
     expect(result.current.ingredients[0].name).toBe('Plátano');
+    // El indicador de carga debe apagarse correctamente (Issue 1)
+    expect(result.current.isLoading).toBe(false);
+  });
+
+  it('prevents stale initial hydration errors from overwriting successful mutations and clears loading state (Issue 1)', async () => {
+    let rejectGetIngredients!: (err: Error) => void;
+    const delayedGetPromise = new Promise<Ingredient[]>((_, rej) => {
+      rejectGetIngredients = rej;
+    });
+
+    const mockAdapter: PantryStorageAdapter = {
+      getIngredients: jest.fn().mockReturnValueOnce(delayedGetPromise),
+      saveIngredients: jest.fn().mockResolvedValue(undefined),
+      addIngredient: jest.fn().mockImplementation(async (input: CreateIngredientInput) => ({
+        id: 'new-2',
+        name: input.name,
+        quantity: input.quantity,
+        unit: input.unit,
+        category: input.category,
+        createdAt: '',
+        updatedAt: '',
+      })),
+      updateIngredient: jest.fn(),
+      deleteIngredient: jest.fn(),
+      clearIngredients: jest.fn(),
+    };
+
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <PantryProvider storageAdapter={mockAdapter}>
+        {children}
+      </PantryProvider>
+    );
+
+    const { result } = await renderHook(() => usePantry(), { wrapper });
+
+    // Mutación exitosa mientras la hidratación está pendiente
+    await act(async () => {
+      await result.current.addIngredient({
+        name: 'Uvas',
+        quantity: 1,
+        unit: 'kg',
+        category: 'Verduras y frutas',
+      });
+    });
+
+    expect(result.current.ingredients).toHaveLength(1);
+    expect(result.current.storageError).toBeNull();
+
+    // La hidratación inicial demorada falla con error
+    await act(async () => {
+      rejectGetIngredients(new Error('Hydration disk failure'));
+    });
+
+    // El error obsoleto de hidratación NO sobreescribe el estado exitoso
+    expect(result.current.storageError).toBeNull();
+    expect(result.current.ingredients).toHaveLength(1);
+    expect(result.current.ingredients[0].name).toBe('Uvas');
+    // El indicador de carga finaliza adecuadamente
+    expect(result.current.isLoading).toBe(false);
+  });
+
+  it('clears loading state when refresh is delayed and overlaps with a mutation (Issue 1)', async () => {
+    let resolveRefresh!: (val: Ingredient[]) => void;
+    const refreshPromise = new Promise<Ingredient[]>((res) => {
+      resolveRefresh = res;
+    });
+
+    const initial: Ingredient[] = [
+      { id: 'ref-1', name: 'Huevos', quantity: 6, unit: 'unidad', category: 'Lácteos', createdAt: '', updatedAt: '' },
+    ];
+
+    const mockAdapter: PantryStorageAdapter = {
+      getIngredients: jest.fn().mockResolvedValueOnce(initial).mockReturnValueOnce(refreshPromise),
+      saveIngredients: jest.fn().mockResolvedValue(undefined),
+      addIngredient: jest.fn(),
+      updateIngredient: jest.fn().mockImplementation(async (input: UpdateIngredientInput) => ({
+        ...initial[0],
+        quantity: input.quantity ?? initial[0].quantity,
+      })),
+      deleteIngredient: jest.fn(),
+      clearIngredients: jest.fn(),
+    };
+
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <PantryProvider storageAdapter={mockAdapter} initialIngredients={initial}>
+        {children}
+      </PantryProvider>
+    );
+
+    const { result } = await renderHook(() => usePantry(), { wrapper });
+
+    // Iniciar refresh y una mutación concurrente
+    await act(async () => {
+      const refreshCall = result.current.refresh();
+      await result.current.updateIngredient({ id: 'ref-1', quantity: 12 });
+      resolveRefresh(initial);
+      await refreshCall;
+    });
+
+    // La mutación más reciente no es sobreescrita y isLoading se apaga
+    expect(result.current.ingredients[0].quantity).toBe(12);
+    expect(result.current.isLoading).toBe(false);
   });
 
   it('handles refresh during concurrent writes preserving final persisted state (Concern 3)', async () => {

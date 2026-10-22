@@ -55,13 +55,17 @@ export function PantryProvider({
   const [isLoading, setIsLoading] = useState<boolean>(!initialIngredients);
   const [storageError, setStorageError] = useState<string | null>(null);
 
-  // Versiones de secuencia para garantizar que operaciones de lectura lentas o demoradas
-  // (p. ej. hidratación inicial o refresh) nunca sobreescriban mutaciones posteriores más recientes.
+  // Rastreador de operaciones de carga activas (hidratación inicial, refresh).
+  // Permite desacoplar el ciclo de vida del indicador de carga (spinner)
+  // de la validez de los datos recibidos, evitando que lecturas obsoletas
+  // o superadas dejen a la interfaz permanentemente bloqueada en `isLoading = true`.
+  const activeLoadsCountRef = React.useRef<number>(!initialIngredients ? 1 : 0);
   const lastAppliedVersionRef = React.useRef<number>(0);
   const nextOperationVersionRef = React.useRef<number>(0);
 
   const loadFromStorage = useCallback(async () => {
     const opVersion = ++nextOperationVersionRef.current;
+    activeLoadsCountRef.current += 1;
     setIsLoading(true);
     setStorageError(null);
     try {
@@ -79,7 +83,8 @@ export function PantryProvider({
         setStorageError(message);
       }
     } finally {
-      if (opVersion >= lastAppliedVersionRef.current) {
+      activeLoadsCountRef.current = Math.max(0, activeLoadsCountRef.current - 1);
+      if (activeLoadsCountRef.current === 0) {
         setIsLoading(false);
       }
     }
@@ -92,20 +97,31 @@ export function PantryProvider({
       storageAdapter
         .getIngredients()
         .then((loaded) => {
-          if (isMounted && opVersion >= lastAppliedVersionRef.current) {
+          if (!isMounted) return;
+          if (opVersion >= lastAppliedVersionRef.current) {
             lastAppliedVersionRef.current = opVersion;
             setIngredients(loaded);
-            setIsLoading(false);
           }
         })
         .catch((error) => {
-          if (isMounted && opVersion >= lastAppliedVersionRef.current) {
+          if (!isMounted) return;
+          if (opVersion >= lastAppliedVersionRef.current) {
             const message =
               error instanceof Error
                 ? error.message
                 : 'Error inesperado al cargar la despensa.';
             setStorageError(message);
-            setIsLoading(false);
+          }
+        })
+        .finally(() => {
+          if (isMounted) {
+            activeLoadsCountRef.current = Math.max(
+              0,
+              activeLoadsCountRef.current - 1
+            );
+            if (activeLoadsCountRef.current === 0) {
+              setIsLoading(false);
+            }
           }
         });
     }

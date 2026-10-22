@@ -404,38 +404,47 @@ describe('Pantry Local Persistence & Storage Adapter', () => {
     });
 
     it('handles backup write failure properly without claiming backup was created (Concern 2)', async () => {
-      const corruptedData = '{"version": 1, "ingredients": [{"id": "corrupto';
-      await AsyncStorage.setItem('@foodai:test_pantry', corruptedData);
-
-      const originalSetItem = AsyncStorage.setItem;
-      AsyncStorage.setItem = jest.fn(async (key: string, value: string, ...rest: unknown[]) => {
-        if (key.includes('_backup_')) {
-          throw new Error('Disk full');
-        }
-        return (originalSetItem as any)(key, value, ...rest);
-      });
-
-      let thrownError: PantryStorageCorruptionError | null = null;
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
       try {
-        await adapter.getIngredients();
-      } catch (err) {
-        thrownError = err as PantryStorageCorruptionError;
+        const corruptedData = '{"version": 1, "ingredients": [{"id": "corrupto';
+        await AsyncStorage.setItem('@foodai:test_pantry', corruptedData);
+
+        const originalSetItem = AsyncStorage.setItem;
+        AsyncStorage.setItem = jest.fn(async (key: string, value: string, ...rest: unknown[]) => {
+          if (key.includes('_backup_')) {
+            throw new Error('Disk full');
+          }
+          return (originalSetItem as any)(key, value, ...rest);
+        });
+
+        let thrownError: PantryStorageCorruptionError | null = null;
+        try {
+          await adapter.getIngredients();
+        } catch (err) {
+          thrownError = err as PantryStorageCorruptionError;
+        } finally {
+          AsyncStorage.setItem = originalSetItem;
+        }
+
+        expect(warnSpy).toHaveBeenCalledWith(
+          expect.stringContaining('[PantryStorage] Advertencia: Fallo al crear la copia de respaldo'),
+          expect.any(Error)
+        );
+        expect(thrownError).toBeInstanceOf(PantryStorageCorruptionError);
+        expect(thrownError?.backupCreated).toBe(false);
+        expect(thrownError?.backupKey).toBeUndefined();
+        expect(thrownError?.backupError).toContain('Disk full');
+        expect(thrownError?.message).toContain(
+          'No fue posible crear la copia de respaldo adicional'
+        );
+        expect(thrownError?.message).not.toContain('Se preservó copia de respaldo');
+
+        // El payload corrupto original sigue preservado intacto en el almacenamiento principal
+        const rawStored = await AsyncStorage.getItem('@foodai:test_pantry');
+        expect(rawStored).toBe(corruptedData);
       } finally {
-        AsyncStorage.setItem = originalSetItem;
+        warnSpy.mockRestore();
       }
-
-      expect(thrownError).toBeInstanceOf(PantryStorageCorruptionError);
-      expect(thrownError?.backupCreated).toBe(false);
-      expect(thrownError?.backupKey).toBeUndefined();
-      expect(thrownError?.backupError).toContain('Disk full');
-      expect(thrownError?.message).toContain(
-        'No fue posible crear la copia de respaldo adicional'
-      );
-      expect(thrownError?.message).not.toContain('Se preservó copia de respaldo');
-
-      // El payload corrupto original sigue preservado intacto en el almacenamiento principal
-      const rawStored = await AsyncStorage.getItem('@foodai:test_pantry');
-      expect(rawStored).toBe(corruptedData);
     });
 
     it('deduplicates stored ingredients with duplicate IDs and preserves records in quarantine', async () => {

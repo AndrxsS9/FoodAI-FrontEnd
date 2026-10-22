@@ -1,7 +1,3 @@
-// @ts-ignore
-global.IS_REACT_ACT_ENVIRONMENT = true;
-// @ts-ignore
-IS_REACT_ACT_ENVIRONMENT = true;
 
 import React from 'react';
 import { render, fireEvent, waitFor, cleanup, act } from '@testing-library/react-native';
@@ -279,7 +275,9 @@ describe('Despensa Screen (6. Mi Despensa - Fase 2B)', () => {
       });
 
       // Guardar
-      fireEvent.press(getByTestId('submit-ingredient-form'));
+      await act(async () => {
+        await fireEvent.press(getByTestId('submit-ingredient-form'));
+      });
 
       await waitFor(() => {
         expect(queryByTestId('submit-ingredient-form')).toBeNull();
@@ -309,7 +307,9 @@ describe('Despensa Screen (6. Mi Despensa - Fase 2B)', () => {
       const { getByTestId } = await renderScreen(<DespensaScreen />, SAMPLE_INGREDIENTS);
 
       const plusBtn = getByTestId('stepper-plus-ing-1');
-      fireEvent.press(plusBtn);
+      await act(async () => {
+        await fireEvent.press(plusBtn);
+      });
 
       await waitFor(() => {
         expect(getByTestId('quantity-display-ing-1')).toBeTruthy();
@@ -335,7 +335,9 @@ describe('Despensa Screen (6. Mi Despensa - Fase 2B)', () => {
         expect(nameInput.props.value).toBe('Arroz integral');
       });
 
-      fireEvent.press(getByTestId('submit-ingredient-form'));
+      await act(async () => {
+        await fireEvent.press(getByTestId('submit-ingredient-form'));
+      });
 
       await waitFor(() => {
         expect(queryByTestId('submit-ingredient-form')).toBeNull();
@@ -382,7 +384,9 @@ describe('Despensa Screen (6. Mi Despensa - Fase 2B)', () => {
       });
 
       // Confirmar eliminación
-      fireEvent.press(getByTestId('delete-confirm-button'));
+      await act(async () => {
+        await fireEvent.press(getByTestId('delete-confirm-button'));
+      });
 
       await waitFor(() => {
         expect(queryByTestId('delete-confirm-button')).toBeNull();

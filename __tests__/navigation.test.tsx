@@ -90,11 +90,11 @@ describe('Phase 2A: Navigation & Mobile Screens (Google Stitch)', () => {
     jest.clearAllMocks();
   });
 
-  const renderWithProviders = async (
+  const renderWithProviders = (
     ui: React.ReactElement,
     initialIngredients: Ingredient[] = TEST_INITIAL_INGREDIENTS
   ) => {
-    return await render(
+    return render(
       <SafeAreaProvider
         initialMetrics={{
           insets: { top: 0, left: 0, right: 0, bottom: 0 },
@@ -335,7 +335,7 @@ describe('Phase 2A: Navigation & Mobile Screens (Google Stitch)', () => {
       const { getByText, queryByText } = await renderWithProviders(<HomeScreen />);
 
       const scanButton = getByText('Tomar foto');
-      await fireEvent.press(scanButton);
+      fireEvent.press(scanButton);
 
       await waitFor(() => {
         expect(getByText('Captura de cámara en preparación')).toBeTruthy();
@@ -344,7 +344,7 @@ describe('Phase 2A: Navigation & Mobile Screens (Google Stitch)', () => {
 
       // Close modal
       const closeButton = getByText('Entendido');
-      await fireEvent.press(closeButton);
+      fireEvent.press(closeButton);
 
       await waitFor(() => {
         expect(queryByText('Captura de cámara en preparación')).toBeNull();
@@ -405,17 +405,17 @@ describe('Phase 2A: Navigation & Mobile Screens (Google Stitch)', () => {
 
       // Test replay welcome
       const welcomeLink = getByTestId('perfil-welcome-button');
-      fireEvent.press(welcomeLink);
+      await fireEvent.press(welcomeLink);
       expect(mockPush).toHaveBeenCalledWith('/');
 
       // Test design system showcase link
       const dsLink = getByTestId('perfil-design-system-button');
-      fireEvent.press(dsLink);
+      await fireEvent.press(dsLink);
       expect(mockPush).toHaveBeenCalledWith('/design-system');
 
       // Test back to home
       const backHome = getByTestId('perfil-back-home-button');
-      fireEvent.press(backHome);
+      await fireEvent.press(backHome);
       expect(mockPush).toHaveBeenCalledWith('/(tabs)');
     });
   });

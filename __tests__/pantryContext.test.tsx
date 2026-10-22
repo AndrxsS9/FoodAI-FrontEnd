@@ -4,7 +4,7 @@
 import React from 'react';
 import { renderHook, act } from '@testing-library/react-native';
 import { PantryProvider, usePantry } from '../src/context/PantryContext';
-import { PantryStorageAdapter } from '../src/services/storage/pantryStorage';
+import { AsyncStoragePantryAdapter, PantryStorageAdapter } from '../src/services/storage/pantryStorage';
 import { CreateIngredientInput, Ingredient, UpdateIngredientInput } from '../src/types/pantry';
 
 class MockPantryAdapter implements PantryStorageAdapter {
@@ -292,5 +292,122 @@ describe('PantryContext State Management', () => {
     expect(result.current.ingredients[0].expirationDate).toBeUndefined();
     expect(result.current.summary.urgentCount).toBe(0);
     expect(result.current.summary.availableIngredients).toHaveLength(1);
+  });
+
+  it('prevents older delayed reads from overwriting newer successful mutations in React state (Concern 3)', async () => {
+    let resolveGetIngredients!: (val: Ingredient[]) => void;
+    const delayedGetPromise = new Promise<Ingredient[]>((res) => {
+      resolveGetIngredients = res;
+    });
+
+    const mockAdapter: PantryStorageAdapter = {
+      getIngredients: jest.fn().mockReturnValueOnce(delayedGetPromise),
+      saveIngredients: jest.fn().mockResolvedValue(undefined),
+      addIngredient: jest.fn().mockImplementation(async (input: CreateIngredientInput) => ({
+        id: 'new-1',
+        name: input.name,
+        quantity: input.quantity,
+        unit: input.unit,
+        category: input.category,
+        createdAt: '',
+        updatedAt: '',
+      })),
+      updateIngredient: jest.fn(),
+      deleteIngredient: jest.fn(),
+      clearIngredients: jest.fn(),
+    };
+
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <PantryProvider storageAdapter={mockAdapter}>
+        {children}
+      </PantryProvider>
+    );
+
+    const { result } = await renderHook(() => usePantry(), { wrapper });
+
+    // La lectura de hidratación inicial está en curso y pendiente.
+    // Mientras tanto, se agrega un ingrediente exitosamente:
+    await act(async () => {
+      await result.current.addIngredient({
+        name: 'Plátano',
+        quantity: 3,
+        unit: 'unidad',
+        category: 'Verduras y frutas',
+      });
+    });
+
+    expect(result.current.ingredients).toHaveLength(1);
+    expect(result.current.ingredients[0].name).toBe('Plátano');
+
+    // Ahora la lectura demorada resuelve con un snapshot anterior vacío []
+    await act(async () => {
+      resolveGetIngredients([]);
+    });
+
+    // La mutación más reciente ("Plátano") NO debe ser sobreescrita por la lectura obsoleta
+    expect(result.current.ingredients).toHaveLength(1);
+    expect(result.current.ingredients[0].name).toBe('Plátano');
+  });
+
+  it('handles refresh during concurrent writes preserving final persisted state (Concern 3)', async () => {
+    const initial: Ingredient[] = [
+      { id: 'item-1', name: 'Leche', quantity: 2, unit: 'l', category: 'Lácteos', createdAt: '', updatedAt: '' },
+    ];
+    const adapter = new AsyncStoragePantryAdapter('@foodai:test_concurrent_pantry');
+    await adapter.saveIngredients(initial);
+
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <PantryProvider storageAdapter={adapter} initialIngredients={initial}>
+        {children}
+      </PantryProvider>
+    );
+
+    const { result } = await renderHook(() => usePantry(), { wrapper });
+
+    // Lanzar concurrentemente una mutación y un refresh
+    await act(async () => {
+      await Promise.all([
+        result.current.adjustQuantity('item-1', 1),
+        result.current.refresh(),
+      ]);
+    });
+
+    // El estado mostrado debe ser consistente y coincidir con el estado persistido
+    const persisted = await adapter.getIngredients();
+    expect(result.current.ingredients[0].quantity).toBe(persisted[0].quantity);
+    expect(result.current.ingredients[0].quantity).toBe(3);
+  });
+
+  it('does not apply speculative optimistic changes if the storage operation fails (Concern 3)', async () => {
+    const initial: Ingredient[] = [
+      { id: 'item-stable', name: 'Arroz', quantity: 1, unit: 'kg', category: 'Granos y cereales', createdAt: '', updatedAt: '' },
+    ];
+    const failingAdapter: PantryStorageAdapter = {
+      getIngredients: jest.fn().mockResolvedValue(initial),
+      saveIngredients: jest.fn().mockRejectedValue(new Error('Storage failure')),
+      addIngredient: jest.fn().mockRejectedValue(new Error('Storage failure')),
+      updateIngredient: jest.fn().mockRejectedValue(new Error('Storage failure')),
+      deleteIngredient: jest.fn().mockRejectedValue(new Error('Storage failure')),
+      adjustQuantity: jest.fn().mockRejectedValue(new Error('Storage failure')),
+      clearIngredients: jest.fn(),
+    };
+
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <PantryProvider storageAdapter={failingAdapter} initialIngredients={initial}>
+        {children}
+      </PantryProvider>
+    );
+
+    const { result } = await renderHook(() => usePantry(), { wrapper });
+
+    await act(async () => {
+      await expect(
+        result.current.adjustQuantity('item-stable', 5)
+      ).rejects.toThrow('Storage failure');
+    });
+
+    // Ninguna mutación optimista sobrevive en el estado de React
+    expect(result.current.ingredients[0].quantity).toBe(1);
+    expect(result.current.storageError).toBe('Storage failure');
   });
 });

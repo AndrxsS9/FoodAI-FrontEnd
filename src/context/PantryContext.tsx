@@ -55,36 +55,51 @@ export function PantryProvider({
   const [isLoading, setIsLoading] = useState<boolean>(!initialIngredients);
   const [storageError, setStorageError] = useState<string | null>(null);
 
+  // Versiones de secuencia para garantizar que operaciones de lectura lentas o demoradas
+  // (p. ej. hidratación inicial o refresh) nunca sobreescriban mutaciones posteriores más recientes.
+  const lastAppliedVersionRef = React.useRef<number>(0);
+  const nextOperationVersionRef = React.useRef<number>(0);
+
   const loadFromStorage = useCallback(async () => {
+    const opVersion = ++nextOperationVersionRef.current;
     setIsLoading(true);
     setStorageError(null);
     try {
       const loaded = await storageAdapter.getIngredients();
-      setIngredients(loaded);
+      if (opVersion >= lastAppliedVersionRef.current) {
+        lastAppliedVersionRef.current = opVersion;
+        setIngredients(loaded);
+      }
     } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : 'Error inesperado al cargar la despensa.';
-      setStorageError(message);
+      if (opVersion >= lastAppliedVersionRef.current) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : 'Error inesperado al cargar la despensa.';
+        setStorageError(message);
+      }
     } finally {
-      setIsLoading(false);
+      if (opVersion >= lastAppliedVersionRef.current) {
+        setIsLoading(false);
+      }
     }
   }, [storageAdapter]);
 
   useEffect(() => {
     let isMounted = true;
     if (!initialIngredients) {
+      const opVersion = ++nextOperationVersionRef.current;
       storageAdapter
         .getIngredients()
         .then((loaded) => {
-          if (isMounted) {
+          if (isMounted && opVersion >= lastAppliedVersionRef.current) {
+            lastAppliedVersionRef.current = opVersion;
             setIngredients(loaded);
             setIsLoading(false);
           }
         })
         .catch((error) => {
-          if (isMounted) {
+          if (isMounted && opVersion >= lastAppliedVersionRef.current) {
             const message =
               error instanceof Error
                 ? error.message
@@ -101,10 +116,17 @@ export function PantryProvider({
 
   const addIngredient = useCallback(
     async (input: CreateIngredientInput): Promise<Ingredient> => {
+      const opVersion = ++nextOperationVersionRef.current;
       setStorageError(null);
       try {
         const created = await storageAdapter.addIngredient(input);
-        setIngredients((prev) => [created, ...prev]);
+        if (opVersion >= lastAppliedVersionRef.current) {
+          lastAppliedVersionRef.current = opVersion;
+          setIngredients((prev) => [
+            created,
+            ...prev.filter((item) => item.id !== created.id),
+          ]);
+        }
         return created;
       } catch (error) {
         const message =
@@ -120,12 +142,16 @@ export function PantryProvider({
 
   const updateIngredient = useCallback(
     async (input: UpdateIngredientInput): Promise<Ingredient> => {
+      const opVersion = ++nextOperationVersionRef.current;
       setStorageError(null);
       try {
         const updated = await storageAdapter.updateIngredient(input);
-        setIngredients((prev) =>
-          prev.map((item) => (item.id === updated.id ? updated : item))
-        );
+        if (opVersion >= lastAppliedVersionRef.current) {
+          lastAppliedVersionRef.current = opVersion;
+          setIngredients((prev) =>
+            prev.map((item) => (item.id === updated.id ? updated : item))
+          );
+        }
         return updated;
       } catch (error) {
         const message =
@@ -141,10 +167,14 @@ export function PantryProvider({
 
   const deleteIngredient = useCallback(
     async (id: string): Promise<void> => {
+      const opVersion = ++nextOperationVersionRef.current;
       setStorageError(null);
       try {
         await storageAdapter.deleteIngredient(id);
-        setIngredients((prev) => prev.filter((item) => item.id !== id));
+        if (opVersion >= lastAppliedVersionRef.current) {
+          lastAppliedVersionRef.current = opVersion;
+          setIngredients((prev) => prev.filter((item) => item.id !== id));
+        }
       } catch (error) {
         const message =
           error instanceof Error
@@ -164,35 +194,39 @@ export function PantryProvider({
 
   const adjustQuantity = useCallback(
     async (id: string, delta: number): Promise<void> => {
+      const opVersion = ++nextOperationVersionRef.current;
       setStorageError(null);
       try {
         if (storageAdapter.adjustQuantity) {
           const updated = await storageAdapter.adjustQuantity(id, delta);
-          setIngredients((prev) =>
-            prev.map((item) => (item.id === updated.id ? updated : item))
-          );
+          if (opVersion >= lastAppliedVersionRef.current) {
+            lastAppliedVersionRef.current = opVersion;
+            setIngredients((prev) =>
+              prev.map((item) => (item.id === updated.id ? updated : item))
+            );
+          }
         } else {
-          const target = ingredientsRef.current.find((item) => item.id === id);
+          // Adaptador sin adjustQuantity nativo: derivar del valor persistido confirmado
+          // sin aplicar mutaciones optimistas especulativas antes de tiempo.
+          const currentList = await storageAdapter.getIngredients();
+          const target = currentList.find((item) => item.id === id);
           if (!target) return;
 
-          const newQty = Math.round((target.quantity + delta) * 100) / 100;
+          const newQty = Math.round((target.quantity + delta) * 1000) / 1000;
           if (newQty <= 0) {
             return;
           }
-
-          // Actualizar inmediatamente ingredientsRef para que llamadas consecutivas en la misma ráfaga
-          // lean la cantidad actualizada incluso antes del renderizado de React.
-          ingredientsRef.current = ingredientsRef.current.map((item) =>
-            item.id === id ? { ...item, quantity: newQty } : item
-          );
 
           const updated = await storageAdapter.updateIngredient({
             id,
             quantity: newQty,
           });
-          setIngredients((prev) =>
-            prev.map((item) => (item.id === updated.id ? updated : item))
-          );
+          if (opVersion >= lastAppliedVersionRef.current) {
+            lastAppliedVersionRef.current = opVersion;
+            setIngredients((prev) =>
+              prev.map((item) => (item.id === updated.id ? updated : item))
+            );
+          }
         }
       } catch (error) {
         const message =

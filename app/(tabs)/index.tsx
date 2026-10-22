@@ -13,7 +13,9 @@ import { useRouter } from 'expo-router';
 import { Button, Card, Chip, Input } from '../../src/components/common';
 import { usePantry } from '../../src/context/PantryContext';
 import { useBudget } from '../../src/context/BudgetContext';
+import { useRecipes } from '../../src/context/RecipeContext';
 import { DEMO_DASHBOARD_DATA } from '../../src/fixtures/demoDashboardData';
+import { formatCopCurrency } from '../../src/types/recipe';
 import { colors, radius, spacing, useTypography } from '../../src/theme';
 
 export default function HomeScreen() {
@@ -95,7 +97,8 @@ export default function HomeScreen() {
   };
 
   const { summary } = usePantry();
-  const demoRecipe = DEMO_DASHBOARD_DATA.dailyRecommendation;
+  const { recipes, isDemoMode, selectRecipe } = useRecipes();
+  const recommendedRecipe = recipes.length > 0 ? recipes[0] : null;
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
@@ -146,22 +149,24 @@ export default function HomeScreen() {
         showsVerticalScrollIndicator={false}
       >
         {/* Subtle demonstration data disclaimer banner */}
-        <View
-          style={styles.demoBanner}
-          testID="demo-data-banner"
-          accessibilityRole="text"
-          accessibilityLabel="Aviso: Vista de ejemplo con datos de demostración"
-        >
-          <View style={styles.demoBadge}>
-            <MaterialIcons name="science" size={14} color={colors.primary} />
-            <Text style={[styles.demoBadgeText, typography.labelSm]}>
-              {DEMO_DASHBOARD_DATA.badgeLabel}
+        {isDemoMode && (
+          <View
+            style={styles.demoBanner}
+            testID="demo-data-banner"
+            accessibilityRole="text"
+            accessibilityLabel="Aviso: Vista de ejemplo con datos de demostración"
+          >
+            <View style={styles.demoBadge}>
+              <MaterialIcons name="science" size={14} color={colors.primary} />
+              <Text style={[styles.demoBadgeText, typography.labelSm]}>
+                {DEMO_DASHBOARD_DATA.badgeLabel}
+              </Text>
+            </View>
+            <Text style={[styles.demoNoticeText, typography.bodySm]}>
+              {DEMO_DASHBOARD_DATA.noticeText}
             </Text>
           </View>
-          <Text style={[styles.demoNoticeText, typography.bodySm]}>
-            {DEMO_DASHBOARD_DATA.noticeText}
-          </Text>
-        </View>
+        )}
 
         {/* Supportive Prompt & Greeting */}
         <View style={styles.greetingSection}>
@@ -367,13 +372,13 @@ export default function HomeScreen() {
               size="sm"
               onPress={handleOpenBudgetModal}
               accessibilityLabel="Ajustar presupuesto disponible"
-              accessibilityHint="Abre un formulario para ingresar un nuevo presupuesto temporal"
+              accessibilityHint="Abre un formulario para actualizar el presupuesto disponible"
               leftIcon={<MaterialIcons name="tune" size={16} color={colors.textPrimary} />}
             />
           </View>
         </Card>
 
-        {/* 4. Recommendation of the Day (Identified as sample demonstration recipe) */}
+        {/* 4. Recommendation of the Day (Autoritativo desde RecipeContext) */}
         <View style={styles.recommendationSection}>
           <View style={styles.sectionHeaderRow}>
             <View>
@@ -384,96 +389,134 @@ export default function HomeScreen() {
                 Optimizado a tu despensa
               </Text>
             </View>
-            <View style={styles.demoBadge}>
-              <Text style={[styles.demoBadgeText, typography.labelSm]}>
-                Receta de ejemplo
-              </Text>
-            </View>
-          </View>
-
-          <Card variant="elevated" style={styles.recipeCard}>
-            <View style={styles.recipeImageWrapper}>
-              <Image
-                source={require('../../assets/images/recipe-pollo-verduras.jpg')}
-                style={styles.recipeImage}
-                resizeMode="cover"
-                accessibilityLabel={`Foto del plato de ejemplo: ${demoRecipe.title}`}
-              />
-              {/* Score pill */}
-              <View
-                style={styles.convenienceBadge}
-                accessibilityRole="text"
-                accessibilityLabel={`Afinidad estimada de ejemplo: ${demoRecipe.convenienceScorePercent} por ciento`}
-              >
-                <MaterialIcons name="verified" size={16} color={colors.tertiaryContainer} />
-                <Text style={[styles.convenienceText, typography.labelSm]}>
-                  {demoRecipe.convenienceScorePercent} % conveniente
+            {recommendedRecipe?.isDemoFixture && (
+              <View style={styles.demoBadge} testID="home-recipe-demo-badge">
+                <Text style={[styles.demoBadgeText, typography.labelSm]}>
+                  Receta de ejemplo
                 </Text>
               </View>
+            )}
+          </View>
 
-              {/* Time & Servings pills */}
-              <View style={styles.recipeMetaRow}>
-                <View style={styles.recipeMetaPill}>
-                  <MaterialIcons name="timer" size={14} color={colors.textPrimary} />
-                  <Text style={[styles.recipeMetaText, typography.labelSm]}>
-                    {demoRecipe.prepTimeMinutes} min
+          {recommendedRecipe ? (
+            <Card
+              variant="elevated"
+              style={styles.recipeCard}
+              testID="home-recommended-recipe-card"
+            >
+              <View style={styles.recipeImageWrapper}>
+                <Image
+                  source={
+                    recommendedRecipe.imageUrl ??
+                    require('../../assets/images/recipe-pollo-verduras.jpg')
+                  }
+                  style={styles.recipeImage}
+                  resizeMode="cover"
+                  accessibilityLabel={`Foto del plato${recommendedRecipe.isDemoFixture ? ' de ejemplo' : ''}: ${recommendedRecipe.name}`}
+                />
+                {/* Score pill */}
+                <View
+                  style={styles.convenienceBadge}
+                  accessibilityRole="text"
+                  accessibilityLabel={`Afinidad estimada${recommendedRecipe.isDemoFixture ? ' de ejemplo' : ''}: ${recommendedRecipe.convenience}`}
+                >
+                  <MaterialIcons name="verified" size={16} color={colors.tertiaryContainer} />
+                  <Text style={[styles.convenienceText, typography.labelSm]}>
+                    {typeof recommendedRecipe.convenience === 'number'
+                      ? `${recommendedRecipe.convenience}% conveniente`
+                      : recommendedRecipe.convenience}
                   </Text>
                 </View>
-                <View style={styles.recipeMetaPill}>
-                  <MaterialIcons name="group" size={14} color={colors.textPrimary} />
-                  <Text style={[styles.recipeMetaText, typography.labelSm]}>
-                    {demoRecipe.servings} personas
-                  </Text>
-                </View>
-              </View>
-            </View>
 
-            {/* Recipe Content */}
-            <View style={styles.recipeBody}>
-              <Text style={[styles.recipeTitle, typography.headlineMd]}>
-                {demoRecipe.title}
-              </Text>
-              <Text style={[styles.recipeDescription, typography.bodySm]}>
-                {demoRecipe.description}
-              </Text>
-
-              {/* Value metrics */}
-              <View style={styles.recipeHighlights}>
-                <View style={styles.highlightRow}>
-                  <MaterialIcons name="savings" size={18} color={colors.primary} />
-                  <Text style={[styles.highlightText, typography.bodySm]}>
-                    Solo necesitas aproximadamente{' '}
-                    <Text style={[styles.highlightBold, { color: colors.primary }]}>
-                      ${demoRecipe.estimatedAdditionalCostCop.toLocaleString('es-CO')}
+                {/* Time & Servings pills */}
+                <View style={styles.recipeMetaRow}>
+                  <View style={styles.recipeMetaPill}>
+                    <MaterialIcons name="timer" size={14} color={colors.textPrimary} />
+                    <Text style={[styles.recipeMetaText, typography.labelSm]}>
+                      {recommendedRecipe.totalMinutes} min
                     </Text>
-                  </Text>
-                </View>
-
-                <View style={styles.highlightRow}>
-                  <MaterialIcons name="recycling" size={18} color={colors.secondary} />
-                  <Text style={[styles.highlightText, typography.bodySm]}>
-                    Aprovechas{' '}
-                    <Text style={styles.highlightBold}>
-                      {demoRecipe.urgentIngredientsUsedCount} productos
-                    </Text>{' '}
-                    que deberías consumir pronto (ejemplo demostrativo)
-                  </Text>
+                  </View>
+                  <View style={styles.recipeMetaPill}>
+                    <MaterialIcons name="group" size={14} color={colors.textPrimary} />
+                    <Text style={[styles.recipeMetaText, typography.labelSm]}>
+                      {recommendedRecipe.servings} persona{recommendedRecipe.servings === 1 ? '' : 's'}
+                    </Text>
+                  </View>
                 </View>
               </View>
 
+              {/* Recipe Content */}
+              <View style={styles.recipeBody}>
+                <Text style={[styles.recipeTitle, typography.headlineMd]}>
+                  {recommendedRecipe.name}
+                </Text>
+                <Text style={[styles.recipeDescription, typography.bodySm]}>
+                  {recommendedRecipe.description}
+                </Text>
+
+                {/* Value metrics */}
+                <View style={styles.recipeHighlights}>
+                  <View style={styles.highlightRow}>
+                    <MaterialIcons name="savings" size={18} color={colors.primary} />
+                    <Text style={[styles.highlightText, typography.bodySm]}>
+                      Solo necesitas aproximadamente{' '}
+                      <Text style={[styles.highlightBold, { color: colors.primary }]}>
+                        {formatCopCurrency(recommendedRecipe.estimatedMissingCost, false)}
+                      </Text>
+                    </Text>
+                  </View>
+
+                  {recommendedRecipe.reason ? (
+                    <View style={styles.highlightRow}>
+                      <MaterialIcons name="recycling" size={18} color={colors.secondary} />
+                      <Text style={[styles.highlightText, typography.bodySm]}>
+                        {recommendedRecipe.reason}
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
+
+                <Button
+                  testID="home-view-recipe-button"
+                  title="Ver receta"
+                  variant="primary"
+                  size="lg"
+                  fullWidth
+                  onPress={() => {
+                    selectRecipe(recommendedRecipe);
+                    router.push(`/recetas/${recommendedRecipe.id}` as any);
+                  }}
+                  accessibilityLabel={`Ver receta de ${recommendedRecipe.name}${recommendedRecipe.isDemoFixture ? ' (ejemplo)' : ''}`}
+                  accessibilityHint="Muestra los pasos detallados de la receta"
+                  rightIcon={<MaterialIcons name="arrow-forward" size={18} color={colors.onPrimary} />}
+                />
+              </View>
+            </Card>
+          ) : (
+            <Card
+              variant="outlined"
+              style={styles.emptyRecipeCard}
+              testID="home-empty-recipe-state"
+            >
+              <View style={styles.emptyRecipeIconBox}>
+                <MaterialIcons name="menu-book" size={32} color={colors.outline} />
+              </View>
+              <Text style={[styles.emptyRecipeTitle, typography.headlineMd]}>
+                Sin recomendaciones disponibles
+              </Text>
+              <Text style={[styles.emptyRecipeText, typography.bodySm]}>
+                No hay recetas disponibles para tu despensa o presupuesto actual. Explora el catálogo o ajusta tus preferencias.
+              </Text>
               <Button
-                testID="home-view-recipe-button"
-                title="Ver receta"
+                testID="home-explore-recipes-button"
+                title="Explorar recetas"
                 variant="primary"
-                size="lg"
-                fullWidth
-                onPress={() => router.push('/recetas/demo-rec-1' as any)}
-                accessibilityLabel="Ver receta de pollo con verduras (ejemplo)"
-                accessibilityHint="Muestra los pasos detallados de la receta de demostración"
-                rightIcon={<MaterialIcons name="arrow-forward" size={18} color={colors.onPrimary} />}
+                size="md"
+                onPress={() => router.push('/recetas' as any)}
+                leftIcon={<MaterialIcons name="restaurant-menu" size={18} color={colors.onPrimary} />}
               />
-            </View>
-          </Card>
+            </Card>
+          )}
         </View>
       </ScrollView>
 
@@ -498,7 +541,7 @@ export default function HomeScreen() {
             </Text>
 
             <Text style={[styles.modalDescription, typography.bodySm]}>
-              Ingresa el presupuesto disponible en pesos colombianos (COP). Este valor se utiliza como referencia temporal para estimar tus recetas.
+              Ingresa el presupuesto disponible en pesos colombianos (COP). Este valor se guarda en tus preferencias para estimar y recomendar tus recetas.
             </Text>
 
             <View style={styles.budgetInputContainer}>
@@ -1038,6 +1081,33 @@ const styles = StyleSheet.create({
   },
   modalButtonFlex: {
     flex: 1,
+  },
+  emptyRecipeCard: {
+    padding: spacing.lg,
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.surfaceContainerLow,
+    borderColor: colors.outlineVariant,
+  },
+  emptyRecipeIconBox: {
+    width: 56,
+    height: 56,
+    borderRadius: radius.full,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.xs,
+  },
+  emptyRecipeTitle: {
+    color: colors.textPrimary,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  emptyRecipeText: {
+    color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: spacing.sm,
   },
 });
 

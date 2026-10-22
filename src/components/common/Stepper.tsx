@@ -11,7 +11,7 @@ import { colors, radius, spacing, useTypography } from '../../theme';
 
 export interface StepperProps {
   value: number;
-  onChange: (newValue: number) => void;
+  onChange: (newValue: number) => void | Promise<void>;
   min?: number;
   max?: number;
   step?: number;
@@ -77,7 +77,14 @@ export const Stepper: React.FC<StepperProps> = ({
     const clampedNext = Math.max(safeMin, rawNext);
     const roundedNext = roundToPrecision(clampedNext, precision);
     if (Number.isFinite(roundedNext)) {
-      onChange(roundedNext);
+      try {
+        const result = onChange(roundedNext);
+        if (result && typeof (result as any).catch === 'function') {
+          (result as any).catch(() => {});
+        }
+      } catch {
+        // Ignorar excepciones síncronas en el callback
+      }
     }
   };
 
@@ -87,7 +94,14 @@ export const Stepper: React.FC<StepperProps> = ({
     const clampedNext = Math.min(safeMax, rawNext);
     const roundedNext = roundToPrecision(clampedNext, precision);
     if (Number.isFinite(roundedNext)) {
-      onChange(roundedNext);
+      try {
+        const result = onChange(roundedNext);
+        if (result && typeof (result as any).catch === 'function') {
+          (result as any).catch(() => {});
+        }
+      } catch {
+        // Ignorar excepciones síncronas en el callback
+      }
     }
   };
 

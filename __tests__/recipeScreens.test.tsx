@@ -37,6 +37,7 @@ import { RecipeProvider } from '../src/context/RecipeContext';
 import { Ingredient } from '../src/types/pantry';
 import { BudgetPreferences } from '../src/types/budget';
 import { ClientRecipe } from '../src/types/recipe';
+import { BudgetStorageAdapter } from '../src/services/storage/budgetStorage';
 
 // Control de mock de Expo Router
 const mockPush = jest.fn();
@@ -105,6 +106,7 @@ const renderWithProviders = async (
     initialBudgetPreferences?: Partial<BudgetPreferences>;
     initialRecipes?: ClientRecipe[];
     initialIsDemoMode?: boolean;
+    storageAdapter?: BudgetStorageAdapter;
   }
 ) => {
   return await render(
@@ -119,6 +121,7 @@ const renderWithProviders = async (
           initialIngredients={options?.initialIngredients ?? SAMPLE_PANTRY_INGREDIENTS}
         >
           <BudgetProvider
+            storageAdapter={options?.storageAdapter}
             initialPreferences={
               options?.initialBudgetPreferences ?? { budget: 20000, servings: 2 }
             }
@@ -627,6 +630,234 @@ describe('FoodAI Phase 2C - Recipe Discovery, Details & Cooking Mode Tests', () 
       expect(initialIngredients.length).toBe(3);
       expect(initialIngredients[0].name).toBe('Pollo');
       expect(initialIngredients[0].quantity).toBe(300);
+    });
+  });
+
+  describe('6. Consistencia entre Inicio y Detalle de Receta (ISSUE 1)', () => {
+    it('muestra el mismo nombre, tiempo, costo, conveniencia y porciones en Inicio y navega al CTA exacto', async () => {
+      // 1. Renderizar Inicio con 2 comensales y presupuesto estándar
+      const home = await renderWithProviders(<HomeScreen />, {
+        initialBudgetPreferences: { budget: 20000, servings: 2 },
+      });
+
+      // Validar datos de recomendación en Inicio
+      expect(home.getByText('Arroz con pollo y verduras')).toBeTruthy();
+      expect(home.getByText('30 min')).toBeTruthy();
+      expect(home.getByText('2 personas')).toBeTruthy();
+      expect(home.getByText('$5.800')).toBeTruthy();
+      expect(home.getByText('94% conveniente')).toBeTruthy();
+      expect(home.getByTestId('home-recipe-demo-badge')).toBeTruthy();
+
+      // Navegar a la receta desde el CTA
+      const viewButton = home.getByTestId('home-view-recipe-button');
+      fireEvent.press(viewButton);
+      expect(mockPush).toHaveBeenCalledWith('/recetas/demo-rec-1');
+    });
+
+    it('el Detalle de Receta refleja los mismos datos autoritativos que Inicio', async () => {
+      mockSearchParams = { id: 'demo-rec-1' };
+      const detail = await renderWithProviders(<RecipeDetailScreen />, {
+        initialBudgetPreferences: { budget: 20000, servings: 2 },
+      });
+
+      // Validar que los valores coinciden con exactitud matemática
+      expect(detail.getByTestId('recipe-detail-title').props.children).toBe(
+        'Arroz con pollo y verduras'
+      );
+      expect(detail.getByText('30 min')).toBeTruthy();
+      expect(detail.getByText('2 personas')).toBeTruthy();
+      expect(detail.getByText('$5.800')).toBeTruthy();
+      expect(detail.getByText('94% conveniente')).toBeTruthy();
+    });
+
+    it('la tarjeta de Inicio reacciona a cambios en presupuesto y comensales', async () => {
+      // 4 comensales escala el costo proporcionalmente (5800 * 4 / 2 = 11600)
+      const { getByText } = await renderWithProviders(<HomeScreen />, {
+        initialBudgetPreferences: { budget: 35000, servings: 4 },
+      });
+
+      await waitFor(() => {
+        expect(getByText('Arroz con pollo y verduras')).toBeTruthy();
+        expect(getByText('4 personas')).toBeTruthy();
+        expect(getByText('$11.600')).toBeTruthy();
+      });
+    });
+
+    it('no muestra etiquetas ni datos demo cuando se inyectan recetas reales', async () => {
+      const REAL_RECIPES: ClientRecipe[] = [
+        {
+          id: 'pollo-al-curry',
+          name: 'Pollo al Curry',
+          description: 'Receta con especias y verduras.',
+          totalMinutes: 35,
+          servings: 2,
+          ingredients: [],
+          steps: ['Preparar salsa'],
+          availableIngredients: [],
+          missingIngredients: [],
+          estimatedMissingCost: 4200,
+          budgetRemaining: 15800,
+          withinBudget: true,
+          convenience: '89% conveniente',
+          reason: 'Aprovecha tu pollo fresco.',
+          isDemoFixture: false,
+        },
+      ];
+
+      const { getByText, getByTestId, queryByTestId } = await renderWithProviders(
+        <HomeScreen />,
+        {
+          initialRecipes: REAL_RECIPES,
+          initialIsDemoMode: false,
+        }
+      );
+
+      await waitFor(() => {
+        expect(getByText('Pollo al Curry')).toBeTruthy();
+        expect(getByText('$4.200')).toBeTruthy();
+      });
+
+      // No debe existir el disclaimer global ni el badge de demo
+      expect(queryByTestId('demo-data-banner')).toBeNull();
+      expect(queryByTestId('home-recipe-demo-badge')).toBeNull();
+
+      const viewBtn = getByTestId('home-view-recipe-button');
+      fireEvent.press(viewBtn);
+      expect(mockPush).toHaveBeenCalledWith('/recetas/pollo-al-curry');
+    });
+
+    it('muestra estado vacío amigable con navegación a recetas si no hay recomendaciones', async () => {
+      const { getByTestId, queryByTestId } = await renderWithProviders(
+        <HomeScreen />,
+        {
+          initialRecipes: [],
+          initialIsDemoMode: false,
+        }
+      );
+
+      await waitFor(() => {
+        expect(getByTestId('home-empty-recipe-state')).toBeTruthy();
+      });
+
+      expect(queryByTestId('home-recommended-recipe-card')).toBeNull();
+      expect(queryByTestId('demo-data-banner')).toBeNull();
+
+      const exploreBtn = getByTestId('home-explore-recipes-button');
+      fireEvent.press(exploreBtn);
+      expect(mockPush).toHaveBeenCalledWith('/recetas');
+    });
+  });
+
+  describe('7. Manejo Asíncrono de Comensales y Protección contra Errores (ISSUE 2)', () => {
+    it('actualiza comensales exitosamente dentro de los límites válidos (1 a 12)', async () => {
+      const { getByLabelText, getByText } = await renderWithProviders(
+        <RecipeDiscoveryScreen />,
+        {
+          initialBudgetPreferences: { budget: 20000, servings: 2 },
+        }
+      );
+
+      await waitFor(() => {
+        expect(getByText('2 pers.')).toBeTruthy();
+      });
+
+      const incBtn = getByLabelText('Aumentar');
+      fireEvent.press(incBtn);
+
+      await waitFor(() => {
+        expect(getByText('3 pers.')).toBeTruthy();
+      });
+    });
+
+    it('captura fallos de persistencia mostrando error al usuario sin actualizar falsamente la UI', async () => {
+      const failingAdapter: BudgetStorageAdapter = {
+        getPreferences: jest.fn().mockResolvedValue({
+          budget: 20000,
+          servings: 2,
+        }),
+        savePreferences: jest.fn().mockRejectedValue(new Error('Fallo crítico al guardar comensales')),
+        resetPreferences: jest.fn().mockResolvedValue({
+          budget: 20000,
+          servings: 2,
+        }),
+      };
+
+      const { getByLabelText, getByText, getByTestId, queryByTestId } =
+        await renderWithProviders(<RecipeDiscoveryScreen />, {
+          initialBudgetPreferences: { budget: 20000, servings: 2 },
+          storageAdapter: failingAdapter,
+        });
+
+      await waitFor(() => {
+        expect(getByText('2 pers.')).toBeTruthy();
+      });
+
+      const incBtn = getByLabelText('Aumentar');
+      fireEvent.press(incBtn);
+
+      // El error debe mostrarse al usuario
+      await waitFor(() => {
+        expect(getByTestId('recipes-storage-error')).toBeTruthy();
+        expect(getByText('Fallo crítico al guardar comensales')).toBeTruthy();
+      });
+
+      // La UI no debe actualizarse falsamente ante el fallo
+      expect(getByText('2 pers.')).toBeTruthy();
+
+      // Descartar el error
+      const dismissBtn = getByTestId('recipes-dismiss-storage-error-button');
+      fireEvent.press(dismissBtn);
+
+      await waitFor(() => {
+        expect(queryByTestId('recipes-storage-error')).toBeNull();
+      });
+    });
+
+    it('previene interacciones rápidas repetidas durante una persistencia en progreso', async () => {
+      let resolvePromise: (val: any) => void = () => {};
+      const pendingPromise = new Promise((resolve) => {
+        resolvePromise = resolve;
+      });
+
+      const slowAdapter: BudgetStorageAdapter = {
+        getPreferences: jest.fn().mockResolvedValue({
+          budget: 20000,
+          servings: 2,
+        }),
+        savePreferences: jest.fn().mockImplementation(() => pendingPromise),
+        resetPreferences: jest.fn().mockResolvedValue({
+          budget: 20000,
+          servings: 2,
+        }),
+      };
+
+      const { getByLabelText } = await renderWithProviders(
+        <RecipeDiscoveryScreen />,
+        {
+          initialBudgetPreferences: { budget: 20000, servings: 2 },
+          storageAdapter: slowAdapter,
+        }
+      );
+
+      let incBtn: any;
+      await waitFor(() => {
+        incBtn = getByLabelText('Aumentar');
+        expect(incBtn).toBeTruthy();
+      });
+
+      // Tocar rápidamente 3 veces consecutivas
+      fireEvent.press(incBtn);
+      fireEvent.press(incBtn);
+      fireEvent.press(incBtn);
+
+      // Solo una mutación debe ser enviada al adaptador
+      expect(slowAdapter.savePreferences).toHaveBeenCalledTimes(1);
+
+      // Resolver la operación pendiente y esperar resolución limpia
+      resolvePromise({ budget: 20000, servings: 3 });
+      await waitFor(() => {
+        expect(slowAdapter.savePreferences).toHaveBeenCalledTimes(1);
+      });
     });
   });
 });

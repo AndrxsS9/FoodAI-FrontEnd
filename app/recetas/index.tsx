@@ -6,7 +6,7 @@
  * distinguiendo entre ingredientes disponibles y faltantes, y etiquetando explícitamente
  * los datos demostrativos aislados para esta fase.
  */
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -33,7 +33,13 @@ export default function RecipeDiscoveryScreen() {
   const router = useRouter();
 
   const { summary } = usePantry();
-  const { budget, servings, setServings } = useBudget();
+  const {
+    budget,
+    servings,
+    setServings,
+    storageError,
+    clearStorageError,
+  } = useBudget();
   const {
     recipes,
     isDemoMode,
@@ -43,6 +49,31 @@ export default function RecipeDiscoveryScreen() {
     error,
     refreshRecipes,
   } = useRecipes();
+
+  // Estados de control para persistencia asíncrona de comensales
+  const [isUpdatingServings, setIsUpdatingServings] = useState(false);
+  const isUpdatingServingsRef = useRef(false);
+
+  const handleServingsChange = useCallback(
+    async (newServings: number) => {
+      // Bloquear invocaciones concurrentes o fuera de límites
+      if (isUpdatingServingsRef.current) return;
+      if (newServings < 1 || newServings > 12) return;
+      if (newServings === servings) return;
+
+      isUpdatingServingsRef.current = true;
+      setIsUpdatingServings(true);
+      try {
+        await setServings(newServings);
+      } catch {
+        // BudgetContext captura, registra y propaga storageError
+      } finally {
+        isUpdatingServingsRef.current = false;
+        setIsUpdatingServings(false);
+      }
+    },
+    [servings, setServings]
+  );
 
   // Estados de búsqueda y filtros
   const [searchQuery, setSearchQuery] = useState('');
@@ -244,12 +275,45 @@ export default function RecipeDiscoveryScreen() {
                 max={12}
                 step={1}
                 unit="pers."
-                onChange={(val) => setServings(val)}
+                disabled={isUpdatingServings}
+                onChange={handleServingsChange}
                 accessibilityLabel="Ajustar número de comensales"
               />
             </View>
           </View>
         </Card>
+
+        {/* 4.1. Aviso de error de persistencia de comensales o presupuesto */}
+        {storageError && (
+          <Card
+            variant="outlined"
+            style={styles.storageErrorCard}
+            testID="recipes-storage-error"
+            accessibilityRole="text"
+            accessibilityLabel={`Aviso de error: ${storageError}`}
+          >
+            <View style={styles.storageErrorRow}>
+              <MaterialIcons name="error-outline" size={20} color={colors.error} />
+              <View style={styles.storageErrorTextCol}>
+                <Text style={[styles.storageErrorTitle, typography.labelMd]}>
+                  Error de almacenamiento
+                </Text>
+                <Text style={[styles.storageErrorDesc, typography.bodySm]}>
+                  {storageError}
+                </Text>
+              </View>
+              <Pressable
+                testID="recipes-dismiss-storage-error-button"
+                onPress={clearStorageError}
+                accessibilityRole="button"
+                accessibilityLabel="Descartar mensaje de error"
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <MaterialIcons name="close" size={18} color={colors.textSecondary} />
+              </Pressable>
+            </View>
+          </Card>
+        )}
 
         {/* 5. Búsqueda y Chips de Filtro */}
         <View style={styles.filterSection}>
@@ -898,6 +962,30 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   emptyPantryNoticeText: {
+    color: colors.textSecondary,
+    lineHeight: 18,
+  },
+  storageErrorCard: {
+    marginHorizontal: spacing.margin,
+    marginTop: spacing.sm,
+    padding: spacing.md,
+    borderColor: colors.error,
+    borderWidth: 1,
+    backgroundColor: '#FFF8F6',
+  },
+  storageErrorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  storageErrorTextCol: {
+    flex: 1,
+  },
+  storageErrorTitle: {
+    color: colors.error,
+    fontWeight: '700',
+  },
+  storageErrorDesc: {
     color: colors.textSecondary,
     lineHeight: 18,
   },

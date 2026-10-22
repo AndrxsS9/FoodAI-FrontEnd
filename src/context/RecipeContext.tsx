@@ -75,7 +75,8 @@ export function RecipeProvider({
 
   const [isDemoMode, setIsDemoMode] = useState<boolean>(initialIsDemoMode);
   const [realRecipes, setRealRecipesState] = useState<ClientRecipe[]>(initialRecipes ?? []);
-  const [selectedRecipe, setSelectedRecipe] = useState<ClientRecipe | null>(null);
+  const [selectedRecipeId, setSelectedRecipeId] = useState<string | null>(null);
+  const [customSelectedRecipe, setCustomSelectedRecipe] = useState<ClientRecipe | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -87,16 +88,54 @@ export function RecipeProvider({
     return realRecipes;
   }, [isDemoMode, budget, servings, realRecipes]);
 
+  // Derivar la receta seleccionada activa manteniéndola siempre sincronizada
+  // con la colección actual, presupuesto y comensales
+  const selectedRecipe = useMemo<ClientRecipe | null>(() => {
+    if (!selectedRecipeId) return null;
+    const foundInActiveList = recipes.find((r) => r.id === selectedRecipeId);
+    if (foundInActiveList) return foundInActiveList;
+
+    if (customSelectedRecipe && customSelectedRecipe.id === selectedRecipeId) {
+      if (isDemoMode && customSelectedRecipe.isDemoFixture) {
+        // En modo demo, mantener porciones sincronizadas
+        return getDemoRecipeById(customSelectedRecipe.id, budget, servings) ?? customSelectedRecipe;
+      }
+      if (!isDemoMode && !customSelectedRecipe.isDemoFixture) {
+        return customSelectedRecipe;
+      }
+    }
+    return null;
+  }, [selectedRecipeId, recipes, customSelectedRecipe, isDemoMode, budget, servings]);
+
   /**
-   * Resuelve una receta por ID explícito o slug generado.
-   * Si la receta actualmente seleccionada en sesión coincide, la retorna con prioridad.
+   * Resuelve una receta con la siguiente jerarquía estricta:
+   * 1. ID exacto de cliente en la colección actual (prioridad máxima).
+   * 2. Slug derivado del nombre en la colección actual.
+   * 3. Receta seleccionada en sesión (solo si coincide y no existe en colección activa).
+   * 4. En modo demo, catálogo base escalado.
+   * Esto previene que la receta seleccionada eclipse a una receta válida de la colección activa.
    */
   const getRecipeById = useCallback(
     (idOrSlug: string): ClientRecipe | undefined => {
       if (!idOrSlug) return undefined;
       const clean = idOrSlug.trim().toLowerCase();
 
-      // 1. Revisar si la receta activa en sesión coincide
+      // 1. Prioridad máxima: Búsqueda por ID exacto en la colección actual
+      const matchById = recipes.find((r) => r.id.toLowerCase() === clean);
+      if (matchById) {
+        return matchById;
+      }
+
+      // 2. Búsqueda por slug generado del nombre en la colección actual
+      const matchBySlug = recipes.find((r) => {
+        const slug = generateRecipeSlug(r.name).toLowerCase();
+        return slug === clean;
+      });
+      if (matchBySlug) {
+        return matchBySlug;
+      }
+
+      // 3. Si no está en la colección activa pero coincide con la seleccionada en sesión
       if (selectedRecipe) {
         if (selectedRecipe.id.toLowerCase() === clean) {
           return selectedRecipe;
@@ -107,24 +146,14 @@ export function RecipeProvider({
         }
       }
 
-      // 2. Buscar en la colección actual de recetas en memoria
-      const foundInList = recipes.find((r) => {
-        if (r.id.toLowerCase() === clean) return true;
-        const slug = generateRecipeSlug(r.name).toLowerCase();
-        return slug === clean;
-      });
-      if (foundInList) {
-        return foundInList;
-      }
-
-      // 3. Si estamos en modo demo, consultar el catálogo base adaptado
+      // 4. Si estamos en modo demo, consultar el catálogo base adaptado
       if (isDemoMode) {
         return getDemoRecipeById(clean, budget, servings);
       }
 
       return undefined;
     },
-    [selectedRecipe, recipes, isDemoMode, budget, servings]
+    [recipes, selectedRecipe, isDemoMode, budget, servings]
   );
 
   /**
@@ -135,42 +164,50 @@ export function RecipeProvider({
       if (typeof idOrRecipe === 'string') {
         const resolved = getRecipeById(idOrRecipe);
         if (resolved) {
-          setSelectedRecipe(resolved);
+          setSelectedRecipeId(resolved.id);
+          setCustomSelectedRecipe(resolved);
         }
         return resolved;
       }
 
-      setSelectedRecipe(idOrRecipe);
+      setSelectedRecipeId(idOrRecipe.id);
+      setCustomSelectedRecipe(idOrRecipe);
       return idOrRecipe;
     },
     [getRecipeById]
   );
 
   const clearSelectedRecipe = useCallback(() => {
-    setSelectedRecipe(null);
+    setSelectedRecipeId(null);
+    setCustomSelectedRecipe(null);
   }, []);
 
   /**
    * Permite inyectar recomendaciones reales del backend en la fase de integración (Phase 3).
-   * Normaliza las recetas y asegura identidades únicas estables incluso con nombres duplicados.
+   * Desambigua colisiones de identificadores usando un Set de IDs reservados para que nombres
+   * idénticos o variantes de base slug (ej: "Arroz", "Arroz", "Arroz 2") siempre reciban IDs únicos.
    */
   const setRealRecipes = useCallback(
     (backendRecipes: BackendRecipe[], customServings?: number) => {
       const activeServings = customServings ?? servings;
-      const seenSlugs = new Map<string, number>();
+      const reservedIds = new Set<string>();
 
       const normalized: ClientRecipe[] = backendRecipes.map((raw, idx) => {
         const baseNorm = normalizeBackendRecipe(raw, idx, activeServings);
-        const baseSlug = generateRecipeSlug(baseNorm.name);
+        const baseSlug = generateRecipeSlug(baseNorm.name) || `receta-${idx + 1}`;
 
-        // Desambiguar colisiones en nombres duplicados
         let uniqueId = baseSlug;
-        const occurrences = (seenSlugs.get(baseSlug) ?? 0) + 1;
-        seenSlugs.set(baseSlug, occurrences);
-
-        if (occurrences > 1) {
-          uniqueId = `${baseSlug}-${occurrences}`;
+        if (reservedIds.has(uniqueId)) {
+          let counter = 2;
+          let candidate = `${baseSlug}-${counter}`;
+          while (reservedIds.has(candidate)) {
+            counter++;
+            candidate = `${baseSlug}-${counter}`;
+          }
+          uniqueId = candidate;
         }
+
+        reservedIds.add(uniqueId);
 
         return {
           ...baseNorm,
@@ -181,12 +218,26 @@ export function RecipeProvider({
       setRealRecipesState(normalized);
       setIsDemoMode(false);
       setError(null);
+
+      // Limpiar o actualizar la receta seleccionada si no pertenece a la nueva colección
+      setSelectedRecipeId((prevId) => {
+        if (!prevId) return null;
+        const stillExists = normalized.some((r) => r.id === prevId);
+        return stillExists ? prevId : null;
+      });
+      setCustomSelectedRecipe((prev) => {
+        if (!prev) return null;
+        const stillExists = normalized.find((r) => r.id === prev.id);
+        return stillExists ?? null;
+      });
     },
     [servings]
   );
 
   const setDemoMode = useCallback((enable: boolean) => {
     setIsDemoMode(enable);
+    setSelectedRecipeId(null);
+    setCustomSelectedRecipe(null);
   }, []);
 
   const refreshRecipes = useCallback(async (): Promise<void> => {

@@ -33,6 +33,7 @@ import DespensaScreen from '../app/(tabs)/despensa';
 import { TypographyProvider } from '../src/theme';
 import { PantryProvider } from '../src/context/PantryContext';
 import { BudgetProvider } from '../src/context/BudgetContext';
+import { RecipeProvider } from '../src/context/RecipeContext';
 import { Ingredient } from '../src/types/pantry';
 import { BudgetPreferences } from '../src/types/budget';
 
@@ -119,7 +120,9 @@ const renderWithProviders = async (
               options?.initialBudgetPreferences ?? { budget: 20000, servings: 2 }
             }
           >
-            {ui}
+            <RecipeProvider>
+              {ui}
+            </RecipeProvider>
           </BudgetProvider>
         </PantryProvider>
       </TypographyProvider>
@@ -146,7 +149,7 @@ describe('FoodAI Phase 2C - Recipe Discovery, Details & Cooking Mode Tests', () 
 
       expect(getByText('Recomendaciones')).toBeTruthy();
       expect(getByTestId('recipes-demo-banner')).toBeTruthy();
-      expect(getByText('Vista de ejemplo')).toBeTruthy();
+      expect(getByText('Datos de demostración')).toBeTruthy();
       expect(getByText('Arroz con pollo y verduras')).toBeTruthy();
       expect(getByText('Tortilla paisa con vegetales')).toBeTruthy();
       expect(getByText('Sartén de verduras con arroz')).toBeTruthy();
@@ -247,6 +250,29 @@ describe('FoodAI Phase 2C - Recipe Discovery, Details & Cooking Mode Tests', () 
         expect(getByText('Arroz con pollo y verduras')).toBeTruthy();
         expect(queryByText('Tortilla paisa con vegetales')).toBeNull();
       });
+    });
+
+    it('filtra por chip de tiempo máximo (≤ 30 min)', async () => {
+      const { getByTestId, getByText } = await renderWithProviders(<RecipeDiscoveryScreen />);
+
+      const max30Chip = getByTestId('filter-chip-max-30');
+      fireEvent.press(max30Chip);
+
+      await waitFor(() => {
+        expect(getByText('Arroz con pollo y verduras')).toBeTruthy();
+        expect(getByText('Tortilla paisa con vegetales')).toBeTruthy();
+        expect(getByText('Sartén de verduras con arroz')).toBeTruthy();
+      });
+    });
+
+    it('muestra aviso de despensa vacía cuando no hay ingredientes registrados', async () => {
+      const { getByTestId, getByText } = await renderWithProviders(
+        <RecipeDiscoveryScreen />,
+        { initialIngredients: [] }
+      );
+
+      expect(getByTestId('recipes-empty-pantry-notice')).toBeTruthy();
+      expect(getByText('Tu despensa no tiene ingredientes registrados')).toBeTruthy();
     });
 
     it('navega al detalle de receta al presionar Ver receta en una tarjeta', async () => {
@@ -432,7 +458,7 @@ describe('FoodAI Phase 2C - Recipe Discovery, Details & Cooking Mode Tests', () 
 
     it('muestra el modal de Buen provecho al finalizar y permite volver a la despensa', async () => {
       mockSearchParams = { id: 'demo-rec-1' };
-      const { getByTestId, getByText } = await renderWithProviders(<GuidedCookingScreen />);
+      const { getByTestId, getByText, queryByText } = await renderWithProviders(<GuidedCookingScreen />);
 
       const jumpBtn = getByTestId('cooking-jump-final-button');
       fireEvent.press(jumpBtn);
@@ -447,6 +473,8 @@ describe('FoodAI Phase 2C - Recipe Discovery, Details & Cooking Mode Tests', () 
       await waitFor(() => {
         expect(getByTestId('cooking-finish-modal')).toBeTruthy();
         expect(getByText('¡Buen provecho!')).toBeTruthy();
+        expect(getByText('Compra adicional')).toBeTruthy();
+        expect(queryByText('Ahorro estimado')).toBeNull();
       });
 
       const backPantryBtn = getByTestId('cooking-finish-confirm-button');

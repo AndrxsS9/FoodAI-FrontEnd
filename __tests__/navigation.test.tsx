@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, fireEvent, cleanup, waitFor } from '@testing-library/react-native';
+import { render, fireEvent, cleanup, waitFor, act } from '@testing-library/react-native';
 import WelcomeScreen from '../app/index';
 import HomeScreen from '../app/(tabs)/index';
 import DespensaScreen from '../app/(tabs)/despensa';
@@ -8,6 +8,7 @@ import PerfilScreen from '../app/(tabs)/perfil';
 import TabsLayout from '../app/(tabs)/_layout';
 import { TypographyProvider } from '../src/theme';
 import { PantryProvider } from '../src/context/PantryContext';
+import { BudgetProvider } from '../src/context/BudgetContext';
 import { Ingredient } from '../src/types/pantry';
 
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -103,7 +104,9 @@ describe('Phase 2A: Navigation & Mobile Screens (Google Stitch)', () => {
       >
         <TypographyProvider usingFallback={true}>
           <PantryProvider initialIngredients={initialIngredients}>
-            {ui}
+            <BudgetProvider initialPreferences={{ budget: 20000, servings: 2 }}>
+              {ui}
+            </BudgetProvider>
           </PantryProvider>
         </TypographyProvider>
       </SafeAreaProvider>
@@ -248,7 +251,9 @@ describe('Phase 2A: Navigation & Mobile Screens (Google Stitch)', () => {
 
       // Confirm
       const confirmButton = getByTestId('budget-confirm-button');
-      fireEvent.press(confirmButton);
+      await act(async () => {
+        fireEvent.press(confirmButton);
+      });
 
       // Verify modal is closed and budget is updated
       await waitFor(() => {

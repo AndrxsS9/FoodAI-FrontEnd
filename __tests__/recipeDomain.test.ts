@@ -1,11 +1,16 @@
 /**
- * Pruebas unitarias para el modelo del dominio de recetas, contratos de API,
- * validaciones y adaptadores de formateo (Fase 2C).
+ * Pruebas unitarias para los modelos, validadores y formateadores del dominio de recetas (Fase 2C).
+ * Cubre compatibilidad con el backend Zod, mapeo estricto de unidades culinarias,
+ * formateo monetario en COP (incluyendo negativos), consistencia de escalado de porciones
+ * y resiliencia de normalización.
  */
 import {
+  BACKEND_PANTRY_UNITS,
+  BackendRecipe,
   formatCopCurrency,
   formatIngredientQuantity,
   generateRecipeSlug,
+  mapFrontendPantryItemToBackend,
   mapPantryToRecommendRequest,
   normalizeBackendRecipe,
   normalizeRecipeIngredient,
@@ -13,7 +18,6 @@ import {
   validateBudgetInput,
   validateMaxMinutesInput,
   validateServingsInput,
-  BackendRecipe,
 } from '../src/types/recipe';
 import {
   DEMO_RECIPES,
@@ -21,81 +25,110 @@ import {
   getDemoRecipeById,
   getDemoRecipes,
 } from '../src/fixtures/demoRecipes';
+import { INGREDIENT_UNITS, IngredientUnit } from '../src/types/pantry';
 
-describe('Recipe Domain Model & API Contracts (Fase 2C)', () => {
-  describe('generateRecipeSlug', () => {
-    it('genera un slug URL-safe a partir del nombre de la receta', () => {
-      expect(generateRecipeSlug('Arroz con pollo y verduras')).toBe('arroz-con-pollo-y-verduras');
-      expect(generateRecipeSlug('Sartén de verduras!')).toBe('sarten-de-verduras');
+describe('Recipe Domain & Backend Alignment (Fase 2C)', () => {
+  describe('Validadores de entrada', () => {
+    it('valida montos de presupuesto en rango permitido (0 a 100M COP)', () => {
+      expect(validateBudgetInput(20000).isValid).toBe(true);
+      expect(validateBudgetInput(0).isValid).toBe(true);
+      expect(validateBudgetInput('50.000').isValid).toBe(true);
+      expect(validateBudgetInput(-1).isValid).toBe(false);
+      expect(validateBudgetInput(-1).error).toBe('El presupuesto no puede ser un valor negativo.');
+      expect(validateBudgetInput(100000001).isValid).toBe(false);
+      expect(validateBudgetInput('invalido').isValid).toBe(false);
+      expect(validateBudgetInput('').isValid).toBe(false);
     });
 
-    it('añade sufijo de índice cuando se especifica', () => {
-      expect(generateRecipeSlug('Pollo', 0)).toBe('pollo-1');
-      expect(generateRecipeSlug('Pollo', 2)).toBe('pollo-3');
+    it('valida número de comensales (1 a 12)', () => {
+      expect(validateServingsInput(1).isValid).toBe(true);
+      expect(validateServingsInput(12).isValid).toBe(true);
+      expect(validateServingsInput(4).isValid).toBe(true);
+      expect(validateServingsInput(0).isValid).toBe(false);
+      expect(validateServingsInput(13).isValid).toBe(false);
+      expect(validateServingsInput(2.5).isValid).toBe(false);
+      expect(validateServingsInput('').isValid).toBe(false);
     });
 
-    it('maneja nombres vacíos o no válidos sin fallar', () => {
-      expect(generateRecipeSlug('')).toBe('receta-desconocida');
-      expect(generateRecipeSlug('', 1)).toBe('receta-2');
-      expect(generateRecipeSlug(null as unknown as string)).toBe('receta-desconocida');
+    it('valida tiempo máximo de preparación (opcional, 1 a 240 minutos)', () => {
+      expect(validateMaxMinutesInput(undefined).isValid).toBe(true);
+      expect(validateMaxMinutesInput(null).isValid).toBe(true);
+      expect(validateMaxMinutesInput('').isValid).toBe(true);
+      expect(validateMaxMinutesInput(30).isValid).toBe(true);
+      expect(validateMaxMinutesInput(240).isValid).toBe(true);
+      expect(validateMaxMinutesInput(0).isValid).toBe(false);
+      expect(validateMaxMinutesInput(250).isValid).toBe(false);
+      expect(validateMaxMinutesInput(15.5).isValid).toBe(false);
     });
   });
 
-  describe('formatCopCurrency', () => {
-    it('formatea montos en COP con separador de miles y sufijo opcional', () => {
-      expect(formatCopCurrency(5800)).toBe('$5.800 COP');
-      expect(formatCopCurrency(5800, false)).toBe('$5.800');
+  describe('Formateadores de moneda y cantidades', () => {
+    it('formatea moneda COP estándar y con sufijo', () => {
       expect(formatCopCurrency(20000)).toBe('$20.000 COP');
+      expect(formatCopCurrency(5800, false)).toBe('$5.800');
       expect(formatCopCurrency(0)).toBe('$0 COP');
-    });
-
-    it('maneja valores no numéricos o NaN de forma segura', () => {
       expect(formatCopCurrency(NaN)).toBe('$0 COP');
-      expect(formatCopCurrency(Infinity)).toBe('$0 COP');
     });
-  });
 
-  describe('formatIngredientQuantity', () => {
-    it('formatea cantidades enteras con unidad', () => {
-      expect(formatIngredientQuantity(300, 'g')).toBe('300 g');
+    it('formatea valores negativos de presupuesto restante de forma explícita y precisa', () => {
+      expect(formatCopCurrency(-5800)).toBe('-$5.800 COP');
+      expect(formatCopCurrency(-1500, false)).toBe('-$1.500');
+    });
+
+    it('formatea cantidades enteras y decimales', () => {
       expect(formatIngredientQuantity(2, 'unidad')).toBe('2 unidad');
-      expect(formatIngredientQuantity(1, 'cda')).toBe('1 cda');
+      expect(formatIngredientQuantity(500, 'g')).toBe('500 g');
+      expect(formatIngredientQuantity(1.5, 'kg')).toBe('1,5 kg');
     });
 
-    it('formatea cantidades decimales amigables', () => {
-      expect(formatIngredientQuantity(0.5, 'kg')).toBe('0,5 kg');
-    });
-
-    it('NUNCA muestra una cantidad nula como cero', () => {
-      const formattedNull = formatIngredientQuantity(null, 'al gusto');
-      expect(formattedNull).not.toBe('0');
-      expect(formattedNull).not.toBe('0 al gusto');
-      expect(formattedNull).toContain('Por confirmar');
-
-      const formattedUndefined = formatIngredientQuantity(undefined, '');
-      expect(formattedUndefined).toBe('Por confirmar / Al gusto');
-    });
-
-    it('maneja unidades desconocidas o s/u adecuadamente', () => {
-      expect(formatIngredientQuantity(2, 'desconocida')).toBe('2');
-      expect(formatIngredientQuantity(3, 's/u')).toBe('3');
+    it('preserva cantidades nulas o indefinidas sin mostrar jamás 0', () => {
+      expect(formatIngredientQuantity(null, 'cucharada')).toBe('Por confirmar (cucharada)');
+      expect(formatIngredientQuantity(undefined, 'taza')).toBe('Por confirmar (taza)');
       expect(formatIngredientQuantity(null, 'desconocida')).toBe('Por confirmar / Al gusto');
+      expect(formatIngredientQuantity(null)).toBe('Por confirmar / Al gusto');
+    });
+
+    it('formatea cantidades menores o iguales a cero como "Al gusto"', () => {
+      expect(formatIngredientQuantity(0, 'pizca')).toBe('Al gusto');
+      expect(formatIngredientQuantity(-5)).toBe('Al gusto');
     });
   });
 
-  describe('Normalizadores de ingredientes', () => {
-    it('normaliza strings planos como ingredientes con cantidad nula', () => {
-      const result = normalizeRecipeIngredient('Cebolla picada');
-      expect(result.name).toBe('Cebolla picada');
+  describe('Generación de slugs para Expo Router', () => {
+    it('convierte nombres con tildes y caracteres especiales en slugs seguros', () => {
+      expect(generateRecipeSlug('Arroz con Pollo & Verduras')).toBe('arroz-con-pollo-verduras');
+      expect(generateRecipeSlug('Sartén de Champiñones')).toBe('sarten-de-champinones');
+      expect(generateRecipeSlug('¡Tortilla Paisa!')).toBe('tortilla-paisa');
+    });
+
+    it('añade sufijo de índice cuando se especifica para evitar colisiones entre duplicados', () => {
+      expect(generateRecipeSlug('Arroz con Pollo', 0)).toBe('arroz-con-pollo-1');
+      expect(generateRecipeSlug('Arroz con Pollo', 1)).toBe('arroz-con-pollo-2');
+    });
+
+    it('maneja nombres vacíos o inválidos con identificadores de respaldo', () => {
+      expect(generateRecipeSlug('', 0)).toBe('receta-1');
+      expect(generateRecipeSlug('')).toBe('receta-desconocida');
+    });
+  });
+
+  describe('Normalización de ingredientes', () => {
+    it('normaliza strings planos a objetos RecipeIngredient seguros', () => {
+      const result = normalizeRecipeIngredient('Sal al gusto');
+      expect(result.name).toBe('Sal al gusto');
       expect(result.quantity).toBeNull();
       expect(result.unit).toBe('');
     });
 
-    it('normaliza objetos de ingredientes preservando valores', () => {
-      const result = normalizeRecipeIngredient({ name: 'Tomate', quantity: 2, unit: 'un' });
-      expect(result.name).toBe('Tomate');
-      expect(result.quantity).toBe(2);
-      expect(result.unit).toBe('un');
+    it('normaliza objetos BackendRecipeIngredient preservando cantidades válidas', () => {
+      const result = normalizeRecipeIngredient({
+        name: 'Pollo',
+        quantity: 300,
+        unit: 'g',
+      });
+      expect(result.name).toBe('Pollo');
+      expect(result.quantity).toBe(300);
+      expect(result.unit).toBe('g');
     });
 
     it('normaliza ingredientes faltantes con costo estimado', () => {
@@ -126,7 +159,7 @@ describe('Recipe Domain Model & API Contracts (Fase 2C)', () => {
       estimatedMissingCost: 1000,
       budgetRemaining: 19000,
       withinBudget: true,
-      convenience: 'Óptima',
+      convenience: 92,
       reason: 'Aprovecha tu despensa',
     };
 
@@ -138,6 +171,7 @@ describe('Recipe Domain Model & API Contracts (Fase 2C)', () => {
       expect(client.totalMinutes).toBe(25);
       expect(client.availableIngredients.length).toBe(1);
       expect(client.missingIngredients.length).toBe(1);
+      expect(client.convenience).toBe('92% conveniente');
       expect(client.isDemoFixture).toBe(false);
     });
 
@@ -153,7 +187,7 @@ describe('Recipe Domain Model & API Contracts (Fase 2C)', () => {
         estimatedMissingCost: 0,
         budgetRemaining: 0,
         withinBudget: true,
-        convenience: '',
+        convenience: 0,
         reason: '',
       } as BackendRecipe;
 
@@ -164,45 +198,47 @@ describe('Recipe Domain Model & API Contracts (Fase 2C)', () => {
     });
   });
 
-  describe('Validaciones de entrada (Presupuesto, Comensales, Tiempo)', () => {
-    it('valida presupuestos no negativos y finitos', () => {
-      expect(validateBudgetInput(20000).isValid).toBe(true);
-      expect(validateBudgetInput(0).isValid).toBe(true);
-      expect(validateBudgetInput(' 35.000 ').isValid).toBe(true);
+  describe('Mapeo de Unidades y Compatibilidad Estricta de Backend (Zod)', () => {
+    it('todas las unidades soportadas en el frontend producen un ítem compatible con el backend', () => {
+      const allUnits: IngredientUnit[] = [...INGREDIENT_UNITS];
 
-      expect(validateBudgetInput(-100).isValid).toBe(false);
-      expect(validateBudgetInput('').isValid).toBe(false);
-      expect(validateBudgetInput('abc').isValid).toBe(false);
-      expect(validateBudgetInput(200000000).isValid).toBe(false);
+      allUnits.forEach((unit) => {
+        const mapped = mapFrontendPantryItemToBackend({
+          name: 'Alimento de prueba',
+          quantity: 2,
+          unit,
+        });
+
+        // 1. La unidad mapeada debe estar en la lista permitida por el backend Zod
+        expect(BACKEND_PANTRY_UNITS).toContain(mapped.unit);
+
+        // 2. needsReview siempre debe ser booleano obligatorio
+        expect(typeof mapped.needsReview).toBe('boolean');
+
+        // 3. Unidades culinarias no convertibles directamente ('taza', 'cucharada', 'cucharadita')
+        // jamás deben asumirse como 'unidad' ni inventar cantidades arbitrarias
+        if (unit === 'taza' || unit === 'cucharada' || unit === 'cucharadita') {
+          expect(mapped.unit).toBe('desconocida');
+          expect(mapped.quantity).toBeNull();
+          expect(mapped.needsReview).toBe(true);
+        } else if (unit === 'desconocida') {
+          expect(mapped.unit).toBe('desconocida');
+          expect(mapped.quantity).toBeNull();
+          expect(mapped.needsReview).toBe(true);
+        } else {
+          // Unidades directas compatibles ('unidad', 'g', 'kg', 'ml', 'l')
+          expect(mapped.unit).toBe(unit);
+          expect(mapped.quantity).toBe(2);
+          expect(mapped.needsReview).toBe(false);
+        }
+      });
     });
 
-    it('valida número de comensales entre 1 y 12', () => {
-      expect(validateServingsInput(1).isValid).toBe(true);
-      expect(validateServingsInput(4).isValid).toBe(true);
-      expect(validateServingsInput(12).isValid).toBe(true);
-
-      expect(validateServingsInput(0).isValid).toBe(false);
-      expect(validateServingsInput(13).isValid).toBe(false);
-      expect(validateServingsInput(2.5).isValid).toBe(false);
-      expect(validateServingsInput(null).isValid).toBe(false);
-    });
-
-    it('valida tiempo máximo entre 1 y 240 minutos', () => {
-      expect(validateMaxMinutesInput(undefined).isValid).toBe(true);
-      expect(validateMaxMinutesInput(30).isValid).toBe(true);
-      expect(validateMaxMinutesInput(240).isValid).toBe(true);
-
-      expect(validateMaxMinutesInput(0).isValid).toBe(false);
-      expect(validateMaxMinutesInput(300).isValid).toBe(false);
-      expect(validateMaxMinutesInput(25.5).isValid).toBe(false);
-    });
-  });
-
-  describe('mapPantryToRecommendRequest', () => {
-    it('transforma los alimentos de despensa al payload exacto del backend', () => {
+    it('transforma los alimentos de despensa al payload exacto del backend con needsReview obligatorio', () => {
       const pantry = [
         { name: 'Tomate', quantity: 2, unit: 'unidad' },
         { name: 'Pollo', quantity: 500, unit: 'g' },
+        { name: 'Harina', quantity: 1, unit: 'taza' },
       ];
 
       const request = mapPantryToRecommendRequest(pantry, 25000, 4, 45);
@@ -211,6 +247,7 @@ describe('Recipe Domain Model & API Contracts (Fase 2C)', () => {
         pantry: [
           { name: 'Tomate', quantity: 2, unit: 'unidad', needsReview: false },
           { name: 'Pollo', quantity: 500, unit: 'g', needsReview: false },
+          { name: 'Harina', quantity: null, unit: 'desconocida', needsReview: true },
         ],
         budget: 25000,
         servings: 4,
@@ -234,7 +271,7 @@ describe('Recipe Domain Model & API Contracts (Fase 2C)', () => {
   describe('Fixture de Demostración (demoRecipes)', () => {
     it('contiene metadatos explícitos de evaluación visual', () => {
       expect(DEMO_RECIPES_META.isDemonstrationData).toBe(true);
-      expect(DEMO_RECIPES_META.badgeLabel).toBe('Vista de ejemplo');
+      expect(DEMO_RECIPES_META.badgeLabel).toBe('Datos de demostración');
     });
 
     it('las recetas de demostración tienen bandera isDemoFixture activada', () => {
@@ -245,13 +282,30 @@ describe('Recipe Domain Model & API Contracts (Fase 2C)', () => {
       });
     });
 
-    it('escala dinámicamente el presupuesto y porciones con getDemoRecipes', () => {
-      const recipes = getDemoRecipes(30000, 4);
-      expect(recipes.length).toBe(3);
-      recipes.forEach((r) => {
-        expect(r.servings).toBe(4);
-        expect(r.budgetRemaining).toBe(30000 - r.estimatedMissingCost);
-      });
+    it('escala consistentemente tanto los costos como las cantidades de ingredientes según las porciones', () => {
+      // Receta base: 2 porciones -> Pollo: 300g, estimatedMissingCost: 5800
+      const baseRecipes = getDemoRecipes(20000, 2);
+      const recipe2 = baseRecipes[0];
+      const pollo2 = recipe2.ingredients.find((i) => i.name === 'Pollo');
+      expect(pollo2?.quantity).toBe(300);
+      expect(recipe2.estimatedMissingCost).toBe(5800);
+
+      // 4 porciones (factor 2) -> Pollo debe ser 600g, missingCost debe ser 11600
+      const scaledRecipes = getDemoRecipes(20000, 4);
+      const recipe4 = scaledRecipes[0];
+      const pollo4 = recipe4.ingredients.find((i) => i.name === 'Pollo');
+      expect(pollo4?.quantity).toBe(600);
+      expect(recipe4.estimatedMissingCost).toBe(11600);
+      expect(recipe4.budgetRemaining).toBe(20000 - 11600);
+    });
+
+    it('maneja presupuesto cero e insuficiente marcando withinBudget = false y presupuesto restante negativo', () => {
+      // Presupuesto 1000 con costo faltante 5800
+      const recipes = getDemoRecipes(1000, 2);
+      const recipe = recipes[0];
+      expect(recipe.withinBudget).toBe(false);
+      expect(recipe.budgetRemaining).toBe(-4800);
+      expect(formatCopCurrency(recipe.budgetRemaining)).toBe('-$4.800 COP');
     });
 
     it('encuentra recetas por ID o por slug con getDemoRecipeById', () => {

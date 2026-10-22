@@ -23,8 +23,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Button, Card } from '../../../src/components/common';
-import { useBudget } from '../../../src/context/BudgetContext';
-import { getDemoRecipeById } from '../../../src/fixtures/demoRecipes';
+import { useRecipes } from '../../../src/context/RecipeContext';
 import { formatCopCurrency } from '../../../src/types/recipe';
 import { colors, radius, spacing, useTypography } from '../../../src/theme';
 
@@ -34,10 +33,11 @@ export default function GuidedCookingScreen() {
   const params = useLocalSearchParams<{ id?: string }>();
   const recipeId = params.id ? String(params.id).trim() : '';
 
-  const { budget, servings } = useBudget();
+  const { getRecipeById, selectedRecipe } = useRecipes();
+
   const recipe = useMemo(() => {
-    return getDemoRecipeById(recipeId, budget, servings);
-  }, [recipeId, budget, servings]);
+    return getRecipeById(recipeId) || (selectedRecipe?.id === recipeId ? selectedRecipe : undefined);
+  }, [getRecipeById, selectedRecipe, recipeId]);
 
   // Pasos normalizados seguros
   const steps = useMemo(() => {
@@ -452,10 +452,10 @@ export default function GuidedCookingScreen() {
 
               <View style={styles.finishMetricItem}>
                 <Text style={[styles.finishMetricLabel, typography.labelSm]}>
-                  Ahorro estimado
+                  Compra adicional
                 </Text>
                 <Text style={[styles.finishMetricValue, typography.headlineMd, { color: colors.secondary }]}>
-                  {formatCopCurrency(Math.max(1000, budget - recipe.estimatedMissingCost))}
+                  {formatCopCurrency(recipe.estimatedMissingCost)}
                 </Text>
               </View>
             </View>

@@ -22,7 +22,7 @@ import { useRouter } from 'expo-router';
 import { Button, Card, Chip, Input, Stepper } from '../../src/components/common';
 import { usePantry } from '../../src/context/PantryContext';
 import { useBudget } from '../../src/context/BudgetContext';
-import { DEMO_RECIPES_META, getDemoRecipes } from '../../src/fixtures/demoRecipes';
+import { useRecipes } from '../../src/context/RecipeContext';
 import { ClientRecipe, formatCopCurrency } from '../../src/types/recipe';
 import { colors, radius, spacing, useTypography } from '../../src/theme';
 
@@ -34,18 +34,19 @@ export default function RecipeDiscoveryScreen() {
 
   const { summary } = usePantry();
   const { budget, servings, setServings } = useBudget();
+  const {
+    recipes,
+    demoMeta,
+    selectRecipe,
+    isLoading,
+    error,
+    refreshRecipes,
+  } = useRecipes();
 
-  // Estados de búsqueda, filtros y carga
+  // Estados de búsqueda y filtros
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<FilterType>('all');
   const [maxMinutesFilter, setMaxMinutesFilter] = useState<number | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  // Obtener recetas dinámicas según presupuesto y comensales
-  const recipes = useMemo(() => {
-    return getDemoRecipes(budget, servings);
-  }, [budget, servings]);
 
   // Filtrado reactivo de recetas
   const filteredRecipes = useMemo(() => {
@@ -68,10 +69,13 @@ export default function RecipeDiscoveryScreen() {
     } else if (activeFilter === 'quick') {
       result = result.filter((r) => r.totalMinutes <= 25);
     } else if (activeFilter === 'urgent') {
-      result = result.filter((r) => r.reason.toLowerCase().includes('urgente') || r.reason.toLowerCase().includes('dañen'));
+      result = result.filter((r) =>
+        r.reason.toLowerCase().includes('urgente') ||
+        r.reason.toLowerCase().includes('dañen')
+      );
     }
 
-    // Filtro por tiempo máximo
+    // Filtro por tiempo máximo explícito
     if (maxMinutesFilter !== null) {
       result = result.filter((r) => r.totalMinutes <= maxMinutesFilter);
     }
@@ -87,12 +91,13 @@ export default function RecipeDiscoveryScreen() {
     }
   };
 
+  const handleSelectRecipe = (recipe: ClientRecipe) => {
+    selectRecipe(recipe);
+    router.push(`/recetas/${recipe.id}` as any);
+  };
+
   const handleRetry = () => {
-    setIsLoading(true);
-    setError(null);
-    setTimeout(() => {
-      setIsLoading(false);
-    }, 400);
+    refreshRecipes();
   };
 
   return (
@@ -153,18 +158,44 @@ export default function RecipeDiscoveryScreen() {
           style={styles.demoBanner}
           testID="recipes-demo-banner"
           accessibilityRole="text"
-          accessibilityLabel={DEMO_RECIPES_META.noticeText}
+          accessibilityLabel={demoMeta.noticeText}
         >
           <View style={styles.demoBadge}>
             <MaterialIcons name="science" size={14} color={colors.primary} />
             <Text style={[styles.demoBadgeText, typography.labelSm]}>
-              {DEMO_RECIPES_META.badgeLabel}
+              {demoMeta.badgeLabel}
             </Text>
           </View>
           <Text style={[styles.demoNoticeText, typography.bodySm]}>
-            {DEMO_RECIPES_META.noticeText}
+            {demoMeta.noticeText}
           </Text>
         </View>
+
+        {/* 2.1. Aviso cuando la despensa está vacía */}
+        {summary.totalCount === 0 && (
+          <Card
+            variant="outlined"
+            style={styles.emptyPantryNoticeCard}
+            testID="recipes-empty-pantry-notice"
+          >
+            <View style={styles.emptyPantryNoticeHeader}>
+              <MaterialIcons name="info-outline" size={20} color={colors.primary} />
+              <Text style={[styles.emptyPantryNoticeTitle, typography.labelLg]}>
+                Tu despensa no tiene ingredientes registrados
+              </Text>
+            </View>
+            <Text style={[styles.emptyPantryNoticeText, typography.bodySm]}>
+              Puedes explorar estas recetas sugeridas, pero si registras tus alimentos FoodAI identificará con exactitud cuáles tienes listos para cocinar.
+            </Text>
+            <Button
+              testID="recipes-empty-pantry-cta"
+              title="Ir a Mi Despensa"
+              variant="outline"
+              size="sm"
+              onPress={() => router.push('/(tabs)/despensa')}
+            />
+          </Card>
+        )}
 
         {/* 3. Hero y contexto Stitch 8 */}
         <View style={styles.heroSection}>
@@ -270,6 +301,13 @@ export default function RecipeDiscoveryScreen() {
               onPress={() => setActiveFilter('quick')}
             />
             <Chip
+              testID="filter-chip-max-30"
+              label="≤ 30 min"
+              variant="filter"
+              selected={maxMinutesFilter === 30}
+              onPress={() => setMaxMinutesFilter((prev) => (prev === 30 ? null : 30))}
+            />
+            <Chip
               testID="filter-chip-urgent"
               label="Aprovecha urgentes"
               variant="filter"
@@ -340,7 +378,7 @@ export default function RecipeDiscoveryScreen() {
                 key={recipe.id}
                 recipe={recipe}
                 isDominant={index === 0}
-                onPress={() => router.push(`/recetas/${recipe.id}` as any)}
+                onPress={() => handleSelectRecipe(recipe)}
               />
             ))}
           </View>
@@ -839,5 +877,25 @@ const styles = StyleSheet.create({
   emptyDesc: {
     color: colors.textSecondary,
     textAlign: 'center',
+  },
+  emptyPantryNoticeCard: {
+    padding: spacing.md,
+    gap: spacing.xs,
+    borderColor: colors.primary,
+    borderWidth: 1,
+    backgroundColor: '#FAF5FF',
+  },
+  emptyPantryNoticeHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  emptyPantryNoticeTitle: {
+    color: colors.primary,
+    fontWeight: '700',
+  },
+  emptyPantryNoticeText: {
+    color: colors.textSecondary,
+    lineHeight: 18,
   },
 });

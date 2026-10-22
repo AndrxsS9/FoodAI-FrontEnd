@@ -5,29 +5,38 @@
  * - Pantalla 9: «Detalle de Receta»
  * - Pantalla 10: «Modo Cocina»
  *
- * AVISO: Estos datos representan una simulación aislada y NO corresponden
- * a recomendaciones reales generadas por IA ni a consultas activas al backend.
+ * AVISO DE INTEGRIDAD: Estos datos representan una simulación demostrativa explícita.
+ * NO corresponden a recomendaciones reales generadas por IA ni a consultas activas al backend.
+ * Las cantidades y costos se escalan de manera matemáticamente consistente según las porciones.
  */
-import { ClientRecipe } from '../types/recipe';
+import {
+  ClientRecipe,
+  RecipeIngredient,
+  RecipeMissingIngredient,
+  generateRecipeSlug,
+} from '../types/recipe';
 
 export const DEMO_RECIPES_META = {
   isDemonstrationData: true,
-  badgeLabel: 'Vista de ejemplo',
-  noticeText: 'Recetas de demostración para evaluación de interfaz y navegación. En la fase de integración se conectará con el backend real.',
+  badgeLabel: 'Datos de demostración',
+  noticeText:
+    'Recetas de demostración para evaluación de interfaz y navegación. En la siguiente fase se integrará el backend real.',
 };
 
-export const DEMO_RECIPES: ClientRecipe[] = [
+export const BASE_DEMO_RECIPES: ClientRecipe[] = [
   {
     id: 'demo-rec-1',
     name: 'Arroz con pollo y verduras',
-    description: 'Una preparación balanceada en sartén para aprovechar el pollo y vegetales de tu despensa con una compra mínima.',
+    description:
+      'Una preparación balanceada en sartén para aprovechar el pollo y vegetales de tu despensa con una compra mínima.',
     totalMinutes: 30,
     servings: 2,
     convenience: '94% conveniente',
     estimatedMissingCost: 5800,
     budgetRemaining: 14200,
     withinBudget: true,
-    reason: 'Aprovecha alimentos urgentes: consume hoy el tomate, pollo y espinaca de tu despensa antes de que se dañen.',
+    reason:
+      'Aprovecha alimentos urgentes: consume hoy el tomate, pollo y espinaca de tu despensa antes de que se dañen.',
     isDemoFixture: true,
     imageUrl: require('../../assets/images/recipe-pollo-verduras.jpg'),
     ingredients: [
@@ -62,14 +71,16 @@ export const DEMO_RECIPES: ClientRecipe[] = [
   {
     id: 'demo-rec-2',
     name: 'Tortilla paisa con vegetales',
-    description: 'Tortilla suave y dorada cargada de nutrientes, ideal para una cena rápida con lo que ya tienes en casa.',
+    description:
+      'Tortilla suave y dorada cargada de nutrientes, ideal para una cena rápida con lo que ya tienes en casa.',
     totalMinutes: 20,
     servings: 2,
     convenience: '88% conveniente',
     estimatedMissingCost: 2200,
     budgetRemaining: 17800,
     withinBudget: true,
-    reason: 'Ya tienes casi todo: aprovechas huevos y tomate frescos de tu despensa y requieres una compra mínima.',
+    reason:
+      'Ya tienes casi todo: aprovechas huevos y tomate frescos de tu despensa y requieres una compra mínima.',
     isDemoFixture: true,
     ingredients: [
       { name: 'Huevos', quantity: 3, unit: 'unidad' },
@@ -97,14 +108,16 @@ export const DEMO_RECIPES: ClientRecipe[] = [
   {
     id: 'demo-rec-3',
     name: 'Sartén de verduras con arroz',
-    description: 'Salteado ligero y crujiente de zanahoria, cebolla y arroz, con toques frescos de cilantro.',
+    description:
+      'Salteado ligero y crujiente de zanahoria, cebolla y arroz, con toques frescos de cilantro.',
     totalMinutes: 25,
     servings: 2,
     convenience: '82% conveniente',
     estimatedMissingCost: 1500,
     budgetRemaining: 18500,
     withinBudget: true,
-    reason: 'Compra mínima: excelente opción de ahorro para aprovechar sobrantes de arroz y vegetales disponibles.',
+    reason:
+      'Compra mínima: excelente opción de ahorro para aprovechar sobrantes de arroz y vegetales disponibles.',
     isDemoFixture: true,
     ingredients: [
       { name: 'Arroz cocido', quantity: 2, unit: 'taza' },
@@ -133,16 +146,59 @@ export const DEMO_RECIPES: ClientRecipe[] = [
   },
 ];
 
+export const DEMO_RECIPES = BASE_DEMO_RECIPES;
+
+function scaleIngredient(ing: RecipeIngredient, factor: number): RecipeIngredient {
+  if (ing.quantity === null || ing.quantity === undefined) {
+    return { ...ing };
+  }
+  const scaled = Math.round(ing.quantity * factor * 100) / 100;
+  return {
+    ...ing,
+    quantity: scaled,
+  };
+}
+
+function scaleMissingIngredient(
+  ing: RecipeMissingIngredient,
+  factor: number
+): RecipeMissingIngredient {
+  const scaledBase = scaleIngredient(ing, factor);
+  const scaledCost =
+    typeof ing.estimatedCost === 'number'
+      ? Math.round(ing.estimatedCost * factor)
+      : undefined;
+  return {
+    ...scaledBase,
+    estimatedCost: scaledCost,
+  };
+}
+
 /**
  * Retorna las recetas de demostración adaptadas dinámicamente al presupuesto y porciones actuales.
+ * Garantiza consistencia interna entre porciones, cantidades de ingredientes y costos estimados.
  */
-export function getDemoRecipes(currentBudget?: number, currentServings?: number): ClientRecipe[] {
-  const budget = typeof currentBudget === 'number' && currentBudget >= 0 ? currentBudget : 20000;
-  const servings = typeof currentServings === 'number' && currentServings > 0 ? currentServings : 2;
+export function getDemoRecipes(
+  currentBudget?: number,
+  currentServings?: number
+): ClientRecipe[] {
+  const budget =
+    typeof currentBudget === 'number' && Number.isFinite(currentBudget) && currentBudget >= 0
+      ? currentBudget
+      : 20000;
+  const servings =
+    typeof currentServings === 'number' && Number.isInteger(currentServings) && currentServings > 0
+      ? currentServings
+      : 2;
 
-  return DEMO_RECIPES.map((recipe) => {
-    // Escalar porciones proporcionalmente si difieren del base (2)
-    const factor = servings / 2;
+  const baseServings = 2;
+  const factor = servings / baseServings;
+
+  return BASE_DEMO_RECIPES.map((recipe) => {
+    const scaledIngredients = recipe.ingredients.map((ing) => scaleIngredient(ing, factor));
+    const scaledAvailable = recipe.availableIngredients.map((ing) => scaleIngredient(ing, factor));
+    const scaledMissing = recipe.missingIngredients.map((ing) => scaleMissingIngredient(ing, factor));
+
     const scaledMissingCost = Math.round(recipe.estimatedMissingCost * factor);
     const budgetRemaining = Math.round(budget - scaledMissingCost);
     const withinBudget = budgetRemaining >= 0;
@@ -150,6 +206,9 @@ export function getDemoRecipes(currentBudget?: number, currentServings?: number)
     return {
       ...recipe,
       servings,
+      ingredients: scaledIngredients,
+      availableIngredients: scaledAvailable,
+      missingIngredients: scaledMissing,
       estimatedMissingCost: scaledMissingCost,
       budgetRemaining,
       withinBudget,
@@ -171,12 +230,7 @@ export function getDemoRecipeById(
   const all = getDemoRecipes(currentBudget, currentServings);
   return all.find((r) => {
     if (r.id.toLowerCase() === cleanQuery) return true;
-    const slug = r.name
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '');
-    return slug === cleanQuery;
+    const slug = generateRecipeSlug(r.name);
+    return slug.toLowerCase() === cleanQuery;
   });
 }

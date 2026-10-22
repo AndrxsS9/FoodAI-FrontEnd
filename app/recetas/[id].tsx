@@ -23,8 +23,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Button, Card } from '../../src/components/common';
 import { usePantry } from '../../src/context/PantryContext';
-import { useBudget } from '../../src/context/BudgetContext';
-import { DEMO_RECIPES_META, getDemoRecipeById } from '../../src/fixtures/demoRecipes';
+import { useRecipes } from '../../src/context/RecipeContext';
 import {
   formatCopCurrency,
   formatIngredientQuantity,
@@ -35,15 +34,15 @@ export default function RecipeDetailScreen() {
   const typography = useTypography();
   const router = useRouter();
   const params = useLocalSearchParams<{ id?: string }>();
+  const { summary } = usePantry();
 
   const recipeId = params.id ? String(params.id).trim() : '';
-  const { summary } = usePantry();
-  const { budget, servings } = useBudget();
+  const { getRecipeById, selectRecipe, demoMeta } = useRecipes();
 
-  // Búsqueda segura de la receta (soporta tanto ID como slug)
+  // Búsqueda segura de la receta (soporta tanto ID como slug o activa en sesión)
   const recipe = useMemo(() => {
-    return getDemoRecipeById(recipeId, budget, servings);
-  }, [recipeId, budget, servings]);
+    return getRecipeById(recipeId);
+  }, [getRecipeById, recipeId]);
 
   // Estado local para checklist interactivo de ingredientes disponibles
   const [checkedIngredients, setCheckedIngredients] = useState<Record<string, boolean>>({});
@@ -65,6 +64,7 @@ export default function RecipeDetailScreen() {
 
   const handleStartCooking = () => {
     if (recipe) {
+      selectRecipe(recipe);
       router.push(`/recetas/${recipe.id}/cocinar` as any);
     }
   };
@@ -162,11 +162,11 @@ export default function RecipeDetailScreen() {
             <View style={styles.demoBadge}>
               <MaterialIcons name="science" size={14} color={colors.primary} />
               <Text style={[styles.demoBadgeText, typography.labelSm]}>
-                {DEMO_RECIPES_META.badgeLabel}
+                {demoMeta.badgeLabel}
               </Text>
             </View>
             <Text style={[styles.demoNoticeText, typography.bodySm]}>
-              {DEMO_RECIPES_META.noticeText}
+              {demoMeta.noticeText}
             </Text>
           </View>
         )}
@@ -268,7 +268,9 @@ export default function RecipeDetailScreen() {
               </Text>
             </View>
             <Text style={[styles.budgetStatusRemaining, typography.labelLg]}>
-              Te quedan: {formatCopCurrency(recipe.budgetRemaining)}
+              {recipe.withinBudget
+                ? `Te quedan: ${formatCopCurrency(recipe.budgetRemaining)}`
+                : `Excede por: ${formatCopCurrency(Math.abs(recipe.budgetRemaining))}`}
             </Text>
           </View>
 

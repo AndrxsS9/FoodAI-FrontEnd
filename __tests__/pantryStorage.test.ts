@@ -250,5 +250,172 @@ describe('Pantry Local Persistence & Storage Adapter', () => {
       const manzanas = final.find((i) => i.id === c.id);
       expect(manzanas?.quantity).toBe(6);
     });
+
+    // --- CORRECCIÓN 1: SERIALIZACIÓN Y ESCRITURAS CONCURRENTES ---
+    it('prevents data loss when adding ingredients concurrently without awaiting each call (Escenario A)', async () => {
+      // Registrar arroz, pollo y tomates en ráfaga paralela
+      await Promise.all([
+        adapter.addIngredient({ name: 'Arroz', quantity: 1, unit: 'kg', category: 'Granos y cereales' }),
+        adapter.addIngredient({ name: 'Pollo', quantity: 500, unit: 'g', category: 'Carnes y proteínas' }),
+        adapter.addIngredient({ name: 'Tomates', quantity: 4, unit: 'unidad', category: 'Verduras y frutas' }),
+      ]);
+
+      const stored = await adapter.getIngredients();
+      expect(stored).toHaveLength(3);
+      const names = stored.map((i) => i.name);
+      expect(names).toContain('Arroz');
+      expect(names).toContain('Pollo');
+      expect(names).toContain('Tomates');
+    });
+
+    it('handles concurrent quantity adjustments preserving all increments', async () => {
+      const item = await adapter.addIngredient({
+        name: 'Huevos',
+        quantity: 2,
+        unit: 'unidad',
+        category: 'Lácteos',
+      });
+
+      // 4 incrementos rápidos concurrentes de +1
+      await Promise.all([
+        adapter.adjustQuantity(item.id, 1),
+        adapter.adjustQuantity(item.id, 1),
+        adapter.adjustQuantity(item.id, 1),
+        adapter.adjustQuantity(item.id, 1),
+      ]);
+
+      const stored = await adapter.getIngredients();
+      const updatedItem = stored.find((i) => i.id === item.id);
+      expect(updatedItem?.quantity).toBe(6);
+    });
+
+    // --- CORRECCIÓN 2: ELIMINACIÓN DE FECHA DE VENCIMIENTO ---
+    it('clears existing expiration date when passing explicit null (Escenario B)', async () => {
+      const created = await adapter.addIngredient({
+        name: 'Yogurt griego',
+        quantity: 1,
+        unit: 'unidad',
+        category: 'Lácteos',
+        expirationDate: '2026-10-30',
+      });
+      expect(created.expirationDate).toBe('2026-10-30');
+
+      const updated = await adapter.updateIngredient({
+        id: created.id,
+        expirationDate: null,
+      });
+      expect(updated.expirationDate).toBeUndefined();
+
+      const fromStorage = await adapter.getIngredients();
+      expect(fromStorage[0].expirationDate).toBeUndefined();
+    });
+
+    it('preserves expiration date when expirationDate is omitted in partial update', async () => {
+      const created = await adapter.addIngredient({
+        name: 'Carne molida',
+        quantity: 500,
+        unit: 'g',
+        category: 'Carnes y proteínas',
+        expirationDate: '2026-11-20',
+      });
+
+      const updated = await adapter.updateIngredient({
+        id: created.id,
+        quantity: 750,
+      });
+
+      expect(updated.quantity).toBe(750);
+      expect(updated.expirationDate).toBe('2026-11-20');
+
+      const fromStorage = await adapter.getIngredients();
+      expect(fromStorage[0].expirationDate).toBe('2026-11-20');
+    });
+
+    it('replaces expiration date when providing another valid date string', async () => {
+      const created = await adapter.addIngredient({
+        name: 'Pan tajado',
+        quantity: 1,
+        unit: 'unidad',
+        category: 'Granos y cereales',
+        expirationDate: '2026-10-25',
+      });
+
+      const updated = await adapter.updateIngredient({
+        id: created.id,
+        expirationDate: '2026-11-05',
+      });
+
+      expect(updated.expirationDate).toBe('2026-11-05');
+    });
+
+    // --- CORRECCIÓN 4: VERSIONES DE ESQUEMA E INTEGRIDAD DE ALMACENAMIENTO ---
+    it('rejects unsupported future schema versions without overwriting user data (Escenario G)', async () => {
+      const futurePayload = JSON.stringify({
+        version: 99,
+        updatedAt: new Date().toISOString(),
+        ingredients: [
+          {
+            id: 'futuro-1',
+            name: 'Alimento del futuro',
+            quantity: 1,
+            unit: 'unidad',
+            category: 'Otros',
+            createdAt: '2026-10-21T00:00:00.000Z',
+            updatedAt: '2026-10-21T00:00:00.000Z',
+          },
+        ],
+      });
+      await AsyncStorage.setItem('@foodai:test_pantry', futurePayload);
+
+      await expect(adapter.getIngredients()).rejects.toThrow(
+        'Versión de esquema no compatible (v99)'
+      );
+
+      // Los datos originales deben permanecer intactos y nunca sobrescribirse con vacío
+      const rawStored = await AsyncStorage.getItem('@foodai:test_pantry');
+      expect(rawStored).toBe(futurePayload);
+    });
+
+    it('creates backup and throws on corrupted payload without destroying data (Escenario G)', async () => {
+      const corruptedData = '{"version": 1, "ingredients": [{"id": "corrupto';
+      await AsyncStorage.setItem('@foodai:test_pantry', corruptedData);
+
+      await expect(adapter.getIngredients()).rejects.toThrow(
+        'Almacenamiento corrupto'
+      );
+
+      // Los datos corruptos no se borran silenciosamente
+      const rawStored = await AsyncStorage.getItem('@foodai:test_pantry');
+      expect(rawStored).toBe(corruptedData);
+    });
+
+    it('deduplicates stored ingredients with duplicate IDs and preserves records in quarantine', async () => {
+      const envelopeWithDuplicates = JSON.stringify({
+        version: 1,
+        updatedAt: new Date().toISOString(),
+        ingredients: [
+          { id: 'dup-1', name: 'Tomate', quantity: 2, unit: 'unidad', category: 'Verduras y frutas' },
+          { id: 'dup-1', name: 'Tomate clonado', quantity: 1, unit: 'unidad', category: 'Verduras y frutas' },
+          { id: 'uniq-2', name: 'Cebolla', quantity: 1, unit: 'unidad', category: 'Verduras y frutas' },
+        ],
+      });
+      await AsyncStorage.setItem('@foodai:test_pantry', envelopeWithDuplicates);
+
+      const result = await adapter.getIngredients();
+      expect(result).toHaveLength(2);
+      expect(result.map((i) => i.id)).toEqual(['dup-1', 'uniq-2']);
+
+      // Guardar un nuevo alimento conserva los registros en cuarentena sin perderlos
+      await adapter.addIngredient({
+        name: 'Ajo',
+        quantity: 3,
+        unit: 'unidad',
+        category: 'Verduras y frutas',
+      });
+
+      const raw = await AsyncStorage.getItem('@foodai:test_pantry');
+      const parsed = JSON.parse(raw!);
+      expect(parsed.quarantinedRecords).toHaveLength(1);
+    });
   });
 });

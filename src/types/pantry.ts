@@ -115,7 +115,7 @@ export interface UpdateIngredientInput {
   quantity?: number;
   unit?: IngredientUnit;
   category?: IngredientCategory;
-  expirationDate?: string;
+  expirationDate?: string | null;
 }
 
 export interface ExpirationStatus {

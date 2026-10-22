@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Image,
   Pressable,
@@ -12,6 +12,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Button, Card, Chip, Input } from '../../src/components/common';
 import { usePantry } from '../../src/context/PantryContext';
+import { useBudget } from '../../src/context/BudgetContext';
 import { DEMO_DASHBOARD_DATA } from '../../src/fixtures/demoDashboardData';
 import { colors, radius, spacing, useTypography } from '../../src/theme';
 
@@ -31,11 +32,16 @@ export default function HomeScreen() {
     icon: 'info',
   });
 
-  // Dynamic budget state with explicit user input modal
-  const [budget, setBudget] = useState(DEMO_DASHBOARD_DATA.initialBudgetCop);
+  // Dynamic shared budget state with explicit user input modal
+  const { budget: sharedBudget, setBudget: setSharedBudget } = useBudget();
+  const [budget, setLocalBudget] = useState(sharedBudget);
   const [budgetModalVisible, setBudgetModalVisible] = useState(false);
-  const [tempBudgetText, setTempBudgetText] = useState(String(DEMO_DASHBOARD_DATA.initialBudgetCop));
+  const [tempBudgetText, setTempBudgetText] = useState(String(sharedBudget));
   const [budgetError, setBudgetError] = useState<string | undefined>(undefined);
+
+  useEffect(() => {
+    setLocalBudget(sharedBudget);
+  }, [sharedBudget]);
 
   const showFeatureNotice = (
     title: string,
@@ -80,7 +86,8 @@ export default function HomeScreen() {
       return;
     }
 
-    setBudget(parsed);
+    setLocalBudget(parsed);
+    setSharedBudget(parsed);
     setBudgetModalVisible(false);
     setBudgetError(undefined);
   };
@@ -458,13 +465,7 @@ export default function HomeScreen() {
                 variant="primary"
                 size="lg"
                 fullWidth
-                onPress={() =>
-                  showFeatureNotice(
-                    'Detalle de receta en desarrollo',
-                    'La pantalla completa de preparación paso a paso (Modo Cocina) se integrará en las siguientes etapas.',
-                    'restaurant-menu'
-                  )
-                }
+                onPress={() => router.push('/recetas/demo-rec-1' as any)}
                 accessibilityLabel="Ver receta de pollo con verduras (ejemplo)"
                 accessibilityHint="Muestra los pasos detallados de la receta de demostración"
                 rightIcon={<MaterialIcons name="arrow-forward" size={18} color={colors.onPrimary} />}

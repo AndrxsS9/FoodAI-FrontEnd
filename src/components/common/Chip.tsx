@@ -22,6 +22,7 @@ export interface ChipProps {
   accessibilityLabel?: string;
   accessibilityHint?: string;
   accessibilityRole?: 'button' | 'checkbox' | 'radio';
+  testID?: string;
   style?: ViewStyle;
   textStyle?: TextStyle;
 }
@@ -37,6 +38,7 @@ export const Chip: React.FC<ChipProps> = ({
   accessibilityLabel,
   accessibilityHint,
   accessibilityRole = 'button',
+  testID,
   style,
   textStyle,
 }) => {
@@ -74,6 +76,7 @@ export const Chip: React.FC<ChipProps> = ({
   if (isPressable) {
     return (
       <Pressable
+        testID={testID}
         onPress={disabled ? undefined : onPress}
         disabled={disabled}
         accessibilityRole={accessibilityRole}
@@ -93,6 +96,7 @@ export const Chip: React.FC<ChipProps> = ({
 
   return (
     <View
+      testID={testID}
       style={containerStyles}
       accessibilityRole="text"
       accessibilityLabel={accessibilityLabel || label}

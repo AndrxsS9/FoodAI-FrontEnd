@@ -6,6 +6,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useAppFonts } from '../src/hooks/useAppFonts';
 import { TypographyProvider, colors } from '../src/theme';
 import { PantryProvider } from '../src/context/PantryContext';
+import { BudgetProvider } from '../src/context/BudgetContext';
 
 export default function RootLayout() {
   const { isReady, fontError, usingFallback } = useAppFonts();
@@ -35,17 +36,20 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <TypographyProvider usingFallback={usingFallback}>
         <PantryProvider>
-          <StatusBar style="dark" />
-          <Stack
-            screenOptions={{
-              headerShown: false,
-              contentStyle: { backgroundColor: colors.canvas },
-            }}
-          >
-            <Stack.Screen name="index" />
-            <Stack.Screen name="(tabs)" />
-            <Stack.Screen name="design-system" />
-          </Stack>
+          <BudgetProvider>
+            <StatusBar style="dark" />
+            <Stack
+              screenOptions={{
+                headerShown: false,
+                contentStyle: { backgroundColor: colors.canvas },
+              }}
+            >
+              <Stack.Screen name="index" />
+              <Stack.Screen name="(tabs)" />
+              <Stack.Screen name="design-system" />
+              <Stack.Screen name="recetas" />
+            </Stack>
+          </BudgetProvider>
         </PantryProvider>
       </TypographyProvider>
     </SafeAreaProvider>

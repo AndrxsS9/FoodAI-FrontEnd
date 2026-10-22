@@ -1,6 +1,7 @@
 import React from 'react';
 import {
   Pressable,
+  StyleProp,
   StyleSheet,
   View,
   ViewStyle,
@@ -19,7 +20,7 @@ export interface CardProps {
   accessibilityHint?: string;
   accessibilityRole?: 'button' | 'text' | 'header' | 'none';
   testID?: string;
-  style?: ViewStyle;
+  style?: StyleProp<ViewStyle>;
 }
 
 const variantStyles: Record<CardVariant, ViewStyle> = {
@@ -57,12 +58,13 @@ export const Card: React.FC<CardProps> = ({
   style,
 }) => {
   const paddingValue = typeof padding === 'number' ? padding : spacing[padding];
+  const flattenedCustomStyle = StyleSheet.flatten(style) || {};
   const combinedStyle: ViewStyle = {
     ...styles.base,
     ...variantStyles[variant],
     padding: paddingValue,
     ...(disabled ? styles.disabled : {}),
-    ...style,
+    ...flattenedCustomStyle,
   };
 
   if (onPress) {

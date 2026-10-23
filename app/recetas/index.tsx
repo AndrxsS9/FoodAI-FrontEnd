@@ -46,8 +46,12 @@ export default function RecipeDiscoveryScreen() {
     demoMeta,
     selectRecipe,
     isLoading,
+    isGenerating,
+    isStale,
     error,
     refreshRecipes,
+    generateRecipes,
+    clearError,
   } = useRecipes();
 
   // Estados de control para persistencia asíncrona de comensales
@@ -128,8 +132,20 @@ export default function RecipeDiscoveryScreen() {
     router.push(`/recetas/${recipe.id}` as any);
   };
 
+  const handleGenerateRecipes = async () => {
+    try {
+      await generateRecipes();
+    } catch {
+      // El error queda expuesto en RecipeContext y se renderiza en la UI
+    }
+  };
+
   const handleRetry = () => {
-    refreshRecipes();
+    if (isDemoMode) {
+      refreshRecipes();
+    } else {
+      handleGenerateRecipes();
+    }
   };
 
   return (
@@ -239,6 +255,14 @@ export default function RecipeDiscoveryScreen() {
               Aprovecha tu despensa ({summary.totalCount} alimentos disponibles)
             </Text>
           </View>
+          {!isDemoMode && recipes.length > 0 && (
+            <View style={styles.realAiBadge} testID="recipes-count-badge">
+              <MaterialIcons name="auto-awesome" size={14} color="#5B4300" />
+              <Text style={[styles.realAiBadgeText, typography.labelSm]}>
+                {recipes.length} receta{recipes.length === 1 ? '' : 's'} generada{recipes.length === 1 ? '' : 's'} con IA
+              </Text>
+            </View>
+          )}
           <Text
             style={[styles.heroHeadline, typography.headlineXl]}
             accessibilityRole="header"
@@ -315,6 +339,84 @@ export default function RecipeDiscoveryScreen() {
           </Card>
         )}
 
+        {/* 4.2. Acción Principal: Generar recetas con IA */}
+        <View style={styles.aiActionSection}>
+          <Button
+            testID="recipes-generate-ai-button"
+            title={isGenerating ? 'Generando recetas con IA...' : 'Generar recetas con IA'}
+            variant="primary"
+            size="lg"
+            fullWidth
+            loading={isGenerating}
+            disabled={isGenerating || summary.totalCount === 0}
+            onPress={handleGenerateRecipes}
+            accessibilityLabel="Generar recetas personalizadas con inteligencia artificial"
+            accessibilityHint="Envía tus ingredientes y presupuesto actuales a Gemini para crear opciones culinarias a medida"
+            leftIcon={
+              !isGenerating ? (
+                <MaterialIcons name="auto-awesome" size={20} color={colors.onPrimary} />
+              ) : undefined
+            }
+          />
+        </View>
+
+        {/* 4.3. Aviso de recetas obsoletas (isStale) */}
+        {isStale && !isGenerating && (
+          <View style={styles.staleNoticeCard} testID="recipes-stale-banner">
+            <View style={styles.staleNoticeContent}>
+              <MaterialIcons name="update" size={22} color="#8A5E00" />
+              <View style={styles.staleNoticeTextCol}>
+                <Text style={[styles.staleNoticeTitle, typography.labelMd]}>
+                  Tu despensa o presupuesto cambiaron
+                </Text>
+                <Text style={[styles.staleNoticeDesc, typography.bodySm]}>
+                  Las sugerencias actuales fueron calculadas con tu estado anterior. Actualiza para optimizar tus opciones.
+                </Text>
+              </View>
+            </View>
+            <Button
+              testID="recipes-stale-regenerate-button"
+              title="Actualizar recetas"
+              variant="outline"
+              size="sm"
+              disabled={isGenerating || summary.totalCount === 0}
+              onPress={handleGenerateRecipes}
+            />
+          </View>
+        )}
+
+        {/* 4.4. Tarjeta de error de API al generar con IA */}
+        {error && !isGenerating && (
+          <Card variant="outlined" style={styles.apiErrorCard} testID="recipes-api-error-card">
+            <View style={styles.apiErrorRow}>
+              <MaterialIcons name="error-outline" size={24} color={colors.error} />
+              <View style={styles.apiErrorTextCol}>
+                <Text style={[styles.apiErrorTitle, typography.headlineMd]}>
+                  No se pudieron generar las recetas
+                </Text>
+                <Text style={[styles.apiErrorDesc, typography.bodySm]}>{error}</Text>
+              </View>
+            </View>
+            <View style={styles.apiErrorActions}>
+              <Button
+                testID="recipes-retry-button"
+                title="Reintentar"
+                variant="primary"
+                size="sm"
+                disabled={isGenerating || summary.totalCount === 0}
+                onPress={handleGenerateRecipes}
+              />
+              <Button
+                testID="recipes-dismiss-api-error-button"
+                title="Descartar"
+                variant="ghost"
+                size="sm"
+                onPress={clearError}
+              />
+            </View>
+          </Card>
+        )}
+
         {/* 5. Búsqueda y Chips de Filtro */}
         <View style={styles.filterSection}>
           <Input
@@ -385,7 +487,7 @@ export default function RecipeDiscoveryScreen() {
         </View>
 
         {/* 6. Estados de Carga, Error o Lista */}
-        {isLoading ? (
+        {isLoading || isGenerating ? (
           <View
             style={styles.centerContainer}
             testID="recipes-loading-state"
@@ -394,10 +496,12 @@ export default function RecipeDiscoveryScreen() {
           >
             <ActivityIndicator size="large" color={colors.primary} />
             <Text style={[styles.loadingText, typography.bodyMd]}>
-              Buscando las mejores recetas para tu despensa...
+              {isGenerating
+                ? 'Generando recetas personalizadas con IA...'
+                : 'Buscando las mejores recetas para tu despensa...'}
             </Text>
           </View>
-        ) : error ? (
+        ) : error && recipes.length === 0 ? (
           <Card variant="outlined" style={styles.errorCard} testID="recipes-error-state">
             <MaterialIcons name="error-outline" size={36} color={colors.error} />
             <Text style={[styles.errorTitle, typography.headlineMd]}>
@@ -988,5 +1092,82 @@ const styles = StyleSheet.create({
   storageErrorDesc: {
     color: colors.textSecondary,
     lineHeight: 18,
+  },
+  realAiBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+    backgroundColor: '#FFDF9B',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    borderRadius: radius.full,
+    marginBottom: spacing.xs,
+  },
+  realAiBadgeText: {
+    color: '#5B4300',
+    fontWeight: '700',
+  },
+  aiActionSection: {
+    marginHorizontal: spacing.margin,
+    marginTop: spacing.sm,
+    marginBottom: spacing.xs,
+  },
+  staleNoticeCard: {
+    marginHorizontal: spacing.margin,
+    marginTop: spacing.sm,
+    padding: spacing.md,
+    backgroundColor: '#FFF8E1',
+    borderColor: '#FFE082',
+    borderWidth: 1,
+    borderRadius: radius.md,
+    gap: spacing.sm,
+  },
+  staleNoticeContent: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+  },
+  staleNoticeTextCol: {
+    flex: 1,
+  },
+  staleNoticeTitle: {
+    color: '#8A5E00',
+    fontWeight: '700',
+  },
+  staleNoticeDesc: {
+    color: '#5D4037',
+    lineHeight: 18,
+  },
+  apiErrorCard: {
+    marginHorizontal: spacing.margin,
+    marginTop: spacing.sm,
+    padding: spacing.md,
+    borderColor: colors.error,
+    borderWidth: 1,
+    backgroundColor: '#FFF8F6',
+    gap: spacing.sm,
+  },
+  apiErrorRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+  },
+  apiErrorTextCol: {
+    flex: 1,
+  },
+  apiErrorTitle: {
+    color: colors.error,
+    fontWeight: '700',
+  },
+  apiErrorDesc: {
+    color: colors.textSecondary,
+    lineHeight: 18,
+  },
+  apiErrorActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: spacing.sm,
   },
 });

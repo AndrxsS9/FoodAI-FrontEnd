@@ -333,3 +333,7 @@ export function usePantry(): PantryContextValue {
   }
   return context;
 }
+
+export function usePantrySafe(): PantryContextValue | undefined {
+  return useContext(PantryContext);
+}

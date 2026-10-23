@@ -634,5 +634,168 @@ describe('RecipeContext & RecipeProvider (Fase 2C)', () => {
       expect(result.current.error).toBeNull();
       expect(result.current.errorCode).toBeNull();
     });
+
+    describe('Seguridad Asíncrona y Prevención de Respuestas Obsoletas (FIX 2)', () => {
+      function createDeferred<T>() {
+        let resolve!: (value: T | PromiseLike<T>) => void;
+        let reject!: (reason?: any) => void;
+        const promise = new Promise<T>((res, rej) => {
+          resolve = res;
+          reject = rej;
+        });
+        return { promise, resolve, reject };
+      }
+
+      it('1. Genera recetas, cambia a modo demo y luego resuelve respuesta vieja: No debe alterar el modo activo ni sobreescribir datos', async () => {
+        const deferred = createDeferred<BackendRecipe[]>();
+        const mockRecommend = jest.fn().mockReturnValue(deferred.promise);
+        const mockClient = { recommendRecipes: mockRecommend, checkBackendHealth: jest.fn() };
+
+        const { result } = await renderHook(() => useRecipes(), {
+          wrapper: createPantryWrapper({ mockApiClient: mockClient }),
+        });
+
+        // 1. Iniciar generación con IA
+        let genPromise!: Promise<any>;
+        await act(async () => {
+          genPromise = result.current.generateRecipes();
+        });
+
+        // 2. El usuario cambia a modo demostración antes de que la IA responda
+        await act(async () => {
+          result.current.setDemoMode(true);
+        });
+
+        expect(result.current.isDemoMode).toBe(true);
+        expect(result.current.isGenerating).toBe(false);
+        expect(result.current.isLoading).toBe(false);
+
+        // 3. La respuesta tardía del backend resuelve
+        await act(async () => {
+          deferred.resolve(SAMPLE_BACKEND_RECIPES);
+          await genPromise;
+        });
+
+        // 4. El modo DEBE seguir siendo demo, y las recetas deben ser las de demostración
+        expect(result.current.isDemoMode).toBe(true);
+        expect(result.current.error).toBeNull();
+        expect(result.current.recipes.length).toBeGreaterThan(0);
+        expect(result.current.recipes[0].isDemoFixture).toBe(true);
+      });
+
+      it('2. Genera recetas, cambia a modo demo y luego rechaza respuesta vieja: No debe registrar error ni lanzar excepciones no controladas', async () => {
+        const deferred = createDeferred<BackendRecipe[]>();
+        const mockRecommend = jest.fn().mockReturnValue(deferred.promise);
+        const mockClient = { recommendRecipes: mockRecommend, checkBackendHealth: jest.fn() };
+
+        const { result } = await renderHook(() => useRecipes(), {
+          wrapper: createPantryWrapper({ mockApiClient: mockClient }),
+        });
+
+        let genPromise!: Promise<any>;
+        await act(async () => {
+          genPromise = result.current.generateRecipes();
+        });
+
+        // Cambiar de modo
+        await act(async () => {
+          result.current.setDemoMode(true);
+        });
+
+        expect(result.current.isDemoMode).toBe(true);
+
+        // Rechazar la petición vieja
+        await act(async () => {
+          deferred.reject(new Error('AbortError or network disconnect'));
+          await genPromise;
+        });
+
+        // No debe registrar error en la pantalla demo activa
+        expect(result.current.error).toBeNull();
+        expect(result.current.isGenerating).toBe(false);
+        expect(result.current.isDemoMode).toBe(true);
+      });
+
+      it('3. Generación normal exitosa: actualiza modo y almacena recetas reales', async () => {
+        const deferred = createDeferred<BackendRecipe[]>();
+        const mockRecommend = jest.fn().mockReturnValue(deferred.promise);
+        const mockClient = { recommendRecipes: mockRecommend, checkBackendHealth: jest.fn() };
+
+        const { result } = await renderHook(() => useRecipes(), {
+          wrapper: createPantryWrapper({ mockApiClient: mockClient }),
+        });
+
+        let genPromise!: Promise<any>;
+        await act(async () => {
+          genPromise = result.current.generateRecipes();
+        });
+
+        await act(async () => {
+          deferred.resolve(SAMPLE_BACKEND_RECIPES);
+          await genPromise;
+        });
+
+        expect(result.current.isGenerating).toBe(false);
+        expect(result.current.isLoading).toBe(false);
+        expect(result.current.isDemoMode).toBe(false);
+        expect(result.current.recipes.length).toBe(1);
+        expect(result.current.recipes[0].name).toBe('Arroz con Pollo Criollo');
+      });
+
+      it('4. Prevención de peticiones duplicadas (Duplicate-request prevention)', async () => {
+        const deferred = createDeferred<BackendRecipe[]>();
+        const mockRecommend = jest.fn().mockReturnValue(deferred.promise);
+        const mockClient = { recommendRecipes: mockRecommend, checkBackendHealth: jest.fn() };
+
+        const { result } = await renderHook(() => useRecipes(), {
+          wrapper: createPantryWrapper({ mockApiClient: mockClient }),
+        });
+
+        let firstPromise!: Promise<any>;
+        let secondPromise!: Promise<any>;
+
+        await act(async () => {
+          firstPromise = result.current.generateRecipes();
+          secondPromise = result.current.generateRecipes();
+        });
+
+        expect(mockRecommend).toHaveBeenCalledTimes(1);
+
+        await act(async () => {
+          deferred.resolve(SAMPLE_BACKEND_RECIPES);
+          await Promise.all([firstPromise, secondPromise]);
+        });
+
+        expect(mockRecommend).toHaveBeenCalledTimes(1);
+      });
+
+      it('5. Limpieza correcta del estado de carga (loading-state cleanup) ante fallos', async () => {
+        const deferred = createDeferred<BackendRecipe[]>();
+        const mockRecommend = jest.fn().mockReturnValue(deferred.promise);
+        const mockClient = { recommendRecipes: mockRecommend, checkBackendHealth: jest.fn() };
+
+        const { result } = await renderHook(() => useRecipes(), {
+          wrapper: createPantryWrapper({ mockApiClient: mockClient }),
+        });
+
+        let genPromise!: Promise<any>;
+        await act(async () => {
+          genPromise = result.current.generateRecipes();
+        });
+
+        await act(async () => {
+          deferred.reject(new Error('Fallo crítico de servidor'));
+          try {
+            await genPromise;
+          } catch {
+            // esperado
+          }
+        });
+
+        expect(result.current.isLoading).toBe(false);
+        expect(result.current.isGenerating).toBe(false);
+        expect(result.current.error).toBe('Fallo crítico de servidor');
+      });
+    });
   });
 });

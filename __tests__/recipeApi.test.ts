@@ -268,7 +268,7 @@ describe('Cliente de API de Recetas (recipeApi)', () => {
     });
   });
 
-  describe('4. Resiliencia ante fallos de red, formato y timeouts', () => {
+  describe('4. Resiliencia ante fallos de red, formato y timeouts (FIX 1)', () => {
     it('captura fallos de conectividad de red arrojando NETWORK_ERROR descriptivo', async () => {
       (globalThis as any).fetch = jest.fn().mockRejectedValue(new TypeError('Failed to fetch'));
 
@@ -279,19 +279,140 @@ describe('Cliente de API de Recetas (recipeApi)', () => {
       });
     });
 
-    it('captura respuestas que no son JSON válido arrojando MALFORMED_JSON', async () => {
+    it('1. Timeout antes de recibir encabezados HTTP (timeout before response headers)', async () => {
+      // Mock de fetch que nunca resuelve dentro del timeout inyectado
+      (globalThis as any).fetch = jest.fn().mockImplementation((_url, options) => {
+        return new Promise((_resolve, reject) => {
+          if (options?.signal) {
+            options.signal.addEventListener('abort', () => {
+              const err = new Error('The operation was aborted');
+              err.name = 'AbortError';
+              reject(err);
+            });
+          }
+        });
+      });
+
+      await expect(
+        recommendRecipes(validRequest, { timeoutMs: 30 })
+      ).rejects.toMatchObject({
+        code: 'REQUEST_TIMEOUT',
+        isTimeout: true,
+        message: expect.stringContaining('La solicitud a la IA excedió el tiempo límite de espera'),
+      });
+    });
+
+    it('2. Timeout durante la lectura del cuerpo response.json() (timeout while reading body)', async () => {
+      // Fetch resuelve headers de inmediato, pero json() se suspende hasta timeout
+      (globalThis as any).fetch = jest.fn().mockImplementation((_url, options) => {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () =>
+            new Promise((_resolve, reject) => {
+              if (options?.signal) {
+                options.signal.addEventListener('abort', () => {
+                  const err = new Error('The operation was aborted while reading body');
+                  err.name = 'AbortError';
+                  reject(err);
+                });
+              }
+            }),
+        });
+      });
+
+      await expect(
+        recommendRecipes(validRequest, { timeoutMs: 30 })
+      ).rejects.toMatchObject({
+        code: 'REQUEST_TIMEOUT',
+        isTimeout: true,
+        message: expect.stringContaining('La solicitud a la IA excedió el tiempo límite de espera'),
+      });
+    });
+
+    it('3. Cancelación externa durante la lectura del cuerpo response.json()', async () => {
+      const abortController = new AbortController();
+
+      (globalThis as any).fetch = jest.fn().mockImplementation((_url, options) => {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () =>
+            new Promise((_resolve, reject) => {
+              if (options?.signal) {
+                options.signal.addEventListener('abort', () => {
+                  const err = new Error('Body read aborted externally');
+                  err.name = 'AbortError';
+                  reject(err);
+                });
+              }
+              // Abortar externamente mientras se lee el cuerpo
+              setTimeout(() => abortController.abort(), 10);
+            }),
+        });
+      });
+
+      await expect(
+        recommendRecipes(validRequest, { signal: abortController.signal, timeoutMs: 5000 })
+      ).rejects.toMatchObject({
+        code: 'REQUEST_ABORTED',
+        isTimeout: false,
+        message: 'La solicitud de recetas fue cancelada.',
+      });
+    });
+
+    it('4. Parseo exitoso de JSON antes de que expire el timeout', async () => {
       (globalThis as any).fetch = jest.fn().mockResolvedValue({
-        ok: false,
-        status: 502,
+        ok: true,
+        status: 200,
+        json: async () => ({
+          success: true,
+          data: { recipes: sampleBackendRecipes },
+        }),
+      });
+
+      const result = await recommendRecipes(validRequest, { timeoutMs: 2000 });
+      expect(result.length).toBe(1);
+      expect(result[0].name).toBe('Pollo salteado con arroz');
+    });
+
+    it('5. JSON verdaderamente malformado (truly malformed JSON) no se confunde con abort', async () => {
+      (globalThis as any).fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
         json: async () => {
-          throw new Error('Unexpected token < in JSON at position 0');
+          throw new SyntaxError('Unexpected token < in JSON at position 0');
         },
       });
 
       await expect(recommendRecipes(validRequest)).rejects.toMatchObject({
         code: 'MALFORMED_JSON',
-        status: 502,
+        status: 200,
+        message: expect.stringContaining('no es JSON válido'),
       });
+    });
+
+    it('6. Limpieza garantizada de temporizadores y listeners de abort en externalSignal', async () => {
+      const clearTimeoutSpy = jest.spyOn(globalThis, 'clearTimeout');
+      const abortController = new AbortController();
+      const removeEventListenerSpy = jest.spyOn(abortController.signal, 'removeEventListener');
+
+      (globalThis as any).fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          success: true,
+          data: { recipes: [] },
+        }),
+      });
+
+      await recommendRecipes(validRequest, { signal: abortController.signal });
+
+      expect(clearTimeoutSpy).toHaveBeenCalled();
+      expect(removeEventListenerSpy).toHaveBeenCalledWith('abort', expect.any(Function));
+
+      clearTimeoutSpy.mockRestore();
+      removeEventListenerSpy.mockRestore();
     });
 
     it('rechaza respuestas 200 con estructura de datos o envelope inválido', async () => {
@@ -312,7 +433,7 @@ describe('Cliente de API de Recetas (recipeApi)', () => {
       });
     });
 
-    it('cancela solicitudes cuando se activa un AbortSignal externo', async () => {
+    it('cancela solicitudes cuando se activa un AbortSignal externo antes de enviar', async () => {
       const abortController = new AbortController();
       abortController.abort(); // Cancelado inmediatamente
 
@@ -322,29 +443,6 @@ describe('Cliente de API de Recetas (recipeApi)', () => {
         code: 'REQUEST_ABORTED',
         isTimeout: false,
         message: 'La solicitud de recetas fue cancelada.',
-      });
-    });
-
-    it('interrumpe solicitudes por timeout interno emitiendo REQUEST_TIMEOUT e isTimeout: true', async () => {
-      // Mock de fetch que nunca resuelve dentro del timeout inyectado
-      (globalThis as any).fetch = jest.fn().mockImplementation((_url, options) => {
-        return new Promise((_resolve, reject) => {
-          if (options?.signal) {
-            options.signal.addEventListener('abort', () => {
-              const err = new Error('The operation was aborted');
-              err.name = 'AbortError';
-              reject(err);
-            });
-          }
-        });
-      });
-
-      await expect(
-        recommendRecipes(validRequest, { timeoutMs: 30 })
-      ).rejects.toMatchObject({
-        code: 'REQUEST_TIMEOUT',
-        isTimeout: true,
-        message: expect.stringContaining('La solicitud a la IA excedió el tiempo límite de espera'),
       });
     });
   });

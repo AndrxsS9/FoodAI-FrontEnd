@@ -449,17 +449,28 @@ export async function recommendRecipes(
       signal: controller.signal,
     });
 
-    clearTimeout(timer);
-
-    // 4. Parsear JSON defensivamente
+    // 4. Parsear JSON defensivamente manteniendo el timeout activo durante la lectura del cuerpo
     let rawJson: unknown;
     try {
       rawJson = await response.json();
-    } catch {
+    } catch (parseError) {
+      // Si la lectura del cuerpo fue interrumpida por timeout o cancelación externa,
+      // no clasificar como MALFORMED_JSON sino propagar para clasificación exacta
+      const isInterrupted =
+        controller.signal.aborted ||
+        (parseError instanceof Error && parseError.name === 'AbortError') ||
+        isTimedOut ||
+        Boolean(externalSignal?.aborted);
+
+      if (isInterrupted) {
+        throw parseError;
+      }
+
       throw new RecipeApiError(
         'El servidor respondió con un formato de datos no válido (no es JSON válido).',
         'MALFORMED_JSON',
-        response.status
+        response.status,
+        parseError
       );
     }
 
@@ -539,8 +550,6 @@ export async function recommendRecipes(
       response.status
     );
   } catch (error) {
-    clearTimeout(timer);
-
     if (error instanceof RecipeApiError) {
       throw error;
     }
@@ -551,7 +560,8 @@ export async function recommendRecipes(
     const isAbort =
       (error instanceof Error && error.name === 'AbortError') ||
       isTimedOut ||
-      isExternal;
+      isExternal ||
+      controller.signal.aborted;
 
     if (isAbort) {
       const msg = isExternal

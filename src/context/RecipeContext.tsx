@@ -299,6 +299,21 @@ export function RecipeProvider({
   );
 
   const setDemoMode = useCallback((enable: boolean) => {
+    // 1. Invalidar cualquier operación asíncrona de generación en curso
+    operationVersionRef.current++;
+    isGeneratingRef.current = false;
+
+    // 2. Abortar la petición activa en la capa de transporte
+    if (activeAbortControllerRef.current) {
+      activeAbortControllerRef.current.abort();
+      activeAbortControllerRef.current = null;
+    }
+
+    // 3. Resetear estados de carga y generación
+    setIsGenerating(false);
+    setIsLoading(false);
+
+    // 4. Actualizar modo activo y limpiar selección y errores
     setIsDemoMode(enable);
     setSelectedRecipeId(null);
     setCustomSelectedRecipe(null);
@@ -421,6 +436,7 @@ export function RecipeProvider({
           isGeneratingRef.current = false;
           setIsGenerating(false);
           setIsLoading(false);
+          activeAbortControllerRef.current = null;
         }
       }
     },
@@ -452,9 +468,16 @@ export function RecipeProvider({
 
   // Limpieza al desmontar el componente proveedor
   useEffect(() => {
+    const versionRef = operationVersionRef;
+    const generatingRef = isGeneratingRef;
+    const abortRef = activeAbortControllerRef;
+
     return () => {
-      if (activeAbortControllerRef.current) {
-        activeAbortControllerRef.current.abort();
+      versionRef.current++;
+      generatingRef.current = false;
+      if (abortRef.current) {
+        abortRef.current.abort();
+        abortRef.current = null;
       }
     };
   }, []);

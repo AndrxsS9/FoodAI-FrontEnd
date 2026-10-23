@@ -1,24 +1,28 @@
 /**
- * FoodAI - Abstracción de fuente de datos y estado de recetas (Fase 2C).
- * Provee una capa desacoplada que soporta:
+ * FoodAI - Abstracción de fuente de datos y estado de recetas (Fase 3A).
+ * Provee una capa desacoplada y reactiva que soporta:
  * 1. Modo demostración explícito (Phase 2C).
- * 2. Colección futura de recetas normalizadas del backend real (Phase 3).
- * 3. Resolución segura de recetas por identidad estable (ID o slug).
- * 4. Persistencia de la receta seleccionada durante la sesión activa entre pantallas.
- * 5. Manejo de duplicados de nombres sin colisiones.
- * 6. Fallback resiliente ante identificadores inválidos o refrescos directos.
+ * 2. Integración real con FoodAI-Backend y Gemini (Phase 3A) mediante POST /api/recipes/recommend.
+ * 3. Operación explícita 'generateRecipes()' disparada por el usuario con validación estricta.
+ * 4. Resolución determinista de recetas por identidad estable (ID o slug sin colisiones).
+ * 5. Persistencia en memoria durante la sesión activa entre pantallas.
+ * 6. Detección automática de recomendaciones obsoletas ('isStale') si la despensa o presupuesto cambian.
+ * 7. Cancelación segura de peticiones en curso y protección contra invocaciones concurrentes.
  */
 import React, {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import {
   BackendRecipe,
   ClientRecipe,
   generateRecipeSlug,
+  mapPantryToRecommendRequest,
   normalizeBackendRecipe,
 } from '../types/recipe';
 import {
@@ -27,6 +31,15 @@ import {
   getDemoRecipes,
 } from '../fixtures/demoRecipes';
 import { useBudget } from './BudgetContext';
+import { usePantrySafe } from './PantryContext';
+import { recipeApi as defaultRecipeApi, RecipeApiError } from '../services/api/recipeApi';
+
+export interface GenerationSnapshot {
+  pantryFingerprint: string;
+  budget: number;
+  servings: number;
+  maxMinutes?: number;
+}
 
 export interface RecipeContextValue {
   recipes: ClientRecipe[];
@@ -34,13 +47,19 @@ export interface RecipeContextValue {
   demoMeta: typeof DEMO_RECIPES_META;
   selectedRecipe: ClientRecipe | null;
   isLoading: boolean;
+  isGenerating: boolean;
+  isStale: boolean;
+  lastGeneratedAt: string | null;
   error: string | null;
+  errorCode: string | null;
   getRecipeById: (idOrSlug: string) => ClientRecipe | undefined;
   selectRecipe: (idOrRecipe: string | ClientRecipe) => ClientRecipe | undefined;
   clearSelectedRecipe: () => void;
   setRealRecipes: (backendRecipes: BackendRecipe[], customServings?: number) => void;
   setDemoMode: (enable: boolean) => void;
   refreshRecipes: () => Promise<void>;
+  generateRecipes: (options?: { maxMinutes?: number }) => Promise<ClientRecipe[]>;
+  clearError: () => void;
 }
 
 const defaultRecipeContextValue: RecipeContextValue = {
@@ -49,13 +68,19 @@ const defaultRecipeContextValue: RecipeContextValue = {
   demoMeta: DEMO_RECIPES_META,
   selectedRecipe: null,
   isLoading: false,
+  isGenerating: false,
+  isStale: false,
+  lastGeneratedAt: null,
   error: null,
+  errorCode: null,
   getRecipeById: () => undefined,
   selectRecipe: () => undefined,
   clearSelectedRecipe: () => {},
   setRealRecipes: () => {},
   setDemoMode: () => {},
   refreshRecipes: async () => {},
+  generateRecipes: async () => [],
+  clearError: () => {},
 };
 
 const RecipeContext = createContext<RecipeContextValue | undefined>(undefined);
@@ -64,21 +89,67 @@ export interface RecipeProviderProps {
   children: React.ReactNode;
   initialRecipes?: ClientRecipe[];
   initialIsDemoMode?: boolean;
+  recipeApiClient?: typeof defaultRecipeApi;
 }
 
 export function RecipeProvider({
   children,
   initialRecipes,
   initialIsDemoMode = true,
+  recipeApiClient = defaultRecipeApi,
 }: RecipeProviderProps) {
-  const { budget, servings } = useBudget();
+  const { budget, servings, maxMinutes } = useBudget();
+  const pantry = usePantrySafe();
+  const ingredients = useMemo(() => pantry?.ingredients ?? [], [pantry?.ingredients]);
 
   const [isDemoMode, setIsDemoMode] = useState<boolean>(initialIsDemoMode);
   const [realRecipes, setRealRecipesState] = useState<ClientRecipe[]>(initialRecipes ?? []);
   const [selectedRecipeId, setSelectedRecipeId] = useState<string | null>(null);
   const [customSelectedRecipe, setCustomSelectedRecipe] = useState<ClientRecipe | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isGenerating, setIsGenerating] = useState<boolean>(false);
+  const [lastGeneratedAt, setLastGeneratedAt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [errorCode, setErrorCode] = useState<string | null>(null);
+
+  // Snapshot de los datos utilizados en la última generación real exitosa
+  const [lastSnapshot, setLastSnapshot] = useState<GenerationSnapshot | null>(null);
+
+  // Referencias para control de concurrencia y cancelación de peticiones asíncronas
+  const activeAbortControllerRef = useRef<AbortController | null>(null);
+  const isGeneratingRef = useRef<boolean>(false);
+  const operationVersionRef = useRef<number>(0);
+
+  // Huella digital reproducible de la despensa actual
+  const currentPantryFingerprint = useMemo(() => {
+    return (ingredients || [])
+      .map((item) => `${item.id}:${item.name.toLowerCase()}:${item.quantity}:${item.unit}`)
+      .sort()
+      .join('|');
+  }, [ingredients]);
+
+  // Detección reactiva de obsolescencia (isStale)
+  // Solo aplica cuando estamos en modo real (!isDemoMode) y ya se generaron recetas previas
+  const isStale = useMemo(() => {
+    if (isDemoMode || !lastSnapshot || realRecipes.length === 0) {
+      return false;
+    }
+
+    const pantryChanged = lastSnapshot.pantryFingerprint !== currentPantryFingerprint;
+    const budgetChanged = lastSnapshot.budget !== budget;
+    const servingsChanged = lastSnapshot.servings !== servings;
+    const maxMinutesChanged = (lastSnapshot.maxMinutes ?? undefined) !== (maxMinutes ?? undefined);
+
+    return pantryChanged || budgetChanged || servingsChanged || maxMinutesChanged;
+  }, [
+    isDemoMode,
+    lastSnapshot,
+    realRecipes.length,
+    currentPantryFingerprint,
+    budget,
+    servings,
+    maxMinutes,
+  ]);
 
   // Generar recetas actuales según el modo activo
   const recipes = useMemo<ClientRecipe[]>(() => {
@@ -89,7 +160,6 @@ export function RecipeProvider({
   }, [isDemoMode, budget, servings, realRecipes]);
 
   // Derivar la receta seleccionada activa manteniéndola siempre sincronizada
-  // con la colección actual, presupuesto y comensales
   const selectedRecipe = useMemo<ClientRecipe | null>(() => {
     if (!selectedRecipeId) return null;
     const foundInActiveList = recipes.find((r) => r.id === selectedRecipeId);
@@ -97,7 +167,6 @@ export function RecipeProvider({
 
     if (customSelectedRecipe && customSelectedRecipe.id === selectedRecipeId) {
       if (isDemoMode && customSelectedRecipe.isDemoFixture) {
-        // En modo demo, mantener porciones sincronizadas
         return getDemoRecipeById(customSelectedRecipe.id, budget, servings) ?? customSelectedRecipe;
       }
       if (!isDemoMode && !customSelectedRecipe.isDemoFixture) {
@@ -108,12 +177,11 @@ export function RecipeProvider({
   }, [selectedRecipeId, recipes, customSelectedRecipe, isDemoMode, budget, servings]);
 
   /**
-   * Resuelve una receta con la siguiente jerarquía estricta:
-   * 1. ID exacto de cliente en la colección actual (prioridad máxima).
+   * Resuelve una receta con jerarquía estricta de prioridad:
+   * 1. ID exacto de cliente en la colección actual.
    * 2. Slug derivado del nombre en la colección actual.
-   * 3. Receta seleccionada en sesión (solo si coincide y no existe en colección activa).
-   * 4. En modo demo, catálogo base escalado.
-   * Esto previene que la receta seleccionada eclipse a una receta válida de la colección activa.
+   * 3. Receta seleccionada en sesión.
+   * 4. En modo demo, catálogo base adaptado.
    */
   const getRecipeById = useCallback(
     (idOrSlug: string): ClientRecipe | undefined => {
@@ -135,7 +203,7 @@ export function RecipeProvider({
         return matchBySlug;
       }
 
-      // 3. Si no está en la colección activa pero coincide con la seleccionada en sesión
+      // 3. Receta seleccionada en sesión
       if (selectedRecipe) {
         if (selectedRecipe.id.toLowerCase() === clean) {
           return selectedRecipe;
@@ -146,7 +214,7 @@ export function RecipeProvider({
         }
       }
 
-      // 4. Si estamos en modo demo, consultar el catálogo base adaptado
+      // 4. Catálogo demo de respaldo
       if (isDemoMode) {
         return getDemoRecipeById(clean, budget, servings);
       }
@@ -156,9 +224,6 @@ export function RecipeProvider({
     [recipes, selectedRecipe, isDemoMode, budget, servings]
   );
 
-  /**
-   * Selecciona una receta para mantenerla activa en la sesión entre pantallas.
-   */
   const selectRecipe = useCallback(
     (idOrRecipe: string | ClientRecipe): ClientRecipe | undefined => {
       if (typeof idOrRecipe === 'string') {
@@ -183,9 +248,8 @@ export function RecipeProvider({
   }, []);
 
   /**
-   * Permite inyectar recomendaciones reales del backend en la fase de integración (Phase 3).
-   * Desambigua colisiones de identificadores usando un Set de IDs reservados para que nombres
-   * idénticos o variantes de base slug (ej: "Arroz", "Arroz", "Arroz 2") siempre reciban IDs únicos.
+   * Inyecta recetas normalizadas en el estado local garantizando identificadores
+   * únicos sin colisiones mediante un Set de slugs reservados.
    */
   const setRealRecipes = useCallback(
     (backendRecipes: BackendRecipe[], customServings?: number) => {
@@ -218,8 +282,8 @@ export function RecipeProvider({
       setRealRecipesState(normalized);
       setIsDemoMode(false);
       setError(null);
+      setErrorCode(null);
 
-      // Limpiar o actualizar la receta seleccionada si no pertenece a la nueva colección
       setSelectedRecipeId((prevId) => {
         if (!prevId) return null;
         const stillExists = normalized.some((r) => r.id === prevId);
@@ -235,29 +299,188 @@ export function RecipeProvider({
   );
 
   const setDemoMode = useCallback((enable: boolean) => {
+    // 1. Invalidar cualquier operación asíncrona de generación en curso
+    operationVersionRef.current++;
+    isGeneratingRef.current = false;
+
+    // 2. Abortar la petición activa en la capa de transporte
+    if (activeAbortControllerRef.current) {
+      activeAbortControllerRef.current.abort();
+      activeAbortControllerRef.current = null;
+    }
+
+    // 3. Resetear estados de carga y generación
+    setIsGenerating(false);
+    setIsLoading(false);
+
+    // 4. Actualizar modo activo y limpiar selección y errores
     setIsDemoMode(enable);
     setSelectedRecipeId(null);
     setCustomSelectedRecipe(null);
+    setError(null);
+    setErrorCode(null);
   }, []);
 
-  const refreshRecipes = useCallback(async (): Promise<void> => {
-    setIsLoading(true);
+  const clearError = useCallback(() => {
     setError(null);
-    try {
-      // En Phase 2C (demostración), el refresco actualiza las recetas de demo
-      // sin llamadas HTTP falsas
-      if (isDemoMode) {
-        // Simulación limpia de refresco local
-        setIsLoading(false);
-      } else {
-        // Espacio para la llamada real del backend en Phase 3
-        setIsLoading(false);
+    setErrorCode(null);
+  }, []);
+
+  /**
+   * Operación principal de la Fase 3A: Generación real de recetas con IA (Gemini vía backend).
+   * Valida precondiciones locales, ejecuta la llamada con AbortController y actualiza el estado.
+   */
+  const generateRecipes = useCallback(
+    async (options?: { maxMinutes?: number }): Promise<ClientRecipe[]> => {
+      // 1. Guard contra llamadas concurrentes duplicadas
+      if (isGeneratingRef.current) {
+        return realRecipes;
       }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al actualizar las recetas.');
+
+      // 2. Cancelar cualquier solicitud anterior aún pendiente
+      if (activeAbortControllerRef.current) {
+        activeAbortControllerRef.current.abort();
+      }
+
+      const abortController = new AbortController();
+      activeAbortControllerRef.current = abortController;
+
+      const currentOpVersion = ++operationVersionRef.current;
+      isGeneratingRef.current = true;
+      setIsGenerating(true);
+      setIsLoading(true);
+      setError(null);
+      setErrorCode(null);
+
+      const targetMaxMinutes = options?.maxMinutes ?? maxMinutes;
+
+      try {
+        // 3. Validación estricta de la despensa: Al menos un ingrediente
+        if (!ingredients || ingredients.length === 0) {
+          const emptyMsg =
+            'Tu despensa está vacía. Registra al menos un alimento en Mi Despensa para generar recomendaciones.';
+          setError(emptyMsg);
+          setErrorCode('EMPTY_PANTRY');
+          throw new RecipeApiError(emptyMsg, 'EMPTY_PANTRY', 400, undefined, false, false, false, true);
+        }
+        // 4. Mapear datos de la despensa al contrato del backend
+        const requestPayload = mapPantryToRecommendRequest(
+          ingredients,
+          budget,
+          servings,
+          targetMaxMinutes
+        );
+
+        // 5. Invocar al backend real
+        const backendRecipes = await recipeApiClient.recommendRecipes(requestPayload, {
+          signal: abortController.signal,
+        });
+
+        // 6. Verificar si esta operación sigue siendo la más reciente (evitar stale data)
+        if (currentOpVersion < operationVersionRef.current) {
+          return realRecipes;
+        }
+
+        // 7. Normalizar y registrar recetas reales
+        setRealRecipes(backendRecipes, servings);
+
+        // 8. Actualizar snapshot de la generación para cálculo de obsolescencia
+        setLastSnapshot({
+          pantryFingerprint: currentPantryFingerprint,
+          budget,
+          servings,
+          maxMinutes: targetMaxMinutes,
+        });
+
+        setLastGeneratedAt(new Date().toISOString());
+
+        // Derivar y retornar el nuevo listado
+        const reservedIds = new Set<string>();
+        const finalNormalized = backendRecipes.map((raw, idx) => {
+          const baseNorm = normalizeBackendRecipe(raw, idx, servings);
+          const baseSlug = generateRecipeSlug(baseNorm.name) || `receta-${idx + 1}`;
+          let uniqueId = baseSlug;
+          if (reservedIds.has(uniqueId)) {
+            let counter = 2;
+            let candidate = `${baseSlug}-${counter}`;
+            while (reservedIds.has(candidate)) {
+              counter++;
+              candidate = `${baseSlug}-${counter}`;
+            }
+            uniqueId = candidate;
+          }
+          reservedIds.add(uniqueId);
+          return { ...baseNorm, id: uniqueId };
+        });
+
+        return finalNormalized;
+      } catch (err) {
+        // Si fue una versión superada por otra operación, no registrar error
+        if (currentOpVersion < operationVersionRef.current) {
+          return realRecipes;
+        }
+
+        const msg =
+          err instanceof Error
+            ? err.message
+            : 'Ocurrió un error inesperado al generar las recetas con IA.';
+
+        const code = err instanceof RecipeApiError ? err.code : 'AI_GENERATION_FAILED';
+
+        // NUNCA hacer fallback silencioso a recetas de demostración ante fallo real
+        setError(msg);
+        setErrorCode(code);
+        throw err;
+      } finally {
+        if (currentOpVersion === operationVersionRef.current) {
+          isGeneratingRef.current = false;
+          setIsGenerating(false);
+          setIsLoading(false);
+          activeAbortControllerRef.current = null;
+        }
+      }
+    },
+    [
+      realRecipes,
+      ingredients,
+      budget,
+      servings,
+      maxMinutes,
+      currentPantryFingerprint,
+      recipeApiClient,
+      setRealRecipes,
+    ]
+  );
+
+  const refreshRecipes = useCallback(async (): Promise<void> => {
+    if (isDemoMode) {
+      setIsLoading(true);
+      setError(null);
+      setErrorCode(null);
+      // En modo demo, refresh local limpio
       setIsLoading(false);
+      return;
     }
-  }, [isDemoMode]);
+
+    // En modo real, regenerar con la despensa actual
+    await generateRecipes();
+  }, [isDemoMode, generateRecipes]);
+
+  // Limpieza al desmontar el componente proveedor
+  useEffect(() => {
+    const versionRef = operationVersionRef;
+    const generatingRef = isGeneratingRef;
+    const abortRef = activeAbortControllerRef;
+
+    return () => {
+      versionRef.current++;
+      generatingRef.current = false;
+      if (abortRef.current) {
+        abortRef.current.abort();
+        abortRef.current = null;
+      }
+    };
+  }, []);
 
   const value = useMemo<RecipeContextValue>(
     () => ({
@@ -266,26 +489,38 @@ export function RecipeProvider({
       demoMeta: DEMO_RECIPES_META,
       selectedRecipe,
       isLoading,
+      isGenerating,
+      isStale,
+      lastGeneratedAt,
       error,
+      errorCode,
       getRecipeById,
       selectRecipe,
       clearSelectedRecipe,
       setRealRecipes,
       setDemoMode,
       refreshRecipes,
+      generateRecipes,
+      clearError,
     }),
     [
       recipes,
       isDemoMode,
       selectedRecipe,
       isLoading,
+      isGenerating,
+      isStale,
+      lastGeneratedAt,
       error,
+      errorCode,
       getRecipeById,
       selectRecipe,
       clearSelectedRecipe,
       setRealRecipes,
       setDemoMode,
       refreshRecipes,
+      generateRecipes,
+      clearError,
     ]
   );
 

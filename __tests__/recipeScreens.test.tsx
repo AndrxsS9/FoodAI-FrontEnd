@@ -107,6 +107,7 @@ const renderWithProviders = async (
     initialRecipes?: ClientRecipe[];
     initialIsDemoMode?: boolean;
     storageAdapter?: BudgetStorageAdapter;
+    recipeApiClient?: any;
   }
 ) => {
   return await render(
@@ -129,6 +130,7 @@ const renderWithProviders = async (
             <RecipeProvider
               initialRecipes={options?.initialRecipes}
               initialIsDemoMode={options?.initialIsDemoMode}
+              recipeApiClient={options?.recipeApiClient}
             >
               {ui}
             </RecipeProvider>
@@ -814,24 +816,22 @@ describe('FoodAI Phase 2C - Recipe Discovery, Details & Cooking Mode Tests', () 
     });
 
     it('previene interacciones rápidas repetidas durante una persistencia en progreso', async () => {
-      let resolvePromise: (val: any) => void = () => {};
-      const pendingPromise = new Promise((resolve) => {
-        resolvePromise = resolve;
-      });
-
       const slowAdapter: BudgetStorageAdapter = {
         getPreferences: jest.fn().mockResolvedValue({
           budget: 20000,
           servings: 2,
         }),
-        savePreferences: jest.fn().mockImplementation(() => pendingPromise),
+        savePreferences: jest.fn().mockImplementation(async (prefs) => {
+          await new Promise((res) => setTimeout(res, 50));
+          return prefs;
+        }),
         resetPreferences: jest.fn().mockResolvedValue({
           budget: 20000,
           servings: 2,
         }),
       };
 
-      const { getByLabelText } = await renderWithProviders(
+      const { getByLabelText, getByText } = await renderWithProviders(
         <RecipeDiscoveryScreen />,
         {
           initialBudgetPreferences: { budget: 20000, servings: 2 },
@@ -846,18 +846,234 @@ describe('FoodAI Phase 2C - Recipe Discovery, Details & Cooking Mode Tests', () 
       });
 
       // Tocar rápidamente 3 veces consecutivas
-      fireEvent.press(incBtn);
-      fireEvent.press(incBtn);
-      fireEvent.press(incBtn);
+      await act(async () => {
+        fireEvent.press(incBtn);
+        fireEvent.press(incBtn);
+        fireEvent.press(incBtn);
+      });
 
       // Solo una mutación debe ser enviada al adaptador
       expect(slowAdapter.savePreferences).toHaveBeenCalledTimes(1);
 
-      // Resolver la operación pendiente y esperar resolución limpia
-      resolvePromise({ budget: 20000, servings: 3 });
       await waitFor(() => {
-        expect(slowAdapter.savePreferences).toHaveBeenCalledTimes(1);
+        expect(getByText('3 pers.')).toBeTruthy();
       });
+    });
+  });
+
+  describe('8. Integración Real de Recomendaciones con IA (Fase 3A)', () => {
+    const SAMPLE_AI_BACKEND_RECIPES = [
+      {
+        name: 'Pollo al Limón con Papas Criollas',
+        description: 'Pechuga sellada con papas crocantes y toque cítrico fresco.',
+        totalMinutes: 30,
+        ingredients: [
+          { name: 'Pollo', quantity: 300, unit: 'g' },
+          { name: 'Papa criolla', quantity: 4, unit: 'unidad' },
+        ],
+        steps: [
+          'Cortar el pollo en cubos medianos.',
+          'Dorar en sartén con limón por 15 minutos.',
+          'Servir caliente.',
+        ],
+        availableIngredients: [{ name: 'Pollo', quantity: 300, unit: 'g' }],
+        missingIngredients: [{ name: 'Papa criolla', quantity: 4, unit: 'unidad', estimatedCost: 2000 }],
+        estimatedMissingCost: 2000,
+        budgetRemaining: 18000,
+        withinBudget: true,
+        convenience: 92,
+        reason: 'Receta económica y rápida con ingredientes de la casa.',
+      },
+    ];
+
+    it('renderiza el botón principal Generar recetas con IA', async () => {
+      const { getByTestId, getByText } = await renderWithProviders(<RecipeDiscoveryScreen />);
+
+      const generateBtn = getByTestId('recipes-generate-ai-button');
+      expect(generateBtn).toBeTruthy();
+      expect(getByText('Generar recetas con IA')).toBeTruthy();
+    });
+
+    it('ejecuta la generación real con IA, muestra recetas de Gemini y oculta el banner de demostración', async () => {
+      const mockRecommend = jest.fn().mockResolvedValue(SAMPLE_AI_BACKEND_RECIPES);
+      const mockClient = { recommendRecipes: mockRecommend, checkBackendHealth: jest.fn() };
+
+      const { getByTestId, getByText, queryByTestId } = await renderWithProviders(
+        <RecipeDiscoveryScreen />,
+        { recipeApiClient: mockClient }
+      );
+
+      // Inicia con el banner de demostración
+      expect(getByTestId('recipes-demo-banner')).toBeTruthy();
+
+      const generateBtn = getByTestId('recipes-generate-ai-button');
+      await act(async () => {
+        fireEvent.press(generateBtn);
+      });
+
+      await waitFor(() => {
+        expect(mockRecommend).toHaveBeenCalledTimes(1);
+      });
+
+      // Se desactiva el banner de demostración
+      await waitFor(() => {
+        expect(queryByTestId('recipes-demo-banner')).toBeNull();
+        expect(getByText('Pollo al Limón con Papas Criollas')).toBeTruthy();
+        expect(getByTestId('recipes-count-badge')).toBeTruthy();
+      });
+    });
+
+    it('muestra tarjeta de error amigable cuando la llamada al backend falla y permite reintentar', async () => {
+      const mockRecommend = jest
+        .fn()
+        .mockRejectedValueOnce(new Error('Límite de solicitudes de IA alcanzado. Por favor espera un momento.'))
+        .mockResolvedValueOnce(SAMPLE_AI_BACKEND_RECIPES);
+
+      const mockClient = { recommendRecipes: mockRecommend, checkBackendHealth: jest.fn() };
+
+      const { getByTestId, getByText, queryByTestId } = await renderWithProviders(
+        <RecipeDiscoveryScreen />,
+        { recipeApiClient: mockClient }
+      );
+
+      const generateBtn = getByTestId('recipes-generate-ai-button');
+      await act(async () => {
+        fireEvent.press(generateBtn);
+      });
+
+      // Aparece la tarjeta de error
+      await waitFor(() => {
+        expect(getByTestId('recipes-api-error-card')).toBeTruthy();
+        expect(getByText(/Límite de solicitudes de IA alcanzado/i)).toBeTruthy();
+      });
+
+      // El botón de reintentar funciona
+      const retryBtn = getByTestId('recipes-retry-button');
+      await act(async () => {
+        fireEvent.press(retryBtn);
+      });
+
+      await waitFor(() => {
+        expect(queryByTestId('recipes-api-error-card')).toBeNull();
+        expect(getByText('Pollo al Limón con Papas Criollas')).toBeTruthy();
+      });
+    });
+
+    it('muestra banner de obsolescencia cuando cambian los comensales tras generar con IA', async () => {
+      const mockRecommend = jest.fn().mockResolvedValue(SAMPLE_AI_BACKEND_RECIPES);
+      const mockClient = { recommendRecipes: mockRecommend, checkBackendHealth: jest.fn() };
+
+      const { getByTestId, getByText, getByLabelText } = await renderWithProviders(
+        <RecipeDiscoveryScreen />,
+        { recipeApiClient: mockClient }
+      );
+
+      // Generar inicialmente
+      const generateBtn = getByTestId('recipes-generate-ai-button');
+      await act(async () => {
+        fireEvent.press(generateBtn);
+      });
+
+      await waitFor(() => {
+        expect(getByText('Pollo al Limón con Papas Criollas')).toBeTruthy();
+      });
+
+      // Modificar comensales
+      const incBtn = getByLabelText('Aumentar');
+      await act(async () => {
+        fireEvent.press(incBtn);
+      });
+
+      // Aparece el banner de obsolescencia
+      await waitFor(() => {
+        expect(getByTestId('recipes-stale-banner')).toBeTruthy();
+      });
+
+      // Regenerar desde el banner
+      const regenBtn = getByTestId('recipes-stale-regenerate-button');
+      await act(async () => {
+        fireEvent.press(regenBtn);
+      });
+
+      await waitFor(() => {
+        expect(mockRecommend).toHaveBeenCalledTimes(2);
+      });
+    });
+  });
+
+  describe('17. Fallback neutral de imágenes en Home, Detalle y Descubrimiento (ISSUE 4)', () => {
+    const realRecipeWithoutImage: ClientRecipe = {
+      id: 'real-recipe-no-image',
+      name: 'Salteado de Verduras con Tofu',
+      description: 'Salteado ligero y saludable generado por IA sin imagen propia',
+      totalMinutes: 20,
+      ingredients: [
+        { name: 'Tofu', quantity: 200, unit: 'g' },
+        { name: 'Zanahoria', quantity: 1, unit: 'unidad' },
+      ],
+      steps: ['Cortar vegetales', 'Saltear tofu y vegetales a fuego alto'],
+      availableIngredients: [
+        { name: 'Zanahoria', quantity: 1, unit: 'unidad' },
+      ],
+      missingIngredients: [
+        { name: 'Tofu', quantity: 200, unit: 'g', estimatedCost: 3500 },
+      ],
+      estimatedMissingCost: 3500,
+      budgetRemaining: 16500,
+      withinBudget: true,
+      convenience: 92,
+      reason: 'Aprovecha la zanahoria y requiere poca inversión.',
+      isDemoFixture: false,
+      servings: 2,
+      // imageUrl es undefined deliberadamente
+    };
+
+    it('Home renderiza imagen de demostración en modo demo y NO el fallback neutral', async () => {
+      const { queryByTestId, getByTestId } = await renderWithProviders(<HomeScreen />);
+
+      expect(getByTestId('home-recommended-recipe-card')).toBeTruthy();
+      // En modo demo las recetas tienen imageUrl válida, por lo que no debe mostrar el fallback
+      expect(queryByTestId('home-recipe-fallback-image')).toBeNull();
+    });
+
+    it('Home renderiza el fallback neutral FoodAI cuando una receta real carece de imagen', async () => {
+      const { getByTestId, queryByLabelText, getByText } = await renderWithProviders(
+        <HomeScreen />,
+        {
+          initialIsDemoMode: false,
+          initialRecipes: [realRecipeWithoutImage],
+        }
+      );
+
+      // Debe mostrar el contenedor de fallback neutral
+      expect(getByTestId('home-recipe-fallback-image')).toBeTruthy();
+      expect(getByText('FoodAI Receta')).toBeTruthy();
+      // La accesibilidad debe indicar ilustración del plato
+      expect(
+        queryByLabelText('Ilustración de Salteado de Verduras con Tofu')
+      ).toBeTruthy();
+    });
+
+    it('Detalle de receta muestra fallback neutral para receta real sin imagen', async () => {
+      mockSearchParams = { id: 'real-recipe-no-image' };
+      const { getByTestId, getByText } = await renderWithProviders(
+        <RecipeDetailScreen />,
+        {
+          initialIsDemoMode: false,
+          initialRecipes: [realRecipeWithoutImage],
+        }
+      );
+
+      expect(getByTestId('recipe-detail-fallback-image')).toBeTruthy();
+      expect(getByText('FoodAI Receta')).toBeTruthy();
+    });
+
+    it('Detalle de receta muestra imagen propia para recetas de demostración', async () => {
+      mockSearchParams = { id: 'demo-rec-1' };
+      const { queryByTestId } = await renderWithProviders(<RecipeDetailScreen />);
+
+      // Receta demo tiene imagen, por lo que el fallback no debe renderizarse
+      expect(queryByTestId('recipe-detail-fallback-image')).toBeNull();
     });
   });
 });

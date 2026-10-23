@@ -1000,4 +1000,80 @@ describe('FoodAI Phase 2C - Recipe Discovery, Details & Cooking Mode Tests', () 
       });
     });
   });
+
+  describe('17. Fallback neutral de imágenes en Home, Detalle y Descubrimiento (ISSUE 4)', () => {
+    const realRecipeWithoutImage: ClientRecipe = {
+      id: 'real-recipe-no-image',
+      name: 'Salteado de Verduras con Tofu',
+      description: 'Salteado ligero y saludable generado por IA sin imagen propia',
+      totalMinutes: 20,
+      ingredients: [
+        { name: 'Tofu', quantity: 200, unit: 'g' },
+        { name: 'Zanahoria', quantity: 1, unit: 'unidad' },
+      ],
+      steps: ['Cortar vegetales', 'Saltear tofu y vegetales a fuego alto'],
+      availableIngredients: [
+        { name: 'Zanahoria', quantity: 1, unit: 'unidad' },
+      ],
+      missingIngredients: [
+        { name: 'Tofu', quantity: 200, unit: 'g', estimatedCost: 3500 },
+      ],
+      estimatedMissingCost: 3500,
+      budgetRemaining: 16500,
+      withinBudget: true,
+      convenience: 92,
+      reason: 'Aprovecha la zanahoria y requiere poca inversión.',
+      isDemoFixture: false,
+      servings: 2,
+      // imageUrl es undefined deliberadamente
+    };
+
+    it('Home renderiza imagen de demostración en modo demo y NO el fallback neutral', async () => {
+      const { queryByTestId, getByTestId } = await renderWithProviders(<HomeScreen />);
+
+      expect(getByTestId('home-recommended-recipe-card')).toBeTruthy();
+      // En modo demo las recetas tienen imageUrl válida, por lo que no debe mostrar el fallback
+      expect(queryByTestId('home-recipe-fallback-image')).toBeNull();
+    });
+
+    it('Home renderiza el fallback neutral FoodAI cuando una receta real carece de imagen', async () => {
+      const { getByTestId, queryByLabelText, getByText } = await renderWithProviders(
+        <HomeScreen />,
+        {
+          initialIsDemoMode: false,
+          initialRecipes: [realRecipeWithoutImage],
+        }
+      );
+
+      // Debe mostrar el contenedor de fallback neutral
+      expect(getByTestId('home-recipe-fallback-image')).toBeTruthy();
+      expect(getByText('FoodAI Receta')).toBeTruthy();
+      // La accesibilidad debe indicar ilustración del plato
+      expect(
+        queryByLabelText('Ilustración de Salteado de Verduras con Tofu')
+      ).toBeTruthy();
+    });
+
+    it('Detalle de receta muestra fallback neutral para receta real sin imagen', async () => {
+      mockSearchParams = { id: 'real-recipe-no-image' };
+      const { getByTestId, getByText } = await renderWithProviders(
+        <RecipeDetailScreen />,
+        {
+          initialIsDemoMode: false,
+          initialRecipes: [realRecipeWithoutImage],
+        }
+      );
+
+      expect(getByTestId('recipe-detail-fallback-image')).toBeTruthy();
+      expect(getByText('FoodAI Receta')).toBeTruthy();
+    });
+
+    it('Detalle de receta muestra imagen propia para recetas de demostración', async () => {
+      mockSearchParams = { id: 'demo-rec-1' };
+      const { queryByTestId } = await renderWithProviders(<RecipeDetailScreen />);
+
+      // Receta demo tiene imagen, por lo que el fallback no debe renderizarse
+      expect(queryByTestId('recipe-detail-fallback-image')).toBeNull();
+    });
+  });
 });

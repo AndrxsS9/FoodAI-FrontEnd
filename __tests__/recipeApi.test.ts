@@ -18,6 +18,9 @@ import {
   RecipeApiError,
   checkBackendHealth,
   recommendRecipes,
+  validateBackendIngredient,
+  validateBackendRecipe,
+  validateBackendRecipes,
 } from '../src/services/api/recipeApi';
 import { RecommendRecipesRequest } from '../src/types/recipe';
 
@@ -317,12 +320,244 @@ describe('Cliente de API de Recetas (recipeApi)', () => {
         recommendRecipes(validRequest, { signal: abortController.signal })
       ).rejects.toMatchObject({
         code: 'REQUEST_ABORTED',
+        isTimeout: false,
+        message: 'La solicitud de recetas fue cancelada.',
+      });
+    });
+
+    it('interrumpe solicitudes por timeout interno emitiendo REQUEST_TIMEOUT e isTimeout: true', async () => {
+      // Mock de fetch que nunca resuelve dentro del timeout inyectado
+      (globalThis as any).fetch = jest.fn().mockImplementation((_url, options) => {
+        return new Promise((_resolve, reject) => {
+          if (options?.signal) {
+            options.signal.addEventListener('abort', () => {
+              const err = new Error('The operation was aborted');
+              err.name = 'AbortError';
+              reject(err);
+            });
+          }
+        });
+      });
+
+      await expect(
+        recommendRecipes(validRequest, { timeoutMs: 30 })
+      ).rejects.toMatchObject({
+        code: 'REQUEST_TIMEOUT',
         isTimeout: true,
+        message: expect.stringContaining('La solicitud a la IA excedió el tiempo límite de espera'),
       });
     });
   });
 
-  describe('5. checkBackendHealth', () => {
+  describe('5. Validación estricta en tiempo de ejecución de recetas (ISSUE 1)', () => {
+    it('valida exitosamente una receta completa que cumple estrictamente el contrato', () => {
+      const validated = validateBackendRecipe(sampleBackendRecipes[0], 0);
+      expect(validated.name).toBe('Pollo salteado con arroz');
+      expect(validated.totalMinutes).toBe(30);
+      expect(validated.ingredients.length).toBe(2);
+      expect(validated.withinBudget).toBe(true);
+      expect(validated.budgetRemaining).toBe(25000);
+      expect(validated.convenience).toBe(95);
+    });
+
+    it('preserva colecciones vacías de recetas si el endpoint así lo retorna', () => {
+      const validated = validateBackendRecipes([]);
+      expect(validated).toEqual([]);
+    });
+
+    it('rechaza colecciones que no sean arreglos', () => {
+      expect(() => validateBackendRecipes(null)).toThrow(RecipeApiError);
+      expect(() => validateBackendRecipes({})).toThrow(RecipeApiError);
+      expect(() => validateBackendRecipes('no-array')).toThrow(RecipeApiError);
+    });
+
+    it('rechaza recetas nulas o no objetos', () => {
+      expect(() => validateBackendRecipe(null, 0)).toThrow(
+        /La receta en la posición #1 es inválida o nula/i
+      );
+      expect(() => validateBackendRecipe('string-recipe', 1)).toThrow(
+        /La receta en la posición #2 es inválida o nula/i
+      );
+    });
+
+    it('rechaza recetas con nombre ausente, vacío o solo espacios', () => {
+      const invalid = { ...sampleBackendRecipes[0], name: '   ' };
+      expect(() => validateBackendRecipe(invalid, 0)).toThrow(
+        /carece de un nombre válido/i
+      );
+    });
+
+    it('rechaza recetas con descripción ausente o vacía', () => {
+      const invalid = { ...sampleBackendRecipes[0], description: '' };
+      expect(() => validateBackendRecipe(invalid, 0)).toThrow(
+        /carece de una descripción válida/i
+      );
+    });
+
+    it('rechaza recetas con totalMinutes <= 0, no enteros o no numéricos', () => {
+      expect(() =>
+        validateBackendRecipe({ ...sampleBackendRecipes[0], totalMinutes: 0 }, 0)
+      ).toThrow(/debe ser un entero positivo en minutos/i);
+
+      expect(() =>
+        validateBackendRecipe({ ...sampleBackendRecipes[0], totalMinutes: -15 }, 0)
+      ).toThrow(/debe ser un entero positivo en minutos/i);
+
+      expect(() =>
+        validateBackendRecipe({ ...sampleBackendRecipes[0], totalMinutes: 25.5 }, 0)
+      ).toThrow(/debe ser un entero positivo en minutos/i);
+
+      expect(() =>
+        validateBackendRecipe({ ...sampleBackendRecipes[0], totalMinutes: '30' as any }, 0)
+      ).toThrow(/debe ser un entero positivo en minutos/i);
+    });
+
+    it('rechaza recetas sin ingredientes o con arreglo vacío', () => {
+      expect(() =>
+        validateBackendRecipe({ ...sampleBackendRecipes[0], ingredients: [] }, 0)
+      ).toThrow(/debe contener al menos un ingrediente/i);
+
+      expect(() =>
+        validateBackendRecipe({ ...sampleBackendRecipes[0], ingredients: 'no-array' as any }, 0)
+      ).toThrow(/debe contener al menos un ingrediente/i);
+    });
+
+    it('rechaza recetas sin pasos de preparación o con pasos vacíos', () => {
+      expect(() =>
+        validateBackendRecipe({ ...sampleBackendRecipes[0], steps: [] }, 0)
+      ).toThrow(/debe contener al menos un paso de preparación válido/i);
+
+      expect(() =>
+        validateBackendRecipe({ ...sampleBackendRecipes[0], steps: ['  '] }, 0)
+      ).toThrow(/debe contener al menos un paso de preparación válido/i);
+    });
+
+    it('valida ingredientes con cantidades nulas válidas y unidades permitidas por el backend', () => {
+      const ing = validateBackendIngredient(
+        { name: 'Sal al gusto', quantity: null, unit: 'desconocida' },
+        0,
+        0,
+        'ingredients'
+      );
+      expect(ing.name).toBe('Sal al gusto');
+      expect(ing.quantity).toBeNull();
+      expect(ing.unit).toBe('desconocida');
+    });
+
+    it('rechaza ingredientes con unidades no soportadas por el contrato del backend', () => {
+      expect(() =>
+        validateBackendIngredient(
+          { name: 'Harina', quantity: 2, unit: 'baldes' as any },
+          0,
+          0,
+          'ingredients'
+        )
+      ).toThrow(/no está admitida por el backend/i);
+    });
+
+    it('rechaza ingredientes con cantidad negativa o cero', () => {
+      expect(() =>
+        validateBackendIngredient(
+          { name: 'Pollo', quantity: -100, unit: 'g' },
+          0,
+          0,
+          'ingredients'
+        )
+      ).toThrow(/debe ser un número positivo o null/i);
+
+      expect(() =>
+        validateBackendIngredient(
+          { name: 'Pollo', quantity: 0, unit: 'g' },
+          0,
+          0,
+          'ingredients'
+        )
+      ).toThrow(/debe ser un número positivo o null/i);
+    });
+
+    it('rechaza ingredientes con costo estimado negativo o no finito', () => {
+      expect(() =>
+        validateBackendIngredient(
+          { name: 'Aceite', quantity: 1, unit: 'cucharada', estimatedCost: -200 },
+          0,
+          0,
+          'ingredients'
+        )
+      ).toThrow(/debe ser un número finito no negativo/i);
+    });
+
+    it('rechaza recetas con estimatedMissingCost negativo', () => {
+      expect(() =>
+        validateBackendRecipe(
+          { ...sampleBackendRecipes[0], estimatedMissingCost: -1000 },
+          0
+        )
+      ).toThrow(/debe ser un número finito no negativo/i);
+    });
+
+    it('acepta recetas con budgetRemaining negativo cuando se excede el presupuesto', () => {
+      const recipeWithDeficit = {
+        ...sampleBackendRecipes[0],
+        budgetRemaining: -4500,
+        withinBudget: false,
+      };
+      const validated = validateBackendRecipe(recipeWithDeficit, 0);
+      expect(validated.budgetRemaining).toBe(-4500);
+      expect(validated.withinBudget).toBe(false);
+    });
+
+    it('rechaza recetas con withinBudget no booleano', () => {
+      expect(() =>
+        validateBackendRecipe(
+          { ...sampleBackendRecipes[0], withinBudget: 'true' as any },
+          0
+        )
+      ).toThrow(/debe ser un valor booleano/i);
+    });
+
+    it('rechaza recetas con índice de conveniencia fuera de rango (0-100)', () => {
+      expect(() =>
+        validateBackendRecipe({ ...sampleBackendRecipes[0], convenience: -1 }, 0)
+      ).toThrow(/debe ser un número entre 0 y 100/i);
+
+      expect(() =>
+        validateBackendRecipe({ ...sampleBackendRecipes[0], convenience: 101 }, 0)
+      ).toThrow(/debe ser un número entre 0 y 100/i);
+    });
+
+    it('rechaza recetas con razón vacía', () => {
+      expect(() =>
+        validateBackendRecipe({ ...sampleBackendRecipes[0], reason: '   ' }, 0)
+      ).toThrow(/carece de una razón de conveniencia válida/i);
+    });
+
+    it('falla la llamada a recommendRecipes si el backend responde con una receta malformada', async () => {
+      (globalThis as any).fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          success: true,
+          data: {
+            recipes: [
+              {
+                ...sampleBackendRecipes[0],
+                totalMinutes: -99, // Inválido
+              },
+            ],
+          },
+        }),
+      });
+
+      await expect(recommendRecipes(validRequest)).rejects.toMatchObject({
+        name: 'RecipeApiError',
+        status: 200,
+        code: 'INVALID_RESPONSE_SHAPE',
+        message: expect.stringContaining('debe ser un entero positivo en minutos'),
+      });
+    });
+  });
+
+  describe('6. checkBackendHealth', () => {
     it('retorna ok: true cuando GET /api/health responde 200', async () => {
       (globalThis as any).fetch = jest.fn().mockResolvedValue({
         ok: true,

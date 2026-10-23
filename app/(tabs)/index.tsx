@@ -405,15 +405,26 @@ export default function HomeScreen() {
               testID="home-recommended-recipe-card"
             >
               <View style={styles.recipeImageWrapper}>
-                <Image
-                  source={
-                    recommendedRecipe.imageUrl ??
-                    require('../../assets/images/recipe-pollo-verduras.jpg')
-                  }
-                  style={styles.recipeImage}
-                  resizeMode="cover"
-                  accessibilityLabel={`Foto del plato${recommendedRecipe.isDemoFixture ? ' de ejemplo' : ''}: ${recommendedRecipe.name}`}
-                />
+                {recommendedRecipe.imageUrl ? (
+                  <Image
+                    source={recommendedRecipe.imageUrl}
+                    style={styles.recipeImage}
+                    resizeMode="cover"
+                    accessibilityLabel={`Foto del plato${recommendedRecipe.isDemoFixture ? ' de ejemplo' : ''}: ${recommendedRecipe.name}`}
+                  />
+                ) : (
+                  <View
+                    style={styles.recipeImageFallback}
+                    testID="home-recipe-fallback-image"
+                    accessibilityRole="image"
+                    accessibilityLabel={`Ilustración de ${recommendedRecipe.name}`}
+                  >
+                    <MaterialIcons name="restaurant" size={48} color={colors.outlineVariant} />
+                    <Text style={[styles.recipeFallbackText, typography.labelSm]}>
+                      FoodAI Receta
+                    </Text>
+                  </View>
+                )}
                 {/* Score pill */}
                 <View
                   style={styles.convenienceBadge}
@@ -940,6 +951,18 @@ const styles = StyleSheet.create({
   recipeImage: {
     width: '100%',
     height: '100%',
+  },
+  recipeImageFallback: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F0EDE9',
+    gap: spacing.xs,
+  },
+  recipeFallbackText: {
+    color: colors.outline,
+    fontWeight: '600',
   },
   convenienceBadge: {
     position: 'absolute',

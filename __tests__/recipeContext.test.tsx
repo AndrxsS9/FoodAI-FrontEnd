@@ -544,6 +544,71 @@ describe('RecipeContext & RecipeProvider (Fase 2C)', () => {
       expect(result.current.recipes.isStale).toBe(false);
     });
 
+    it('detecta obsolescencia (isStale) ante cambios o reseteo de maxMinutes (ISSUE 3)', async () => {
+      const mockRecommend = jest.fn().mockResolvedValue(SAMPLE_BACKEND_RECIPES);
+      const mockClient = { recommendRecipes: mockRecommend, checkBackendHealth: jest.fn() };
+
+      const { PantryProvider } = require('../src/context/PantryContext');
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        <PantryProvider initialIngredients={SAMPLE_INGREDIENTS}>
+          <BudgetProvider initialPreferences={{ budget: 20000, servings: 2, maxMinutes: 30 }}>
+            <RecipeProvider recipeApiClient={mockClient}>
+              {children}
+            </RecipeProvider>
+          </BudgetProvider>
+        </PantryProvider>
+      );
+
+      const useCombined = () => ({
+        budget: useBudget(),
+        recipes: useRecipes(),
+      });
+
+      const { result } = await renderHook(() => useCombined(), { wrapper });
+
+      // 1. Generación inicial con maxMinutes = 30
+      await act(async () => {
+        await result.current.recipes.generateRecipes();
+      });
+
+      expect(result.current.recipes.isStale).toBe(false);
+
+      // 2. Parámetros sin cambios: NO debe disparar isStale falsamente
+      expect(result.current.recipes.isStale).toBe(false);
+
+      // 3. Modificar maxMinutes de 30 a 45 minutos -> debe marcarse isStale
+      await act(async () => {
+        await result.current.budget.setMaxMinutes(45);
+      });
+      expect(result.current.recipes.isStale).toBe(true);
+
+      // 4. Regenerar con éxito -> limpia el estado isStale
+      await act(async () => {
+        await result.current.recipes.generateRecipes();
+      });
+      expect(result.current.recipes.isStale).toBe(false);
+
+      // 5. Resetear maxMinutes a undefined / null -> debe marcarse isStale
+      await act(async () => {
+        await result.current.budget.setMaxMinutes(null);
+      });
+      expect(result.current.recipes.isStale).toBe(true);
+
+      // 6. Si la llamada de regeneración falla, NO debe marcarse falsamente como actualizado
+      mockRecommend.mockRejectedValueOnce(new Error('Fallo temporal de IA'));
+      await act(async () => {
+        try {
+          await result.current.recipes.generateRecipes();
+        } catch {
+          // esperado
+        }
+      });
+
+      // Debe continuar en estado isStale porque la generación falló
+      expect(result.current.recipes.isStale).toBe(true);
+      expect(result.current.recipes.error).toBe('Fallo temporal de IA');
+    });
+
     it('permite limpiar el error con clearError()', async () => {
       const mockRecommend = jest.fn().mockRejectedValue(new Error('Fallo de red'));
       const mockClient = { recommendRecipes: mockRecommend, checkBackendHealth: jest.fn() };

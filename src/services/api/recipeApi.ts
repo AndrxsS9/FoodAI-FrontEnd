@@ -14,11 +14,14 @@
 
 import {
   API_ENDPOINTS,
-  DEFAULT_API_TIMEOUT_MS,
+  DEFAULT_AI_RECIPES_TIMEOUT_MS,
   buildApiUrl,
 } from './apiConfig';
 import {
+  BACKEND_RECIPE_UNITS,
   BackendRecipe,
+  BackendRecipeIngredient,
+  BackendRecipeUnit,
   RecommendRecipesRequest,
 } from '../../types/recipe';
 
@@ -135,8 +138,265 @@ function validateClientRequest(request: RecommendRecipesRequest): void {
 }
 
 /**
- * Realiza la llamada HTTP a POST /api/recipes/recommend usando la API fetch nativa.
+ * Valida en tiempo de ejecución un ingrediente de receta según el contrato del backend.
  */
+export function validateBackendIngredient(
+  raw: unknown,
+  recipeIndex: number,
+  ingredientIndex: number,
+  listType: 'ingredients' | 'availableIngredients' | 'missingIngredients'
+): BackendRecipeIngredient {
+  if (!raw || typeof raw !== 'object') {
+    throw new RecipeApiError(
+      `El ingrediente #${ingredientIndex + 1} de la receta #${recipeIndex + 1} (${listType}) es inválido o nulo.`,
+      'INVALID_RESPONSE_SHAPE',
+      200,
+      raw
+    );
+  }
+
+  const ing = raw as Record<string, unknown>;
+
+  if (typeof ing.name !== 'string' || !ing.name.trim()) {
+    throw new RecipeApiError(
+      `El ingrediente #${ingredientIndex + 1} de la receta #${recipeIndex + 1} (${listType}) carece de un nombre válido.`,
+      'INVALID_RESPONSE_SHAPE',
+      200,
+      raw
+    );
+  }
+
+  if (
+    ing.quantity !== null &&
+    (typeof ing.quantity !== 'number' || !Number.isFinite(ing.quantity) || ing.quantity <= 0)
+  ) {
+    throw new RecipeApiError(
+      `La cantidad del ingrediente "${ing.name}" en la receta #${recipeIndex + 1} debe ser un número positivo o null.`,
+      'INVALID_RESPONSE_SHAPE',
+      200,
+      raw
+    );
+  }
+
+  if (
+    typeof ing.unit !== 'string' ||
+    !BACKEND_RECIPE_UNITS.includes(ing.unit as any)
+  ) {
+    throw new RecipeApiError(
+      `La unidad "${String(ing.unit)}" del ingrediente "${ing.name}" en la receta #${recipeIndex + 1} no está admitida por el backend.`,
+      'INVALID_RESPONSE_SHAPE',
+      200,
+      raw
+    );
+  }
+
+  if (
+    ing.estimatedCost !== undefined &&
+    ing.estimatedCost !== null &&
+    (typeof ing.estimatedCost !== 'number' || !Number.isFinite(ing.estimatedCost) || ing.estimatedCost < 0)
+  ) {
+    throw new RecipeApiError(
+      `El costo estimado del ingrediente "${ing.name}" en la receta #${recipeIndex + 1} debe ser un número finito no negativo.`,
+      'INVALID_RESPONSE_SHAPE',
+      200,
+      raw
+    );
+  }
+
+  return {
+    name: ing.name.trim(),
+    quantity: ing.quantity as number | null,
+    unit: ing.unit as BackendRecipeUnit,
+    estimatedCost:
+      ing.estimatedCost !== undefined && ing.estimatedCost !== null
+        ? Number(ing.estimatedCost)
+        : undefined,
+  };
+}
+
+/**
+ * Valida exhaustivamente en tiempo de ejecución cada campo de una recomendación de receta.
+ */
+export function validateBackendRecipe(raw: unknown, index: number): BackendRecipe {
+  if (!raw || typeof raw !== 'object') {
+    throw new RecipeApiError(
+      `La receta en la posición #${index + 1} es inválida o nula.`,
+      'INVALID_RESPONSE_SHAPE',
+      200,
+      raw
+    );
+  }
+
+  const r = raw as Record<string, unknown>;
+
+  if (typeof r.name !== 'string' || !r.name.trim()) {
+    throw new RecipeApiError(
+      `La receta #${index + 1} carece de un nombre válido.`,
+      'INVALID_RESPONSE_SHAPE',
+      200,
+      raw
+    );
+  }
+
+  if (typeof r.description !== 'string' || !r.description.trim()) {
+    throw new RecipeApiError(
+      `La receta "${r.name}" carece de una descripción válida.`,
+      'INVALID_RESPONSE_SHAPE',
+      200,
+      raw
+    );
+  }
+
+  if (
+    typeof r.totalMinutes !== 'number' ||
+    !Number.isInteger(r.totalMinutes) ||
+    r.totalMinutes <= 0
+  ) {
+    throw new RecipeApiError(
+      `El tiempo total de la receta "${r.name}" debe ser un entero positivo en minutos.`,
+      'INVALID_RESPONSE_SHAPE',
+      200,
+      raw
+    );
+  }
+
+  if (!Array.isArray(r.ingredients) || r.ingredients.length === 0) {
+    throw new RecipeApiError(
+      `La receta "${r.name}" debe contener al menos un ingrediente.`,
+      'INVALID_RESPONSE_SHAPE',
+      200,
+      raw
+    );
+  }
+
+  const ingredients = r.ingredients.map((ing, i) =>
+    validateBackendIngredient(ing, index, i, 'ingredients')
+  );
+
+  if (
+    !Array.isArray(r.steps) ||
+    r.steps.length === 0 ||
+    !r.steps.every((s) => typeof s === 'string' && s.trim().length > 0)
+  ) {
+    throw new RecipeApiError(
+      `La receta "${r.name}" debe contener al menos un paso de preparación válido.`,
+      'INVALID_RESPONSE_SHAPE',
+      200,
+      raw
+    );
+  }
+
+  if (!Array.isArray(r.availableIngredients)) {
+    throw new RecipeApiError(
+      `La receta "${r.name}" debe contener un arreglo de ingredientes disponibles.`,
+      'INVALID_RESPONSE_SHAPE',
+      200,
+      raw
+    );
+  }
+  const availableIngredients = r.availableIngredients.map((ing, i) =>
+    validateBackendIngredient(ing, index, i, 'availableIngredients')
+  );
+
+  if (!Array.isArray(r.missingIngredients)) {
+    throw new RecipeApiError(
+      `La receta "${r.name}" debe contener un arreglo de ingredientes faltantes.`,
+      'INVALID_RESPONSE_SHAPE',
+      200,
+      raw
+    );
+  }
+  const missingIngredients = r.missingIngredients.map((ing, i) =>
+    validateBackendIngredient(ing, index, i, 'missingIngredients')
+  );
+
+  if (
+    typeof r.estimatedMissingCost !== 'number' ||
+    !Number.isFinite(r.estimatedMissingCost) ||
+    r.estimatedMissingCost < 0
+  ) {
+    throw new RecipeApiError(
+      `El costo adicional estimado de la receta "${r.name}" debe ser un número finito no negativo.`,
+      'INVALID_RESPONSE_SHAPE',
+      200,
+      raw
+    );
+  }
+
+  if (typeof r.budgetRemaining !== 'number' || !Number.isFinite(r.budgetRemaining)) {
+    throw new RecipeApiError(
+      `El presupuesto restante de la receta "${r.name}" debe ser un número finito.`,
+      'INVALID_RESPONSE_SHAPE',
+      200,
+      raw
+    );
+  }
+
+  if (typeof r.withinBudget !== 'boolean') {
+    throw new RecipeApiError(
+      `El indicador dentro de presupuesto (withinBudget) de la receta "${r.name}" debe ser un valor booleano.`,
+      'INVALID_RESPONSE_SHAPE',
+      200,
+      raw
+    );
+  }
+
+  if (
+    typeof r.convenience !== 'number' ||
+    !Number.isFinite(r.convenience) ||
+    r.convenience < 0 ||
+    r.convenience > 100
+  ) {
+    throw new RecipeApiError(
+      `El índice de conveniencia de la receta "${r.name}" debe ser un número entre 0 y 100.`,
+      'INVALID_RESPONSE_SHAPE',
+      200,
+      raw
+    );
+  }
+
+  if (typeof r.reason !== 'string' || !r.reason.trim()) {
+    throw new RecipeApiError(
+      `La receta "${r.name}" carece de una razón de conveniencia válida.`,
+      'INVALID_RESPONSE_SHAPE',
+      200,
+      raw
+    );
+  }
+
+  return {
+    name: r.name.trim(),
+    description: r.description.trim(),
+    totalMinutes: r.totalMinutes,
+    ingredients,
+    steps: r.steps.map((s) => (s as string).trim()),
+    availableIngredients,
+    missingIngredients,
+    estimatedMissingCost: r.estimatedMissingCost,
+    budgetRemaining: r.budgetRemaining,
+    withinBudget: r.withinBudget,
+    convenience: r.convenience,
+    reason: r.reason.trim(),
+  };
+}
+
+/**
+ * Valida una colección completa de recetas del backend asegurando que cada una cumpla el contrato.
+ * Preserva colecciones vacías válidas si el backend no encontró recetas.
+ */
+export function validateBackendRecipes(rawArray: unknown): BackendRecipe[] {
+  if (!Array.isArray(rawArray)) {
+    throw new RecipeApiError(
+      'La respuesta del backend no contiene una colección válida de recetas.',
+      'INVALID_RECIPES_ARRAY',
+      200,
+      rawArray
+    );
+  }
+
+  return rawArray.map((item, idx) => validateBackendRecipe(item, idx));
+}
+
 export async function recommendRecipes(
   request: RecommendRecipesRequest,
   options?: RecipeApiOptions
@@ -148,7 +408,7 @@ export async function recommendRecipes(
   const targetUrl = buildApiUrl(API_ENDPOINTS.RECIPES_RECOMMEND, options?.baseUrl);
 
   // 3. Configurar timeout y controlador de cancelación
-  const timeoutMs = options?.timeoutMs ?? DEFAULT_API_TIMEOUT_MS;
+  const timeoutMs = options?.timeoutMs ?? DEFAULT_AI_RECIPES_TIMEOUT_MS;
   const controller = new AbortController();
   let isTimedOut = false;
 
@@ -167,15 +427,15 @@ export async function recommendRecipes(
     if (externalSignal.aborted) {
       clearTimeout(timer);
       throw new RecipeApiError(
-        'La solicitud fue cancelada antes de enviarse.',
+        'La solicitud de recetas fue cancelada.',
         'REQUEST_ABORTED',
         0,
         undefined,
         false,
-        true
+        false
       );
     }
-    externalSignal.addEventListener('abort', onExternalAbort);
+    externalSignal.addEventListener('abort', onExternalAbort, { once: true });
   }
 
   try {
@@ -205,7 +465,7 @@ export async function recommendRecipes(
 
     const payload = rawJson as Record<string, unknown> | null;
 
-    // 5. Manejo de respuesta exitosa
+    // 5. Manejo de respuesta exitosa con validación estricta de cada receta
     if (response.ok) {
       if (!payload || payload.success !== true || !payload.data || typeof payload.data !== 'object') {
         throw new RecipeApiError(
@@ -217,16 +477,7 @@ export async function recommendRecipes(
       }
 
       const dataObj = payload.data as { recipes?: unknown };
-      if (!Array.isArray(dataObj.recipes)) {
-        throw new RecipeApiError(
-          'La respuesta del backend no contiene una colección válida de recetas.',
-          'INVALID_RECIPES_ARRAY',
-          response.status,
-          rawJson
-        );
-      }
-
-      return dataObj.recipes as BackendRecipe[];
+      return validateBackendRecipes(dataObj.recipes);
     }
 
     // 6. Manejo de respuestas de error HTTP del backend
@@ -295,13 +546,14 @@ export async function recommendRecipes(
     }
 
     // Detección de Abort / Timeout
+    const isExternal = Boolean(externalSignal?.aborted);
+    const isTimeout = isTimedOut && !isExternal;
     const isAbort =
       (error instanceof Error && error.name === 'AbortError') ||
       isTimedOut ||
-      Boolean(externalSignal?.aborted);
+      isExternal;
 
     if (isAbort) {
-      const isExternal = Boolean(externalSignal?.aborted);
       const msg = isExternal
         ? 'La solicitud de recetas fue cancelada.'
         : `La solicitud a la IA excedió el tiempo límite de espera (${Math.round(
@@ -314,7 +566,7 @@ export async function recommendRecipes(
         0,
         undefined,
         false,
-        true
+        isTimeout
       );
     }
 
@@ -327,6 +579,7 @@ export async function recommendRecipes(
       true
     );
   } finally {
+    clearTimeout(timer);
     if (externalSignal) {
       externalSignal.removeEventListener('abort', onExternalAbort);
     }
@@ -348,7 +601,6 @@ export async function checkBackendHealth(baseUrl?: string): Promise<HealthCheckR
       headers: { Accept: 'application/json' },
       signal: controller.signal,
     });
-    clearTimeout(timer);
 
     let data: unknown;
     try {
@@ -363,12 +615,13 @@ export async function checkBackendHealth(baseUrl?: string): Promise<HealthCheckR
       data,
     };
   } catch (err) {
-    clearTimeout(timer);
     return {
       ok: false,
       status: 0,
       error: err instanceof Error ? err.message : 'Error de conexión',
     };
+  } finally {
+    clearTimeout(timer);
   }
 }
 

@@ -138,9 +138,18 @@ export function RecipeProvider({
     const pantryChanged = lastSnapshot.pantryFingerprint !== currentPantryFingerprint;
     const budgetChanged = lastSnapshot.budget !== budget;
     const servingsChanged = lastSnapshot.servings !== servings;
+    const maxMinutesChanged = (lastSnapshot.maxMinutes ?? undefined) !== (maxMinutes ?? undefined);
 
-    return pantryChanged || budgetChanged || servingsChanged;
-  }, [isDemoMode, lastSnapshot, realRecipes.length, currentPantryFingerprint, budget, servings]);
+    return pantryChanged || budgetChanged || servingsChanged || maxMinutesChanged;
+  }, [
+    isDemoMode,
+    lastSnapshot,
+    realRecipes.length,
+    currentPantryFingerprint,
+    budget,
+    servings,
+    maxMinutes,
+  ]);
 
   // Generar recetas actuales según el modo activo
   const recipes = useMemo<ClientRecipe[]>(() => {

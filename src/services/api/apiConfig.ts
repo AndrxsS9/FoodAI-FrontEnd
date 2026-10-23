@@ -11,7 +11,8 @@
  * NUNCA debe contener credenciales, secretos ni la clave de API de Gemini.
  */
 
-export const DEFAULT_API_TIMEOUT_MS = 30000; // 30 segundos (adecuado para inferencia de Gemini)
+export const DEFAULT_API_TIMEOUT_MS = 10000; // 10 segundos para endpoints generales (ej: /api/health)
+export const DEFAULT_AI_RECIPES_TIMEOUT_MS = 75000; // 75 segundos: acomoda 3 intentos de 20s de Gemini en backend + demoras de backoff + margen de red
 
 export const API_ENDPOINTS = {
   HEALTH: '/api/health',

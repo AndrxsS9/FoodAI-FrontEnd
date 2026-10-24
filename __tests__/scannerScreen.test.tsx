@@ -526,5 +526,153 @@ describe('ScannerScreen', () => {
       const saved = await customAdapter.getIngredients();
       expect(saved.map((i) => i.name)).toEqual(['Tomate']);
     });
+
+    it('handles multiple detected ingredients targeting the same pantry record without lost updates (2 kg + 500 g + 1 kg = 3.5 kg)', async () => {
+      const initialPantry: Ingredient[] = [
+        {
+          id: 'pantry-arroz-1',
+          name: 'Arroz',
+          quantity: 2,
+          unit: 'kg',
+          category: 'Granos y cereales',
+          createdAt: '2026-01-01T00:00:00Z',
+          updatedAt: '2026-01-01T00:00:00Z',
+        },
+      ];
+
+      (scannerApi.analyzeIngredientsImage as jest.Mock).mockResolvedValueOnce([
+        { name: 'Arroz', quantity: 500, unit: 'g', needsReview: false },
+        { name: 'Arroz', quantity: 1, unit: 'kg', needsReview: false },
+      ]);
+
+      const customAdapter = new MockPantryAdapter(initialPantry);
+      const updateSpy = jest.spyOn(customAdapter, 'updateIngredient');
+      const screen = await renderScannerScreen(initialPantry, customAdapter);
+      await advanceToReview(screen);
+
+      await fireEvent.press(screen.getByTestId('scanner-confirm-save-button'));
+
+      await waitFor(() => {
+        expect(screen.getByTestId('scanner-completed-state')).toBeTruthy();
+      });
+
+      // Se deben haber actualizado consecutivamente sin perder cantidades
+      expect(updateSpy).toHaveBeenCalledTimes(2);
+
+      const saved = await customAdapter.getIngredients();
+      expect(saved).toHaveLength(1);
+      expect(saved[0].name).toBe('Arroz');
+      expect(saved[0].quantity).toBe(3.5);
+      expect(saved[0].unit).toBe('kg');
+    });
+
+    it('safely saves incompatible unit duplicates as separate items without silently summing', async () => {
+      const initialPantry: Ingredient[] = [
+        {
+          id: 'pantry-huevos-1',
+          name: 'Huevos',
+          quantity: 6,
+          unit: 'unidad',
+          category: 'Carnes y proteínas',
+          createdAt: '2026-01-01T00:00:00Z',
+          updatedAt: '2026-01-01T00:00:00Z',
+        },
+      ];
+
+      // Detectado en gramos (incompatible con unidad)
+      (scannerApi.analyzeIngredientsImage as jest.Mock).mockResolvedValueOnce([
+        { name: 'Huevos', quantity: 500, unit: 'g', needsReview: false },
+      ]);
+
+      const customAdapter = new MockPantryAdapter(initialPantry);
+      const screen = await renderScannerScreen(initialPantry, customAdapter);
+      await advanceToReview(screen);
+
+      // Debe mostrar advertencia de unidades incompatibles
+      const cards = screen.getAllByTestId(/^detected-card-/);
+      expect(cards).toHaveLength(1);
+
+      await fireEvent.press(screen.getByTestId('scanner-confirm-save-button'));
+
+      await waitFor(() => {
+        expect(screen.getByTestId('scanner-completed-state')).toBeTruthy();
+      });
+
+      const saved = await customAdapter.getIngredients();
+      // Debe haber 2 ítems: los 6 huevos originales intactos y el nuevo de 500 g
+      expect(saved).toHaveLength(2);
+      const original = saved.find((i) => i.id === 'pantry-huevos-1');
+      expect(original?.quantity).toBe(6);
+      expect(original?.unit).toBe('unidad');
+
+      const newItem = saved.find((i) => i.id !== 'pantry-huevos-1');
+      expect(newItem?.name).toBe('Huevos');
+      expect(newItem?.quantity).toBe(500);
+      expect(newItem?.unit).toBe('g');
+    });
+
+    it('prevents cancellation races: cancel request A and immediately start request B ignores late response A', async () => {
+      let resolveA: (val: any) => void = () => {};
+      let resolveB: (val: any) => void = () => {};
+
+      (scannerApi.analyzeIngredientsImage as jest.Mock)
+        .mockImplementationOnce(
+          () =>
+            new Promise((resolve) => {
+              resolveA = resolve;
+            })
+        )
+        .mockImplementationOnce(
+          () =>
+            new Promise((resolve) => {
+              resolveB = resolve;
+            })
+        );
+
+      const screen = await renderScannerScreen([]);
+
+      // Iniciar petición A
+      await fireEvent.press(screen.getByTestId('scanner-gallery-button'));
+      await waitFor(() => expect(screen.getByTestId('scanner-preview-state')).toBeTruthy());
+      await fireEvent.press(screen.getByTestId('scanner-analyze-button'));
+      await waitFor(() => expect(screen.getByTestId('scanner-analyzing-state')).toBeTruthy());
+
+      // Cancelar petición A
+      await fireEvent.press(screen.getByTestId('scanner-abort-button'));
+      await waitFor(() => expect(screen.getByTestId('scanner-preview-state')).toBeTruthy());
+
+      // Iniciar inmediatamente petición B
+      await fireEvent.press(screen.getByTestId('scanner-analyze-button'));
+      await waitFor(() => expect(screen.getByTestId('scanner-analyzing-state')).toBeTruthy());
+
+      // Completar petición A tardíamente
+      await act(async () => {
+        resolveA([
+          { name: 'Fantasma Tardío', quantity: 99, unit: 'unidad', needsReview: false },
+        ]);
+      });
+
+      // El estado debe seguir siendo 'analyzing' de B, nunca review de A
+      expect(screen.queryByText('Fantasma Tardío')).toBeNull();
+
+      // Completar petición B
+      await act(async () => {
+        resolveB([
+          { name: 'Alimento Legítimo B', quantity: 2, unit: 'unidad', needsReview: false },
+        ]);
+      });
+
+      await waitFor(() => {
+        expect(screen.getByTestId('scanner-review-state')).toBeTruthy();
+      });
+      expect(screen.getByDisplayValue('Alimento Legítimo B')).toBeTruthy();
+      expect(screen.queryByDisplayValue('Fantasma Tardío')).toBeNull();
+    });
+
+    it('verifies no global test surfaces or synthetic buttons exist in production', async () => {
+      const screen = await renderScannerScreen([]);
+      expect((window as unknown as { __foodaiSelectAsset?: unknown }).__foodaiSelectAsset).toBeUndefined();
+      expect(screen.queryByTestId('scanner-test-image-button')).toBeNull();
+    });
   });
 });

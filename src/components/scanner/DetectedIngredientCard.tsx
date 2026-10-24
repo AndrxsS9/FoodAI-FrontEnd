@@ -25,6 +25,7 @@ import {
   ScannedIngredientAction,
   ScannedIngredientItem,
 } from '../../types/scanner';
+import { areUnitsCompatibleForAddition } from '../../utils/ingredientMapper';
 import { colors, radius, spacing, useTypography } from '../../theme';
 
 export interface DetectedIngredientCardProps {
@@ -55,6 +56,9 @@ export function DetectedIngredientCard({
   );
 
   const categoryCfg = CATEGORY_CONFIG[item.category] || CATEGORY_CONFIG['Otros'];
+  const isCompatibleWithDuplicate = item.duplicateMatch
+    ? areUnitsCompatibleForAddition(item.duplicateMatch.unit, item.unit)
+    : true;
   const hasQuantityError =
     item.isSelected &&
     (item.quantity === null ||
@@ -160,10 +164,26 @@ export function DetectedIngredientCard({
         )}
 
         {item.duplicateMatch && (
-          <View style={styles.duplicateBadge} testID={`detected-duplicate-badge-${item.id}`}>
-            <MaterialIcons name="sync" size={14} color={colors.primary} />
-            <Text style={[styles.duplicateBadgeText, typography.labelSm]}>
-              En despensa
+          <View
+            style={[
+              styles.duplicateBadge,
+              item.duplicateMatch.matchType === 'possible' && styles.duplicateBadgePossible,
+            ]}
+            testID={`detected-duplicate-badge-${item.id}`}
+          >
+            <MaterialIcons
+              name={item.duplicateMatch.matchType === 'possible' ? 'help-outline' : 'sync'}
+              size={14}
+              color={item.duplicateMatch.matchType === 'possible' ? '#8A5E00' : colors.primary}
+            />
+            <Text
+              style={[
+                styles.duplicateBadgeText,
+                typography.labelSm,
+                item.duplicateMatch.matchType === 'possible' && { color: '#8A5E00' },
+              ]}
+            >
+              {item.duplicateMatch.matchType === 'possible' ? '¿En despensa?' : 'En despensa'}
             </Text>
           </View>
         )}
@@ -245,33 +265,71 @@ export function DetectedIngredientCard({
       {item.duplicateMatch && (
         <View style={styles.duplicateSection} testID={`detected-duplicate-box-${item.id}`}>
           <View style={styles.duplicateInfoRow}>
-            <MaterialIcons name="info-outline" size={18} color={colors.primary} />
+            <MaterialIcons
+              name={item.duplicateMatch.matchType === 'possible' ? 'help-outline' : 'info-outline'}
+              size={18}
+              color={item.duplicateMatch.matchType === 'possible' ? '#8A5E00' : colors.primary}
+            />
             <Text style={[styles.duplicateText, typography.bodySm]}>
-              Tienes{' '}
-              <Text style={{ fontWeight: '700' }}>
-                {item.duplicateMatch.currentQuantity}{' '}
-                {INGREDIENT_UNIT_LABELS[item.duplicateMatch.unit]}
-              </Text>{' '}
-              de «{item.duplicateMatch.name}» actualmente en tu despensa.
+              {item.duplicateMatch.matchType === 'possible' ? (
+                <>
+                  <Text style={{ fontWeight: '700', color: '#8A5E00' }}>Posible coincidencia: </Text>
+                  Tienes{' '}
+                  <Text style={{ fontWeight: '700' }}>
+                    {item.duplicateMatch.currentQuantity}{' '}
+                    {INGREDIENT_UNIT_LABELS[item.duplicateMatch.unit]}
+                  </Text>{' '}
+                  de «{item.duplicateMatch.name}» en tu despensa. ¿Deseas sumar o crear un nuevo ítem?
+                </>
+              ) : (
+                <>
+                  Tienes{' '}
+                  <Text style={{ fontWeight: '700' }}>
+                    {item.duplicateMatch.currentQuantity}{' '}
+                    {INGREDIENT_UNIT_LABELS[item.duplicateMatch.unit]}
+                  </Text>{' '}
+                  de «{item.duplicateMatch.name}» actualmente en tu despensa.
+                </>
+              )}
             </Text>
           </View>
+
+          {!isCompatibleWithDuplicate && (
+            <View style={styles.incompatibleNotice} testID={`detected-incompatible-notice-${item.id}`}>
+              <MaterialIcons name="info" size={14} color="#8A5E00" />
+              <Text style={[styles.incompatibleNoticeText, typography.bodySm]}>
+                Unidades no compatibles ({INGREDIENT_UNIT_LABELS[item.unit]} y {INGREDIENT_UNIT_LABELS[item.duplicateMatch.unit]}). No se pueden sumar directamente.
+              </Text>
+            </View>
+          )}
 
           <View style={styles.actionButtonsRow}>
             <Pressable
               testID={`detected-action-add-${item.id}`}
+              disabled={!isCompatibleWithDuplicate}
               style={[
                 styles.actionOptionButton,
                 item.action === 'add_to_existing' && styles.actionOptionButtonActive,
+                !isCompatibleWithDuplicate && styles.actionOptionButtonDisabled,
               ]}
-              onPress={() => onChangeAction(item.id, 'add_to_existing')}
+              onPress={() => {
+                if (isCompatibleWithDuplicate) {
+                  onChangeAction(item.id, 'add_to_existing');
+                }
+              }}
               accessibilityRole="radio"
-              accessibilityState={{ checked: item.action === 'add_to_existing' }}
+              accessibilityState={{
+                checked: item.action === 'add_to_existing',
+                disabled: !isCompatibleWithDuplicate,
+              }}
             >
               <MaterialIcons
                 name="add-circle-outline"
                 size={16}
                 color={
-                  item.action === 'add_to_existing'
+                  !isCompatibleWithDuplicate
+                    ? colors.outline
+                    : item.action === 'add_to_existing'
                     ? colors.primary
                     : colors.textSecondary
                 }
@@ -280,6 +338,7 @@ export function DetectedIngredientCard({
                 style={[
                   styles.actionOptionText,
                   typography.labelSm,
+                  !isCompatibleWithDuplicate && { color: colors.outline },
                   item.action === 'add_to_existing' &&
                     styles.actionOptionTextActive,
                 ]}
@@ -479,6 +538,9 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: radius.full,
   },
+  duplicateBadgePossible: {
+    backgroundColor: '#FFF4E5',
+  },
   duplicateBadgeText: {
     color: colors.primary,
     fontWeight: '700',
@@ -597,6 +659,10 @@ const styles = StyleSheet.create({
     borderColor: colors.primary,
     backgroundColor: 'rgba(91, 75, 138, 0.08)',
   },
+  actionOptionButtonDisabled: {
+    opacity: 0.45,
+    backgroundColor: colors.surfaceContainerLow,
+  },
   actionOptionText: {
     color: colors.textSecondary,
     fontWeight: '600',
@@ -604,6 +670,23 @@ const styles = StyleSheet.create({
   actionOptionTextActive: {
     color: colors.primary,
     fontWeight: '700',
+  },
+  incompatibleNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#FFF8E1',
+    padding: spacing.xs,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: '#FFE082',
+    marginTop: 4,
+  },
+  incompatibleNoticeText: {
+    color: '#6C5100',
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 16,
   },
   expandDetailsButton: {
     flexDirection: 'row',

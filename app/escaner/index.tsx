@@ -38,11 +38,14 @@ import {
 } from '../../src/types/scanner';
 import {
   inferMimeTypeFromUri,
-  optimizeImageIfNeeded,
+  prepareAndValidateImageForUpload,
   validateImageCandidate,
 } from '../../src/utils/imageUtils';
-import { mapDetectedToScannedItems } from '../../src/utils/ingredientMapper';
-import { SYNTHETIC_TEST_IMAGE_DATA_URI } from '../../src/fixtures/testImageFixture';
+import {
+  areUnitsCompatibleForAddition,
+  combineIngredientQuantities,
+  mapDetectedToScannedItems,
+} from '../../src/utils/ingredientMapper';
 
 export default function ScannerScreen() {
   const typography = useTypography();
@@ -60,10 +63,11 @@ export default function ScannerScreen() {
   );
   const [saveSummary, setSaveSummary] = useState<ScannerSaveSummary | null>(null);
 
-  // Control de peticiones concurrentes y cancelación
+  // Control de peticiones concurrentes, generación y cancelación
   const isMountedRef = useRef<boolean>(true);
   const abortControllerRef = useRef<AbortController | null>(null);
   const isSubmittingRef = useRef<boolean>(false);
+  const activeRequestIdRef = useRef<number>(0);
 
   // 1. Manejador de selección de imagen
   const processSelectedAsset = async (asset: ImagePicker.ImagePickerAsset) => {
@@ -74,6 +78,7 @@ export default function ScannerScreen() {
       uri: asset.uri,
       mimeType,
       fileSize: asset.fileSize,
+      allowOversizedForOptimization: true,
     });
 
     if (!candidateValidation.isValid) {
@@ -103,14 +108,9 @@ export default function ScannerScreen() {
   // Desmontaje seguro: abortar cualquier solicitud en vuelo y limpiar referencias
   useEffect(() => {
     isMountedRef.current = true;
-    if (typeof window !== 'undefined') {
-      (window as unknown as { __foodaiSelectAsset?: (asset: ImagePicker.ImagePickerAsset) => Promise<void> }).__foodaiSelectAsset = processSelectedAsset;
-    }
     return () => {
       isMountedRef.current = false;
-      if (typeof window !== 'undefined') {
-        delete (window as unknown as { __foodaiSelectAsset?: unknown }).__foodaiSelectAsset;
-      }
+      activeRequestIdRef.current += 1;
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
         abortControllerRef.current = null;
@@ -215,27 +215,50 @@ export default function ScannerScreen() {
 
   // 4. Iniciar análisis con IA
   const handleStartAnalysis = async () => {
-    if (!selectedImage || isSubmittingRef.current) return;
+    if (!selectedImage) return;
 
-    isSubmittingRef.current = true;
-    setStep('analyzing');
-    setErrorMessage(null);
-    setAnalysisProgressText('Optimizando imagen...');
+    // Asignar un token generacional único e incremental para esta petición
+    const requestId = ++activeRequestIdRef.current;
+
+    // Abortar cualquier petición previa en vuelo
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
 
     const controller = new AbortController();
     abortControllerRef.current = controller;
+    isSubmittingRef.current = true;
+
+    setStep('analyzing');
+    setErrorMessage(null);
+    setAnalysisProgressText('Verificando y optimizando imagen...');
 
     try {
-      // Optimización de imagen (< 8 MB y dimensiones balanceadas)
-      const optimized = await optimizeImageIfNeeded(selectedImage);
-      if (controller.signal.aborted) return;
+      // Pipeline estricto: validar formato, optimizar y comprobar tamaño final <= 8 MB
+      const uploadReady = await prepareAndValidateImageForUpload(selectedImage);
+
+      // Si la petición fue abortada o ya no es la activa, ignorar
+      if (
+        requestId !== activeRequestIdRef.current ||
+        !isMountedRef.current ||
+        controller.signal.aborted
+      ) {
+        return;
+      }
 
       setAnalysisProgressText('Analizando alimentos con IA...');
-      const detected = await scannerApi.analyzeIngredientsImage(optimized, {
+      const detected = await scannerApi.analyzeIngredientsImage(uploadReady, {
         signal: controller.signal,
       });
 
-      if (!isMountedRef.current || controller.signal.aborted) return;
+      if (
+        requestId !== activeRequestIdRef.current ||
+        !isMountedRef.current ||
+        controller.signal.aborted
+      ) {
+        return;
+      }
 
       if (!detected || detected.length === 0) {
         setErrorMessage(
@@ -245,18 +268,29 @@ export default function ScannerScreen() {
         return;
       }
 
-      // Mapeo a items de revisión con detección de duplicados en la despensa
+      // Mapeo a items de revisión con detección conservadora de duplicados en la despensa
       const mapped = mapDetectedToScannedItems(detected, ingredients);
-      if (!isMountedRef.current) return;
-      isSubmittingRef.current = false;
-      abortControllerRef.current = null;
+
+      if (
+        requestId !== activeRequestIdRef.current ||
+        !isMountedRef.current ||
+        controller.signal.aborted
+      ) {
+        return;
+      }
+
       setScannedItems(mapped);
       setStep('review');
     } catch (err) {
-      if (!isMountedRef.current || controller.signal.aborted) return;
-
-      isSubmittingRef.current = false;
-      abortControllerRef.current = null;
+      // Si la petición ya no es la activa o fue cancelada deliberadamente, no mutar UI
+      if (
+        requestId !== activeRequestIdRef.current ||
+        !isMountedRef.current ||
+        controller.signal.aborted ||
+        (err instanceof Error && err.name === 'AbortError')
+      ) {
+        return;
+      }
 
       let msg =
         'No se pudo completar el análisis de los alimentos. Intenta nuevamente.';
@@ -269,17 +303,23 @@ export default function ScannerScreen() {
       setErrorMessage(msg);
       setStep('error');
     } finally {
-      if (isMountedRef.current && isSubmittingRef.current) {
+      // ÚNICAMENTE la petición activa puede limpiar las referencias y el cerrojo
+      if (requestId === activeRequestIdRef.current) {
         isSubmittingRef.current = false;
-        abortControllerRef.current = null;
+        if (abortControllerRef.current === controller) {
+          abortControllerRef.current = null;
+        }
       }
     }
   };
 
   // Cancelar análisis en curso
   const handleCancelAnalysis = () => {
+    // Incrementar el token para invalidar respuestas tardías
+    activeRequestIdRef.current += 1;
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
+      abortControllerRef.current = null;
     }
     isSubmittingRef.current = false;
     setStep('preview');
@@ -317,7 +357,26 @@ export default function ScannerScreen() {
 
   const handleChangeUnit = (id: string, unit: IngredientUnit) => {
     setScannedItems((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, unit } : item))
+      prev.map((item) => {
+        if (item.id !== id) return item;
+
+        // Si se cambia a una unidad incompatible con el duplicado de la despensa,
+        // revertir de forma segura a 'create' para evitar sumas corruptas.
+        let nextAction = item.action;
+        if (item.duplicateMatch && item.action === 'add_to_existing') {
+          if (!areUnitsCompatibleForAddition(item.duplicateMatch.unit, unit)) {
+            nextAction = 'create';
+          }
+        }
+
+        return {
+          ...item,
+          unit,
+          action: nextAction,
+          needsReview:
+            item.quantity === null || unit === 'desconocida',
+        };
+      })
     );
   };
 
@@ -361,7 +420,7 @@ export default function ScannerScreen() {
     itemsWithInvalidName.length === 0 &&
     !isSaving;
 
-  // 6. Guardar ingredientes confirmados en PantryContext
+  // 6. Guardar ingredientes confirmados en PantryContext con protección de concurrencia y conversiones seguras
   const handleConfirmAndSave = async () => {
     if (!canSave || isSubmittingRef.current) return;
 
@@ -376,6 +435,20 @@ export default function ScannerScreen() {
       let failedCount = 0;
       const failedNames: string[] = [];
 
+      // Mapa acumulativo en memoria para rastrear el inventario confirmado y prevenir "lost updates"
+      // si múltiples alimentos detectados corresponden al mismo registro en la despensa.
+      const runningPantry = new Map<
+        string,
+        { quantity: number; unit: IngredientUnit; name: string }
+      >();
+      for (const ing of ingredients) {
+        runningPantry.set(ing.id, {
+          quantity: ing.quantity,
+          unit: ing.unit,
+          name: ing.name,
+        });
+      }
+
       for (const item of selectedItems) {
         try {
           if (
@@ -383,20 +456,44 @@ export default function ScannerScreen() {
             item.duplicateMatch &&
             typeof item.quantity === 'number'
           ) {
-            // Actualización de ingrediente duplicado sumando la cantidad
-            const target = ingredients.find(
-              (ing) => ing.id === item.duplicateMatch?.id
-            );
-            if (target) {
-              const newTotalQty =
-                Math.round((target.quantity + item.quantity) * 1000) / 1000;
-              await updateIngredient({
-                id: target.id,
-                quantity: newTotalQty,
-              });
-              updatedCount += 1;
+            const targetId =
+              item.duplicateMatch.pantryIngredientId ||
+              (item.duplicateMatch as unknown as { id: string }).id;
+            const currentRecord = runningPantry.get(targetId);
+
+            if (currentRecord) {
+              const combined = combineIngredientQuantities(
+                currentRecord.quantity,
+                currentRecord.unit,
+                item.quantity,
+                item.unit
+              );
+
+              if (combined.success) {
+                await updateIngredient({
+                  id: targetId,
+                  quantity: combined.newQuantity,
+                  unit: combined.unit,
+                });
+                runningPantry.set(targetId, {
+                  ...currentRecord,
+                  quantity: combined.newQuantity,
+                  unit: combined.unit,
+                });
+                updatedCount += 1;
+              } else {
+                // Si las unidades no son compatibles, NUNCA sumar silenciosamente.
+                // Guardar como ítem separado para garantizar la fidelidad del inventario.
+                await addIngredient({
+                  name: item.name.trim(),
+                  quantity: item.quantity,
+                  unit: item.unit,
+                  category: item.category,
+                });
+                savedCount += 1;
+              }
             } else {
-              // Si por alguna razón no se encontró, agregarlo como nuevo
+              // Si no se encuentra en el mapa, agregarlo como nuevo
               await addIngredient({
                 name: item.name.trim(),
                 quantity: item.quantity,
@@ -577,34 +674,6 @@ export default function ScannerScreen() {
                     />
                   }
                 />
-
-                {__DEV__ && (
-                  <Button
-                    testID="scanner-test-image-button"
-                    title="Cargar foto de prueba (arroz, huevos, tomates)"
-                    variant="ghost"
-                    size="sm"
-                    fullWidth
-                    onPress={() => {
-                      void processSelectedAsset({
-                        uri: SYNTHETIC_TEST_IMAGE_DATA_URI,
-                        width: 1024,
-                        height: 1024,
-                        mimeType: 'image/jpeg',
-                        fileSize: 945053,
-                        fileName: 'arroz_huevos_tomates.jpg',
-                      });
-                    }}
-                    accessibilityLabel="Cargar imagen sintética de prueba para validación"
-                    leftIcon={
-                      <MaterialIcons
-                        name="science"
-                        size={18}
-                        color={colors.primary}
-                      />
-                    }
-                  />
-                )}
               </View>
             </Card>
 

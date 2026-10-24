@@ -4,8 +4,10 @@ import {
   inferMimeTypeFromUri,
   isSupportedMimeType,
   MAX_IMAGE_SIZE_BYTES,
+  MAX_RAW_IMAGE_SIZE_BYTES,
   normalizeMimeType,
   optimizeImageIfNeeded,
+  prepareAndValidateImageForUpload,
   validateImageCandidate,
 } from '../src/utils/imageUtils';
 import * as ImageManipulator from 'expo-image-manipulator';
@@ -70,14 +72,37 @@ describe('imageUtils', () => {
       expect(result.error).toContain('Formato de imagen no permitido');
     });
 
-    it('rejects image exceeding 8 MB', () => {
+    it('rejects image exceeding 8 MB when allowOversizedForOptimization is false', () => {
       const result = validateImageCandidate({
         uri: 'file:///huge_photo.jpg',
         mimeType: 'image/jpeg',
         fileSize: MAX_IMAGE_SIZE_BYTES + 1024,
+        allowOversizedForOptimization: false,
       });
       expect(result.isValid).toBe(false);
       expect(result.error).toContain('excede el límite máximo permitido de 8 MB');
+    });
+
+    it('allows oversized image for optimization if within MAX_RAW_IMAGE_SIZE_BYTES', () => {
+      const result = validateImageCandidate({
+        uri: 'file:///huge_photo.jpg',
+        mimeType: 'image/jpeg',
+        fileSize: 12 * 1024 * 1024,
+        allowOversizedForOptimization: true,
+      });
+      expect(result.isValid).toBe(true);
+      expect(result.mimeType).toBe('image/jpeg');
+    });
+
+    it('rejects excessively large images exceeding MAX_RAW_IMAGE_SIZE_BYTES even with allowOversizedForOptimization', () => {
+      const result = validateImageCandidate({
+        uri: 'file:///monstrous_photo.jpg',
+        mimeType: 'image/jpeg',
+        fileSize: MAX_RAW_IMAGE_SIZE_BYTES + 1024,
+        allowOversizedForOptimization: true,
+      });
+      expect(result.isValid).toBe(false);
+      expect(result.error).toContain('supera el límite admisible de 50 MB');
     });
 
     it('accepts valid candidate within 8 MB and allowed format', () => {
@@ -142,6 +167,74 @@ describe('imageUtils', () => {
 
       const result = await optimizeImageIfNeeded(input);
       expect(result.uri).toBe('file:///photo.jpg');
+    });
+  });
+
+  describe('prepareAndValidateImageForUpload - End-to-end upload safety pipeline', () => {
+    it('passes directly for an already valid image under 8 MB', async () => {
+      const input = {
+        uri: 'file:///small_photo.jpg',
+        mimeType: 'image/jpeg',
+        width: 800,
+        height: 600,
+        fileSize: 2 * 1024 * 1024,
+      };
+
+      const ready = await prepareAndValidateImageForUpload(input);
+      expect(ready.uri).toBe('file:///small_photo.jpg');
+      expect(ready.fileSize).toBe(2 * 1024 * 1024);
+    });
+
+    it('optimizes oversized image (10 MB) down to under 8 MB and validates final size', async () => {
+      (ImageManipulator.manipulateAsync as jest.Mock).mockResolvedValueOnce({
+        uri: 'file:///compressed.jpg',
+        width: 1920,
+        height: 1440,
+      });
+
+      const input = {
+        uri: 'file:///oversized.jpg',
+        mimeType: 'image/jpeg',
+        fileName: 'oversized.jpg',
+        width: 4000,
+        height: 3000,
+        fileSize: 10 * 1024 * 1024, // 10 MB (> 8 MB)
+      };
+
+      const ready = await prepareAndValidateImageForUpload(input);
+      expect(ready.uri).toBe('file:///compressed.jpg');
+      expect(ready.fileSize).toBeLessThanOrEqual(MAX_IMAGE_SIZE_BYTES);
+    });
+
+    it('blocks upload if image is oversized and optimization fails', async () => {
+      (ImageManipulator.manipulateAsync as jest.Mock).mockRejectedValueOnce(
+        new Error('Out of memory')
+      );
+
+      const input = {
+        uri: 'file:///huge.jpg',
+        mimeType: 'image/jpeg',
+        width: 4000,
+        height: 3000,
+        fileSize: 12 * 1024 * 1024,
+      };
+
+      await expect(prepareAndValidateImageForUpload(input)).rejects.toThrow(
+        /supera el límite máximo permitido de 8 MB/
+      );
+    });
+
+    it('rejects unsupported format before attempting upload', async () => {
+      const input = {
+        uri: 'file:///animated.gif',
+        mimeType: 'image/gif',
+        width: 500,
+        height: 500,
+      };
+
+      await expect(prepareAndValidateImageForUpload(input)).rejects.toThrow(
+        /Formato de imagen no permitido/
+      );
     });
   });
 

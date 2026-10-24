@@ -36,12 +36,16 @@ export interface SelectedImage {
 
 export type ScannedIngredientAction = 'create' | 'add_to_existing';
 
+export type DuplicateMatchType = 'exact' | 'possible';
+
 export interface DuplicatePantryMatch {
   id: string;
+  pantryIngredientId?: string;
   name: string;
   currentQuantity: number;
   unit: IngredientUnit;
   category: IngredientCategory;
+  matchType?: DuplicateMatchType;
 }
 
 export interface ScannedIngredientItem {

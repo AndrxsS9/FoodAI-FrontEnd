@@ -101,6 +101,11 @@ describe('Configuración de API (apiConfig)', () => {
       expect(url).toBe('http://localhost:3000/api/recipes/recommend');
     });
 
+    it('construye la URL completa del endpoint de generación de plan de comidas', () => {
+      const url = buildApiUrl(API_ENDPOINTS.MEAL_PLANS_GENERATE, 'http://localhost:3000');
+      expect(url).toBe('http://localhost:3000/api/meal-plans/generate');
+    });
+
     it('garantiza un slash inicial en el endpoint si no se suministra', () => {
       const url = buildApiUrl('api/health', 'http://localhost:3000');
       expect(url).toBe('http://localhost:3000/api/health');

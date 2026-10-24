@@ -1,6 +1,8 @@
 import { Platform } from 'react-native';
 import {
   createAnalyzeFormData,
+  determineFileSizeAsync,
+  getBase64ByteLength,
   inferMimeTypeFromUri,
   isSupportedMimeType,
   MAX_IMAGE_SIZE_BYTES,
@@ -170,8 +172,53 @@ describe('imageUtils', () => {
     });
   });
 
-  describe('prepareAndValidateImageForUpload - End-to-end upload safety pipeline', () => {
-    it('passes directly for an already valid image under 8 MB', async () => {
+  describe('determineFileSizeAsync and getBase64ByteLength', () => {
+    it('calculates exact byte length from base64 string handling padding', () => {
+      // "hello" -> "aGVsbG8=" (5 bytes)
+      expect(getBase64ByteLength('aGVsbG8=')).toBe(5);
+      // "test" -> "dGVzdA==" (4 bytes)
+      expect(getBase64ByteLength('dGVzdA==')).toBe(4);
+      // "man" -> "bWFu" (3 bytes, no padding)
+      expect(getBase64ByteLength('bWFu')).toBe(3);
+      expect(getBase64ByteLength('')).toBe(0);
+    });
+
+    it('measures byte length of data URI directly', async () => {
+      const dataUri = 'data:image/jpeg;base64,aGVsbG8=';
+      const size = await determineFileSizeAsync(dataUri);
+      expect(size).toBe(5);
+    });
+
+    it('measures size of web blob URI using fetch', async () => {
+      const mockBlob = new Blob(['image payload of 20 bytes'], { type: 'image/jpeg' });
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = jest.fn().mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        blob: async () => mockBlob,
+      }) as any;
+
+      try {
+        const size = await determineFileSizeAsync('blob:http://localhost/photo-blob');
+        expect(size).toBe(mockBlob.size);
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+
+    it('returns fallbackSize if positive when runtime file measuring fails', async () => {
+      const size = await determineFileSizeAsync('file:///unknown_nonexistent.jpg', 3500000);
+      expect(size).toBe(3500000);
+    });
+
+    it('returns null if size cannot be determined reliably and no positive fallback exists', async () => {
+      const size = await determineFileSizeAsync('file:///unknown_nonexistent.jpg', null);
+      expect(size).toBeNull();
+    });
+  });
+
+  describe('prepareAndValidateImageForUpload - Strict size validation pipeline', () => {
+    it('passes directly for an already valid image of known size below 8 MB', async () => {
       const input = {
         uri: 'file:///small_photo.jpg',
         mimeType: 'image/jpeg',
@@ -185,17 +232,20 @@ describe('imageUtils', () => {
       expect(ready.fileSize).toBe(2 * 1024 * 1024);
     });
 
-    it('optimizes oversized image (10 MB) down to under 8 MB and validates final size', async () => {
+    it('accepts a compressed image of known size below 8 MB', async () => {
+      // 100 bytes base64 payload simulates a compressed image of 100 bytes
+      const sampleBase64 = btoa('a'.repeat(100));
       (ImageManipulator.manipulateAsync as jest.Mock).mockResolvedValueOnce({
         uri: 'file:///compressed.jpg',
         width: 1920,
-        height: 1440,
+        height: 1080,
+        base64: sampleBase64,
       });
 
       const input = {
-        uri: 'file:///oversized.jpg',
+        uri: 'file:///oversized_camera.jpg',
         mimeType: 'image/jpeg',
-        fileName: 'oversized.jpg',
+        fileName: 'raw.jpg',
         width: 4000,
         height: 3000,
         fileSize: 10 * 1024 * 1024, // 10 MB (> 8 MB)
@@ -203,7 +253,106 @@ describe('imageUtils', () => {
 
       const ready = await prepareAndValidateImageForUpload(input);
       expect(ready.uri).toBe('file:///compressed.jpg');
+      expect(ready.fileSize).toBe(100);
       expect(ready.fileSize).toBeLessThanOrEqual(MAX_IMAGE_SIZE_BYTES);
+    });
+
+    it('rejects a final image above 8 MB even after compression', async () => {
+      // Generar base64 equivalente a 9 MB (> 8 MB)
+      // 9 MB = 9 * 1024 * 1024 = 9437184 bytes
+      // Longitud base64 aproximada: 9437184 * 4 / 3 = 12582912 caracteres
+      const simulatedNineMbBase64 = 'A'.repeat(12582912);
+      (ImageManipulator.manipulateAsync as jest.Mock).mockResolvedValueOnce({
+        uri: 'file:///still_huge.jpg',
+        width: 1920,
+        height: 1080,
+        base64: simulatedNineMbBase64,
+      });
+
+      const input = {
+        uri: 'file:///massive.jpg',
+        mimeType: 'image/jpeg',
+        width: 4000,
+        height: 3000,
+        fileSize: 15 * 1024 * 1024,
+      };
+
+      await expect(prepareAndValidateImageForUpload(input)).rejects.toThrow(
+        /La imagen excede el límite máximo de 8 MB/
+      );
+    });
+
+    it('rejects an image with unknown final size and does not silently accept it', async () => {
+      (ImageManipulator.manipulateAsync as jest.Mock).mockResolvedValueOnce({
+        uri: 'file:///unmeasurable_result.jpg',
+        width: 1920,
+        height: 1080,
+        // Sin base64 y sin ruta medible en disco
+      });
+
+      const input = {
+        uri: 'file:///unmeasurable_input.jpg',
+        mimeType: 'image/jpeg',
+        width: 4000,
+        height: 3000,
+        // fileSize no disponible
+      };
+
+      await expect(prepareAndValidateImageForUpload(input)).rejects.toThrow(
+        'No se pudo determinar con certeza el tamaño del archivo de imagen para garantizar el límite de 8 MB. Por favor selecciona otra foto.'
+      );
+    });
+
+    it('prevents a mocked image with large dimensions from passing based only on an estimated size', async () => {
+      // Una imagen con dimensiones 4000x3000 pero sin tamaño en bytes real
+      // bajo el código anterior calculaba (4000*3000*0.35) = 4.2 MB y pasaba silenciosamente.
+      // Ahora DEBE fallar si no se puede medir el tamaño real con certeza.
+      (ImageManipulator.manipulateAsync as jest.Mock).mockResolvedValueOnce({
+        uri: 'file:///dimension_only.jpg',
+        width: 4000,
+        height: 3000,
+      });
+
+      const input = {
+        uri: 'file:///large_dim.jpg',
+        mimeType: 'image/jpeg',
+        width: 4000,
+        height: 3000,
+      };
+
+      await expect(prepareAndValidateImageForUpload(input)).rejects.toThrow(
+        'No se pudo determinar con certeza el tamaño del archivo de imagen para garantizar el límite de 8 MB. Por favor selecciona otra foto.'
+      );
+    });
+
+    it('handles valid Web blob URI path correctly', async () => {
+      const originalPlatform = Platform.OS;
+      (Platform as any).OS = 'web';
+
+      const mockBlob = new Blob(['sample-blob-content-3mb'], { type: 'image/jpeg' });
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        blob: async () => mockBlob,
+      }) as any;
+
+      try {
+        const input = {
+          uri: 'blob:http://localhost:8081/valid-blob-id',
+          mimeType: 'image/jpeg',
+          width: 800,
+          height: 600,
+          fileSize: mockBlob.size,
+        };
+
+        const ready = await prepareAndValidateImageForUpload(input);
+        expect(ready.uri).toBe('blob:http://localhost:8081/valid-blob-id');
+        expect(ready.fileSize).toBe(mockBlob.size);
+      } finally {
+        (Platform as any).OS = originalPlatform;
+        globalThis.fetch = originalFetch;
+      }
     });
 
     it('blocks upload if image is oversized and optimization fails', async () => {

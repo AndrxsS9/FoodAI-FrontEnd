@@ -192,22 +192,57 @@ export function combineIngredientQuantities(
 }
 
 /**
- * Lematiza sufijos comunes de plurales en español para comparación consistente.
+ * Lematiza sufijos comunes de plurales en español para comparación consistente
+ * de ingredientes (ej: tomates -> tomate, huevos -> huevo, limones -> limon, frijoles -> frijol).
+ * Conserva estrictamente raíces cortas y palabras distintas para evitar falsos positivos
+ * (ej: sal vs salsa, res vs fresas).
  */
 export function stemSpanishWord(word: string): string {
   const clean = word.toLowerCase().trim();
-  if (clean.length > 4 && clean.endsWith('es')) {
-    const root = clean.slice(0, -2);
-    // Consonante + es (ej: frijoles -> frijol, limones -> limon)
-    if (/[bcdfghjklmnñpqrstvwxyz]$/.test(root)) {
-      return root;
-    }
-    // Vocal + es (ej: tomates -> tomate)
+  // Palabras cortas (<= 3 caracteres) se conservan intactas (ej: "sal", "res", "pan", "ajo")
+  if (clean.length <= 3) {
+    return clean;
+  }
+
+  // Plurales en -ces de palabras terminadas en -z (ej: arroces -> arroz, nueces -> nuez)
+  if (clean.length > 4 && clean.endsWith('ces')) {
+    return clean.slice(0, -3) + 'z';
+  }
+
+  // Plurales en -es de palabras terminadas en consonantes comunes:
+  // -ones -> -on (limones -> limon, champinones -> champinon, melones -> melon)
+  // -oles -> -ol (frijoles -> frijol)
+  // -ales -> -al (tamales -> tamal, cereales -> cereal)
+  // -anes -> -an (panes -> pan)
+  // -unes -> -un (atunes -> atun)
+  // -ares -> -ar (calamares -> calamar)
+  // -ores -> -or (sabores -> sabor)
+  if (
+    clean.length > 4 &&
+    (clean.endsWith('ones') ||
+      clean.endsWith('oles') ||
+      clean.endsWith('ales') ||
+      clean.endsWith('anes') ||
+      clean.endsWith('unes') ||
+      clean.endsWith('ares') ||
+      clean.endsWith('ores'))
+  ) {
+    return clean.slice(0, -2);
+  }
+
+  // Plurales regulares que terminan en -s:
+  // - Para palabras terminadas en vocal + s (incluyendo -tes como tomates -> tomate,
+  //   -vos como huevos -> huevo, -nes como carnes -> carne, -ches como leches -> leche),
+  //   se retira únicamente la 's' final para preservar la vocal singular 'e', 'a', 'o'.
+  if (
+    clean.length > 3 &&
+    clean.endsWith('s') &&
+    !clean.endsWith('is') &&
+    !clean.endsWith('us')
+  ) {
     return clean.slice(0, -1);
   }
-  if (clean.length > 3 && clean.endsWith('s') && !clean.endsWith('is') && !clean.endsWith('us')) {
-    return clean.slice(0, -1);
-  }
+
   return clean;
 }
 

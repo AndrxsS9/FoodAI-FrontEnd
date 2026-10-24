@@ -7,6 +7,7 @@ import {
   mapBackendUnitToPantryUnit,
   mapDetectedToScannedItems,
   normalizeIngredientName,
+  stemSpanishWord,
 } from '../src/utils/ingredientMapper';
 import { Ingredient } from '../src/types/pantry';
 import { BackendDetectedIngredient } from '../src/types/scanner';
@@ -17,6 +18,43 @@ describe('ingredientMapper', () => {
       expect(normalizeIngredientName('  Plátano Maduro  ')).toBe('platano maduro');
       expect(normalizeIngredientName('Cebolla Cabezona')).toBe('cebolla cabezona');
       expect(normalizeIngredientName('Champiñones')).toBe('champinones');
+    });
+  });
+
+  describe('stemSpanishWord - Spanish plural normalization', () => {
+    it('reduces "tomates" to "tomate" (not "tomat")', () => {
+      expect(stemSpanishWord('tomates')).toBe('tomate');
+      expect(stemSpanishWord('tomate')).toBe('tomate');
+    });
+
+    it('normalizes huevo ↔ huevos', () => {
+      expect(stemSpanishWord('huevos')).toBe('huevo');
+      expect(stemSpanishWord('huevo')).toBe('huevo');
+    });
+
+    it('normalizes limón ↔ limones', () => {
+      expect(stemSpanishWord('limones')).toBe('limon');
+      expect(stemSpanishWord('limon')).toBe('limon');
+    });
+
+    it('normalizes frijol ↔ frijoles', () => {
+      expect(stemSpanishWord('frijoles')).toBe('frijol');
+      expect(stemSpanishWord('frijol')).toBe('frijol');
+    });
+
+    it('normalizes arroz ↔ arroz (and arroces ↔ arroz)', () => {
+      expect(stemSpanishWord('arroz')).toBe('arroz');
+      expect(stemSpanishWord('arroces')).toBe('arroz');
+    });
+
+    it('preserves short words and avoids false matches (sal !== salsa, res !== fresas)', () => {
+      expect(stemSpanishWord('sal')).toBe('sal');
+      expect(stemSpanishWord('salsa')).toBe('salsa');
+      expect(stemSpanishWord('sal')).not.toBe(stemSpanishWord('salsa'));
+
+      expect(stemSpanishWord('res')).toBe('res');
+      expect(stemSpanishWord('fresas')).toBe('fresa');
+      expect(stemSpanishWord('res')).not.toBe(stemSpanishWord('fresas'));
     });
   });
 
@@ -106,10 +144,86 @@ describe('ingredientMapper', () => {
         createdAt: '2026-01-01T00:00:00Z',
         updatedAt: '2026-01-01T00:00:00Z',
       },
+      {
+        id: 'ing-6',
+        name: 'Huevo',
+        quantity: 12,
+        unit: 'unidad',
+        category: 'Carnes y proteínas',
+        createdAt: '2026-01-01T00:00:00Z',
+        updatedAt: '2026-01-01T00:00:00Z',
+      },
+      {
+        id: 'ing-7',
+        name: 'Limón',
+        quantity: 4,
+        unit: 'unidad',
+        category: 'Verduras y frutas',
+        createdAt: '2026-01-01T00:00:00Z',
+        updatedAt: '2026-01-01T00:00:00Z',
+      },
+      {
+        id: 'ing-8',
+        name: 'Frijol',
+        quantity: 1,
+        unit: 'kg',
+        category: 'Granos y cereales',
+        createdAt: '2026-01-01T00:00:00Z',
+        updatedAt: '2026-01-01T00:00:00Z',
+      },
     ];
 
+    it('matches common singular/plural food pairs conservatively (tomate/tomates, huevo/huevos, limón/limones, frijol/frijoles, arroz/arroz)', () => {
+      // tomate <-> tomates
+      const matchTomates = findDuplicateInPantry('tomates', pantry);
+      expect(matchTomates).toBeDefined();
+      expect(matchTomates?.id).toBe('ing-1');
+      expect(matchTomates?.name).toBe('Tomate');
+      expect(matchTomates?.matchType).toBe('exact');
+
+      const matchTomate = findDuplicateInPantry('tomate', pantry);
+      expect(matchTomate?.id).toBe('ing-1');
+      expect(matchTomate?.matchType).toBe('exact');
+
+      // huevo <-> huevos
+      const matchHuevos = findDuplicateInPantry('huevos', pantry);
+      expect(matchHuevos?.id).toBe('ing-6');
+      expect(matchHuevos?.name).toBe('Huevo');
+      expect(matchHuevos?.matchType).toBe('exact');
+
+      const matchHuevo = findDuplicateInPantry('huevo', pantry);
+      expect(matchHuevo?.id).toBe('ing-6');
+      expect(matchHuevo?.matchType).toBe('exact');
+
+      // limón <-> limones
+      const matchLimones = findDuplicateInPantry('limones', pantry);
+      expect(matchLimones?.id).toBe('ing-7');
+      expect(matchLimones?.name).toBe('Limón');
+      expect(matchLimones?.matchType).toBe('exact');
+
+      const matchLimon = findDuplicateInPantry('limon', pantry);
+      expect(matchLimon?.id).toBe('ing-7');
+      expect(matchLimon?.matchType).toBe('exact');
+
+      // frijol <-> frijoles
+      const matchFrijoles = findDuplicateInPantry('frijoles', pantry);
+      expect(matchFrijoles?.id).toBe('ing-8');
+      expect(matchFrijoles?.name).toBe('Frijol');
+      expect(matchFrijoles?.matchType).toBe('exact');
+
+      const matchFrijol = findDuplicateInPantry('frijol', pantry);
+      expect(matchFrijol?.id).toBe('ing-8');
+      expect(matchFrijol?.matchType).toBe('exact');
+
+      // arroz <-> arroz
+      const matchArroz = findDuplicateInPantry('arroz', pantry);
+      expect(matchArroz?.id).toBe('ing-5');
+      expect(matchArroz?.name).toBe('Arroz');
+      expect(matchArroz?.matchType).toBe('exact');
+    });
+
     it('finds exact matches regardless of case or accents as matchType exact', () => {
-      const match1 = findDuplicateInPantry('tomate', pantry);
+      const match1 = findDuplicateInPantry('TOMATE', pantry);
       expect(match1).toBeDefined();
       expect(match1?.id).toBe('ing-1');
       expect(match1?.name).toBe('Tomate');
@@ -129,6 +243,8 @@ describe('ingredientMapper', () => {
     it('does NOT treat "res" and "fresas" as confirmed duplicates (returns undefined)', () => {
       const matchRes = findDuplicateInPantry('carne de res', pantry);
       expect(matchRes).toBeUndefined();
+      const matchResDirect = findDuplicateInPantry('res', pantry);
+      expect(matchResDirect).toBeUndefined();
     });
 
     it('treats qualified names like "tomate chonto" as possible matches requiring confirmation', () => {

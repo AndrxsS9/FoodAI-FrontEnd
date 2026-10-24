@@ -154,40 +154,82 @@ export function validateImageCandidate(
 }
 
 /**
- * Determina el tamaño en bytes de un archivo o blob en runtime de forma segura para web y nativo.
+ * Calcula con precisión matemática el tamaño exacto en bytes de una cadena en Base64,
+ * descontando caracteres de padding ('=').
+ */
+export function getBase64ByteLength(base64: string): number {
+  const len = base64.length;
+  if (len === 0) return 0;
+  let padding = 0;
+  if (base64.endsWith('==')) {
+    padding = 2;
+  } else if (base64.endsWith('=')) {
+    padding = 1;
+  }
+  return Math.floor((len * 3) / 4) - padding;
+}
+
+/**
+ * Determina el tamaño en bytes de un archivo o blob en runtime de forma estricta para web y nativo.
+ * NUNCA utiliza estimaciones basadas en dimensiones.
  */
 export async function determineFileSizeAsync(
   uri: string,
   fallbackSize?: number | null
 ): Promise<number | null> {
-  if (!uri || typeof uri !== 'string') return null;
+  if (!uri || typeof uri !== 'string' || !uri.trim()) return null;
 
   try {
-    // Si es Data URI (base64)
+    // 1. Data URI (Base64)
     if (uri.startsWith('data:')) {
       const commaIdx = uri.indexOf(',');
       if (commaIdx !== -1) {
         const base64Data = uri.slice(commaIdx + 1);
-        return Math.round((base64Data.length * 3) / 4);
+        return getBase64ByteLength(base64Data);
       }
     }
 
-    // En Web: Blobs y URLs HTTP(S) se determinan con fetch
+    const isNodeEnv = typeof process !== 'undefined' && Boolean(process.versions?.node);
+
+    // 2. Web: Blobs y URLs HTTP(S) se determinan de forma certera con fetch
     if (
       typeof fetch === 'function' &&
       (uri.startsWith('blob:') || uri.startsWith('http:') || uri.startsWith('https:'))
     ) {
       const response = await fetch(uri);
-      const blob = await response.blob();
-      if (typeof blob.size === 'number' && blob.size > 0) {
-        return blob.size;
+      if (response.ok || response.status === 200) {
+        const blob = await response.blob();
+        if (typeof blob.size === 'number' && blob.size > 0) {
+          return blob.size;
+        }
+      }
+    }
+
+    // 3. React Native nativo (Android / iOS en runtime Hermes/JSC):
+    // fetch() sobre file:// es la API nativa de React Native para leer archivos del sandbox
+    if (!isNodeEnv && Platform.OS !== 'web' && uri.startsWith('file://')) {
+      try {
+        const response = await fetch(uri);
+        if (response.ok || response.status === 200 || response.status === 0) {
+          const blob = await response.blob();
+          if (typeof blob.size === 'number' && blob.size > 0) {
+            return blob.size;
+          }
+        }
+      } catch {
+        // Continuar con fallback si el fetch nativo no está disponible
       }
     }
   } catch {
-    // Fallback silencioso si fetch no está disponible o falla
+    // Fallback si la lectura falla
   }
 
-  return typeof fallbackSize === 'number' ? fallbackSize : null;
+  // 5. Tamaño previamente verificado (ej. metadata fileSize provista por ImagePicker o base64 medido)
+  if (typeof fallbackSize === 'number' && fallbackSize > 0) {
+    return fallbackSize;
+  }
+
+  return null;
 }
 
 /**
@@ -240,8 +282,8 @@ export async function optimizeImageIfNeeded(image: SelectedImage): Promise<Selec
     );
 
     let calculatedSize: number | null = null;
-    if (manipResult.base64) {
-      calculatedSize = Math.round((manipResult.base64.length * 3) / 4);
+    if (manipResult.base64 && typeof manipResult.base64 === 'string') {
+      calculatedSize = getBase64ByteLength(manipResult.base64);
     } else {
       calculatedSize = await determineFileSizeAsync(manipResult.uri, null);
     }
@@ -269,9 +311,9 @@ export interface PreparedImageResult {
  * Pipeline estricto de seguridad para subida de imágenes:
  * 1. Valida el formato soportado (JPG, PNG, WEBP).
  * 2. Optimiza y comprime si es necesario o si supera el umbral.
- * 3. Determina el tamaño de archivo final exacto.
+ * 3. Determina el tamaño de archivo final exacto (sin estimaciones).
  * 4. Valida que el resultado final no supere estrictamente los 8 MB.
- * 5. Lanza un error claro si la optimización falló o si sigue superando 8 MB.
+ * 5. Si la medición falla o si el archivo final excede 8 MB, bloquea la subida.
  */
 export async function prepareAndValidateImageForUpload(
   rawImage: SelectedImage
@@ -299,17 +341,18 @@ export async function prepareAndValidateImageForUpload(
     );
   }
 
-  // 3. Determinar tamaño final real
-  let finalSize = await determineFileSizeAsync(optimized.uri, optimized.fileSize);
-  if (finalSize === null && optimized.uri !== rawImage.uri) {
-    // Si ImageManipulator tuvo éxito, estimar tamaño comprimido según dimensiones optimizadas
-    const w = optimized.width || 1600;
-    const h = optimized.height || 1200;
-    finalSize = Math.round(w * h * 0.35); // ~670 KB para 1600x1200 JPEG
+  // 3. Determinar tamaño final real sin estimaciones basadas en dimensiones
+  const finalSize = await determineFileSizeAsync(optimized.uri, optimized.fileSize);
+
+  // Validación estricta: un tamaño final desconocido o no medible NUNCA puede pasar silenciosamente
+  if (finalSize === null || typeof finalSize !== 'number' || finalSize <= 0) {
+    throw new Error(
+      'No se pudo determinar con certeza el tamaño del archivo de imagen para garantizar el límite de 8 MB. Por favor selecciona otra foto.'
+    );
   }
 
-  // 4. Validar resultado final (estricto máximo 8 MB)
-  if (typeof finalSize === 'number' && finalSize > MAX_IMAGE_SIZE_BYTES) {
+  // 4. Validar resultado final (estricto máximo 8 MB = 8 * 1024 * 1024 bytes)
+  if (finalSize > MAX_IMAGE_SIZE_BYTES) {
     throw new Error(
       `La imagen excede el límite máximo de 8 MB (${(finalSize / (1024 * 1024)).toFixed(1)} MB) incluso tras la optimización. Por favor selecciona una imagen más pequeña.`
     );
@@ -317,7 +360,7 @@ export async function prepareAndValidateImageForUpload(
 
   return {
     ...optimized,
-    fileSize: finalSize ?? optimized.fileSize,
+    fileSize: finalSize,
   };
 }
 

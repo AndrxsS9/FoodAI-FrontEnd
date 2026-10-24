@@ -24,6 +24,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Button, Card } from '../../src/components/common';
 import { usePantry } from '../../src/context/PantryContext';
 import { useRecipes } from '../../src/context/RecipeContext';
+import { useMealPlanSafe } from '../../src/context/MealPlanContext';
 import {
   formatCopCurrency,
   formatIngredientQuantity,
@@ -33,16 +34,24 @@ import { colors, radius, spacing, useTypography } from '../../src/theme';
 export default function RecipeDetailScreen() {
   const typography = useTypography();
   const router = useRouter();
-  const params = useLocalSearchParams<{ id?: string }>();
+  const params = useLocalSearchParams<{ id?: string; fromPlan?: string }>();
   const { summary } = usePantry();
 
   const recipeId = params.id ? String(params.id).trim() : '';
   const { getRecipeById, selectRecipe, demoMeta } = useRecipes();
+  const mealPlan = useMealPlanSafe();
 
-  // Búsqueda segura de la receta (soporta tanto ID como slug o activa en sesión)
+  const plannedRecipe = useMemo(() => {
+    return mealPlan?.getRecipeById(recipeId);
+  }, [mealPlan, recipeId]);
+
+  // Búsqueda segura de la receta (soporta tanto ID como slug, activa en sesión o plan de comidas)
   const recipe = useMemo(() => {
-    return getRecipeById(recipeId);
-  }, [getRecipeById, recipeId]);
+    if (params.fromPlan === 'true' || plannedRecipe) {
+      return plannedRecipe || getRecipeById(recipeId);
+    }
+    return getRecipeById(recipeId) || plannedRecipe;
+  }, [params.fromPlan, plannedRecipe, getRecipeById, recipeId]);
 
   // Estado local para checklist interactivo de ingredientes disponibles
   const [checkedIngredients, setCheckedIngredients] = useState<Record<string, boolean>>({});
@@ -55,6 +64,10 @@ export default function RecipeDetailScreen() {
   };
 
   const handleBack = () => {
+    if (params.fromPlan === 'true') {
+      router.replace('/(tabs)/plan' as any);
+      return;
+    }
     if (router.canGoBack()) {
       router.back();
     } else {
@@ -65,7 +78,15 @@ export default function RecipeDetailScreen() {
   const handleStartCooking = () => {
     if (recipe) {
       selectRecipe(recipe);
-      router.push(`/recetas/${recipe.id}/cocinar` as any);
+      const isFromPlan = params.fromPlan === 'true' || Boolean(plannedRecipe);
+      if (isFromPlan) {
+        router.push({
+          pathname: `/recetas/${recipe.id}/cocinar` as any,
+          params: { fromPlan: 'true' },
+        });
+      } else {
+        router.push(`/recetas/${recipe.id}/cocinar` as any);
+      }
     }
   };
 

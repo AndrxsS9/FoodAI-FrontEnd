@@ -24,20 +24,37 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Button, Card } from '../../../src/components/common';
 import { useRecipes } from '../../../src/context/RecipeContext';
+import { useMealPlanSafe } from '../../../src/context/MealPlanContext';
 import { formatCopCurrency } from '../../../src/types/recipe';
 import { colors, radius, spacing, useTypography } from '../../../src/theme';
 
 export default function GuidedCookingScreen() {
   const typography = useTypography();
   const router = useRouter();
-  const params = useLocalSearchParams<{ id?: string }>();
+  const params = useLocalSearchParams<{ id?: string; fromPlan?: string }>();
   const recipeId = params.id ? String(params.id).trim() : '';
 
   const { getRecipeById, selectedRecipe } = useRecipes();
+  const mealPlan = useMealPlanSafe();
+
+  const plannedRecipe = useMemo(() => {
+    return mealPlan?.getRecipeById(recipeId);
+  }, [mealPlan, recipeId]);
 
   const recipe = useMemo(() => {
-    return getRecipeById(recipeId) || (selectedRecipe?.id === recipeId ? selectedRecipe : undefined);
-  }, [getRecipeById, selectedRecipe, recipeId]);
+    if (params.fromPlan === 'true' || plannedRecipe) {
+      return (
+        plannedRecipe ||
+        getRecipeById(recipeId) ||
+        (selectedRecipe?.id === recipeId ? selectedRecipe : undefined)
+      );
+    }
+    return (
+      getRecipeById(recipeId) ||
+      (selectedRecipe?.id === recipeId ? selectedRecipe : undefined) ||
+      plannedRecipe
+    );
+  }, [getRecipeById, selectedRecipe, plannedRecipe, recipeId, params.fromPlan]);
 
   // Pasos normalizados seguros
   const steps = useMemo(() => {
@@ -89,7 +106,13 @@ export default function GuidedCookingScreen() {
     if (router.canGoBack()) {
       router.back();
     } else {
-      router.replace((recipe ? `/recetas/${recipe.id}` : '/recetas') as any);
+      router.replace(
+        (recipe
+          ? `/recetas/${recipe.id}${params.fromPlan === 'true' ? '?fromPlan=true' : ''}`
+          : params.fromPlan === 'true'
+          ? '/(tabs)/plan'
+          : '/recetas') as any
+      );
     }
   };
 

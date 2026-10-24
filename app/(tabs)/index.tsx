@@ -22,32 +22,11 @@ export default function HomeScreen() {
   const typography = useTypography();
   const router = useRouter();
 
-  // Dialog state for feature preview announcements
-  const [featureModalVisible, setFeatureModalVisible] = useState(false);
-  const [modalContent, setModalContent] = useState<{
-    title: string;
-    description: string;
-    icon: keyof typeof MaterialIcons.glyphMap;
-  }>({
-    title: '',
-    description: '',
-    icon: 'info',
-  });
-
   // Dynamic shared budget state from authoritative BudgetContext
   const { budget, setBudget } = useBudget();
   const [budgetModalVisible, setBudgetModalVisible] = useState(false);
   const [tempBudgetText, setTempBudgetText] = useState(String(budget));
   const [budgetError, setBudgetError] = useState<string | undefined>(undefined);
-
-  const showFeatureNotice = (
-    title: string,
-    description: string,
-    icon: keyof typeof MaterialIcons.glyphMap = 'info'
-  ) => {
-    setModalContent({ title, description, icon });
-    setFeatureModalVisible(true);
-  };
 
   const handleOpenBudgetModal = () => {
     setTempBudgetText(String(budget));
@@ -205,14 +184,8 @@ export default function HomeScreen() {
             testID="home-viewfinder-press"
             accessibilityRole="button"
             accessibilityLabel="Abrir visor de cámara"
-            accessibilityHint="Muestra la vista previa del escáner"
-            onPress={() =>
-              showFeatureNotice(
-                'Escáner de alimentos',
-                'La captura de cámara y el reconocimiento de ingredientes con inteligencia artificial están en desarrollo y estarán disponibles en una próxima actualización.',
-                'photo-camera'
-              )
-            }
+            accessibilityHint="Abre el escáner de alimentos con IA"
+            onPress={() => router.push('/escaner' as any)}
             style={styles.viewfinderWrapper}
           >
             <Image
@@ -234,15 +207,9 @@ export default function HomeScreen() {
             variant="primary"
             size="lg"
             fullWidth
-            onPress={() =>
-              showFeatureNotice(
-                'Captura de cámara en preparación',
-                'El módulo de cámara y detección fotográfica estará disponible en una próxima actualización.',
-                'photo-camera'
-              )
-            }
+            onPress={() => router.push('/escaner' as any)}
             accessibilityLabel="Tomar foto de los alimentos"
-            accessibilityHint="Inicia la captura fotográfica de la despensa"
+            accessibilityHint="Abre el escáner fotográfico con IA"
             leftIcon={<MaterialIcons name="add-a-photo" size={20} color={colors.onPrimary} />}
           />
         </Card>
@@ -310,7 +277,6 @@ export default function HomeScreen() {
                     variant="urgent"
                     selected={false}
                     leftIcon={<View style={styles.chipDot} />}
-                    onPress={() => router.push('/(tabs)/despensa')}
                   />
                 ))}
               </View>
@@ -338,7 +304,6 @@ export default function HomeScreen() {
                     label={item.name}
                     variant="filter"
                     selected={false}
-                    onPress={() => router.push('/(tabs)/despensa')}
                   />
                 ))}
               </View>
@@ -598,34 +563,6 @@ export default function HomeScreen() {
         </View>
       )}
 
-      {/* Reusable modal overlay informing users about upcoming features without broken buttons */}
-      {featureModalVisible && (
-        <View
-          style={[StyleSheet.absoluteFill, styles.modalBackdrop]}
-          testID="modal-backdrop"
-          accessibilityRole="alert"
-        >
-          <View style={styles.modalCard}>
-            <View style={styles.modalIconBox}>
-              <MaterialIcons name={modalContent.icon} size={32} color={colors.primary} />
-            </View>
-            <Text style={[styles.modalTitle, typography.headlineMd]}>
-              {modalContent.title}
-            </Text>
-            <Text style={[styles.modalDescription, typography.bodyMd]}>
-              {modalContent.description}
-            </Text>
-            <Button
-              testID="modal-close-button"
-              title="Entendido"
-              variant="primary"
-              size="md"
-              fullWidth
-              onPress={() => setFeatureModalVisible(false)}
-            />
-          </View>
-        </View>
-      )}
     </SafeAreaView>
   );
 }

@@ -396,23 +396,15 @@ describe('Despensa Screen (6. Mi Despensa - Fase 2B)', () => {
   });
 
   describe('Feature Previews and Non-breaking Modals', () => {
-    it('displays informative modal for scanner preview without backend or camera permissions', async () => {
-      const { getByTestId, getByText, queryByTestId } = await renderScreen(
+    it('navigates to scanner flow when pressing Escanear nuevos', async () => {
+      const { getByTestId } = await renderScreen(
         <DespensaScreen />,
         SAMPLE_INGREDIENTS
       );
 
       fireEvent.press(getByTestId('pantry-scan-placeholder-button'));
 
-      await waitFor(() => {
-        expect(getByText('Escanear nuevos alimentos')).toBeTruthy();
-      });
-
-      fireEvent.press(getByTestId('close-scanner-notice-button'));
-
-      await waitFor(() => {
-        expect(queryByTestId('close-scanner-notice-button')).toBeNull();
-      });
+      expect(mockPush).toHaveBeenCalledWith('/escaner');
     });
 
     it('displays culinary suggestion preview dialog', async () => {

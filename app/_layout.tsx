@@ -50,6 +50,7 @@ export default function RootLayout() {
                 <Stack.Screen name="(tabs)" />
                 <Stack.Screen name="design-system" />
                 <Stack.Screen name="recetas" />
+                <Stack.Screen name="escaner" />
               </Stack>
             </RecipeProvider>
           </BudgetProvider>

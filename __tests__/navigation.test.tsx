@@ -339,24 +339,13 @@ describe('Phase 2A: Navigation & Mobile Screens (Google Stitch)', () => {
       });
     });
 
-    it('displays informative modal for nonfunctional future features without crash', async () => {
-      const { getByText, queryByText } = await renderWithProviders(<HomeScreen />);
+    it('navigates to scanner flow when pressing Tomar foto on home', async () => {
+      const { getByText } = await renderWithProviders(<HomeScreen />);
 
       const scanButton = getByText('Tomar foto');
       fireEvent.press(scanButton);
 
-      await waitFor(() => {
-        expect(getByText('Captura de cámara en preparación')).toBeTruthy();
-      });
-      expect(getByText(/próxima actualización/)).toBeTruthy();
-
-      // Close modal
-      const closeButton = getByText('Entendido');
-      fireEvent.press(closeButton);
-
-      await waitFor(() => {
-        expect(queryByText('Captura de cámara en preparación')).toBeNull();
-      });
+      expect(mockPush).toHaveBeenCalledWith('/escaner');
     });
 
     it('navigates to despensa tab when tapping urgent pantry items', async () => {

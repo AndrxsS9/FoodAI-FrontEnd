@@ -53,7 +53,6 @@ export default function DespensaScreen() {
   const [formModalVisible, setFormModalVisible] = useState(false);
   const [editingIngredient, setEditingIngredient] = useState<Ingredient | null>(null);
   const [deletingIngredient, setDeletingIngredient] = useState<Ingredient | null>(null);
-  const [scannerNoticeVisible, setScannerNoticeVisible] = useState(false);
   const [cookSuggestionVisible, setCookSuggestionVisible] = useState(false);
 
   // Filtro de búsqueda
@@ -234,7 +233,7 @@ export default function DespensaScreen() {
                 variant="outline"
                 size="md"
                 fullWidth
-                onPress={() => setScannerNoticeVisible(true)}
+                onPress={() => router.push('/escaner' as any)}
                 leftIcon={
                   <MaterialIcons
                     name="photo-camera"
@@ -470,36 +469,6 @@ export default function DespensaScreen() {
         onCancel={() => setDeletingIngredient(null)}
         onConfirm={handleConfirmDelete}
       />
-
-      {/* Modal informativo para escáner (función en desarrollo) */}
-      {scannerNoticeVisible && (
-        <View style={[StyleSheet.absoluteFill, styles.dialogBackdrop]}>
-          <Pressable
-            style={StyleSheet.absoluteFill}
-            onPress={() => setScannerNoticeVisible(false)}
-            accessibilityLabel="Cerrar aviso"
-          />
-          <View style={styles.dialogCard}>
-            <View style={styles.dialogIconBox}>
-              <MaterialIcons name="photo-camera" size={32} color={colors.primary} />
-            </View>
-            <Text style={[styles.dialogTitle, typography.headlineMd]}>
-              Escanear nuevos alimentos
-            </Text>
-            <Text style={[styles.dialogDesc, typography.bodyMd]}>
-              El escáner visual con cámara y reconocimiento inteligente es una función en desarrollo que estará disponible en una próxima actualización. Actualmente puedes registrar y gestionar todos tus ingredientes de forma manual con guardado local garantizado.
-            </Text>
-            <Button
-              testID="close-scanner-notice-button"
-              title="Entendido"
-              variant="primary"
-              size="md"
-              fullWidth
-              onPress={() => setScannerNoticeVisible(false)}
-            />
-          </View>
-        </View>
-      )}
 
       {/* Modal informativo para sugerencia culinaria */}
       {cookSuggestionVisible && (

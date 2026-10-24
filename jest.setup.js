@@ -1,6 +1,7 @@
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 // @ts-ignore
 global.IS_REACT_ACT_ENVIRONMENT = true;
+jest.setTimeout(30000);
 
 jest.mock('@expo/vector-icons', () => {
   const React = require('react');

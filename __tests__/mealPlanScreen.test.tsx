@@ -22,7 +22,7 @@ import { RecipeProvider } from '../src/context/RecipeContext';
 import { MealPlanProvider } from '../src/context/MealPlanContext';
 import { TypographyProvider } from '../src/theme';
 import { Ingredient } from '../src/types/pantry';
-import { ClientMealPlan } from '../src/types/mealPlan';
+import { ClientMealPlan, BackendMealPlanResponseData } from '../src/types/mealPlan';
 
 // Mock expo-router
 const mockPush = jest.fn();
@@ -149,12 +149,86 @@ describe('Pantalla de Plan de Comidas (PlanScreen - Fase 3C)', () => {
     ],
   };
 
+  const sampleBackendResponse: BackendMealPlanResponseData = {
+    days: [
+      {
+        day: 1,
+        recipe: {
+          name: 'Pollo salteado con verduras',
+          description: 'Deliciosa preparación rápida en sartén.',
+          totalMinutes: 25,
+          ingredients: [
+            { name: 'Pollo', quantity: 200, unit: 'g' },
+            { name: 'Zanahoria', quantity: 1, unit: 'unidad' },
+          ],
+          steps: ['Cortar el pollo', 'Saltear con zanahoria', 'Servir'],
+          availableIngredients: [{ name: 'Pollo', quantity: 200, unit: 'g' }],
+          missingIngredients: [{ name: 'Zanahoria', quantity: 1, unit: 'unidad', estimatedCost: 1200 }],
+          estimatedMissingCost: 1200,
+          budgetRemaining: 18800,
+          withinBudget: true,
+          convenience: 95,
+          reason: 'Aprovecha tu pollo fresco',
+        },
+      },
+      {
+        day: 2,
+        recipe: {
+          name: 'Arroz con huevo y vegetales',
+          description: 'Clásico colombiano económico y reconfortante.',
+          totalMinutes: 20,
+          ingredients: [
+            { name: 'Arroz', quantity: 150, unit: 'g' },
+            { name: 'Huevo', quantity: 2, unit: 'unidad' },
+          ],
+          steps: ['Cocinar arroz', 'Freír huevos', 'Combinar'],
+          availableIngredients: [{ name: 'Arroz', quantity: 150, unit: 'g' }],
+          missingIngredients: [{ name: 'Huevo', quantity: 2, unit: 'unidad', estimatedCost: 1600 }],
+          estimatedMissingCost: 1600,
+          budgetRemaining: 17200,
+          withinBudget: true,
+          convenience: 90,
+          reason: 'Aprovecha tu arroz',
+        },
+      },
+      {
+        day: 3,
+        recipe: {
+          name: 'Sopa casera de pollo y arroz',
+          description: 'Caldo nutritivo para cerrar el ciclo de tres días.',
+          totalMinutes: 35,
+          ingredients: [
+            { name: 'Pollo', quantity: 150, unit: 'g' },
+            { name: 'Arroz', quantity: 80, unit: 'g' },
+            { name: 'Cilantro', quantity: 1, unit: 'unidad' },
+          ],
+          steps: ['Hervir pollo', 'Agregar arroz', 'Decorar con cilantro'],
+          availableIngredients: [
+            { name: 'Pollo', quantity: 150, unit: 'g' },
+            { name: 'Arroz', quantity: 80, unit: 'g' },
+          ],
+          missingIngredients: [{ name: 'Cilantro', quantity: 1, unit: 'unidad', estimatedCost: 800 }],
+          estimatedMissingCost: 800,
+          budgetRemaining: 16400,
+          withinBudget: true,
+          convenience: 88,
+          reason: 'Usa las reservas restantes de pollo y arroz',
+        },
+      },
+    ],
+    totalEstimatedMissingCost: 3600,
+    budgetRemaining: 16400,
+    withinBudget: true,
+  };
+
   const renderPlanScreen = async (
     initialIngredients: Ingredient[] = mockPantryItems,
     initialPlan: ClientMealPlan | null = null,
     budget: number = 20000,
     servings: number = 2,
-    maxMinutes?: number
+    maxMinutes?: number,
+    mealPlanApiClient?: any,
+    storageAdapter?: any
   ) => {
     return render(
       <SafeAreaProvider
@@ -169,7 +243,11 @@ describe('Pantalla de Plan de Comidas (PlanScreen - Fase 3C)', () => {
               initialPreferences={{ budget, servings, maxMinutes }}
             >
               <RecipeProvider>
-                <MealPlanProvider initialPlan={initialPlan}>
+                <MealPlanProvider
+                  initialPlan={initialPlan}
+                  mealPlanApiClient={mealPlanApiClient}
+                  storageAdapter={storageAdapter}
+                >
                   <PlanScreen />
                 </MealPlanProvider>
               </RecipeProvider>
@@ -304,6 +382,236 @@ describe('Pantalla de Plan de Comidas (PlanScreen - Fase 3C)', () => {
       const { getByText } = await renderPlanScreen(mockPantryItems, allReadyPlan);
 
       expect(getByText(/¡Tienes todos los ingredientes necesarios en tu despensa!/)).toBeTruthy();
+    });
+  });
+
+  describe('5. Concurrencia, cancelación y sincronización de UI (FIX 2)', () => {
+    it('1. Inicia generación y cancela inmediatamente saliendo de la UI de carga', async () => {
+      const mockApiClient = {
+        generateMealPlan: jest.fn().mockReturnValue(new Promise(() => {})),
+      };
+
+      const { getByTestId, queryByTestId } = await renderPlanScreen(
+        mockPantryItems,
+        null,
+        20000,
+        2,
+        undefined,
+        mockApiClient
+      );
+
+      const generateBtn = getByTestId('generate-meal-plan-button');
+      fireEvent.press(generateBtn);
+
+      // El estado de carga se muestra
+      await waitFor(() => {
+        expect(getByTestId('plan-loading-state')).toBeTruthy();
+      });
+
+      const cancelBtn = getByTestId('cancel-generation-button');
+      fireEvent.press(cancelBtn);
+
+      // La UI de carga desaparece inmediatamente
+      await waitFor(() => {
+        expect(queryByTestId('plan-loading-state')).toBeNull();
+      });
+      expect(getByTestId('generate-meal-plan-button')).toBeTruthy();
+    });
+
+    it('2. Petición cancelada resuelve tarde sin alterar la UI ni mostrar errores obsoletos', async () => {
+      let rejectPromise!: (err: any) => void;
+      const latePromise = new Promise((_, reject) => {
+        rejectPromise = reject;
+      });
+
+      const mockApiClient = {
+        generateMealPlan: jest.fn().mockImplementation((_, opts) => {
+          opts?.signal?.addEventListener('abort', () => {
+            // No resuelve inmediatamente; simula retraso en el backend/red
+          });
+          return latePromise;
+        }),
+      };
+
+      const { getByTestId, queryByTestId } = await renderPlanScreen(
+        mockPantryItems,
+        null,
+        20000,
+        2,
+        undefined,
+        mockApiClient
+      );
+
+      const generateBtn = getByTestId('generate-meal-plan-button');
+      fireEvent.press(generateBtn);
+
+      await waitFor(() => {
+        expect(getByTestId('plan-loading-state')).toBeTruthy();
+      });
+
+      // Cancelar inmediatamente
+      const cancelBtn = getByTestId('cancel-generation-button');
+      fireEvent.press(cancelBtn);
+
+      // La UI de carga salió inmediatamente
+      await waitFor(() => {
+        expect(queryByTestId('plan-loading-state')).toBeNull();
+      });
+
+      // Ahora la promesa cancelada falla tardíamente
+      rejectPromise(new Error('AbortError or network failure'));
+      await new Promise((r) => setTimeout(r, 20));
+
+      // No debe mostrar banner de error por la petición cancelada ni volver al loading
+      expect(queryByTestId('plan-error-banner')).toBeNull();
+      expect(queryByTestId('plan-loading-state')).toBeNull();
+      expect(getByTestId('generate-meal-plan-button')).toBeTruthy();
+    });
+
+    it('3. Inicia una nueva generación exitosamente tras cancelar una anterior', async () => {
+      let firstCallSignal: AbortSignal | undefined;
+      const mockApiClient = {
+        generateMealPlan: jest
+          .fn()
+          .mockImplementationOnce((_, opts) => {
+            firstCallSignal = opts?.signal;
+            return new Promise(() => {});
+          })
+          .mockImplementationOnce(async () => sampleBackendResponse),
+      };
+
+      const { getByTestId, queryByTestId, findByTestId } = await renderPlanScreen(
+        mockPantryItems,
+        null,
+        20000,
+        2,
+        undefined,
+        mockApiClient
+      );
+
+      // Iniciar primera generación y cancelar
+      fireEvent.press(getByTestId('generate-meal-plan-button'));
+      await waitFor(() => {
+        expect(getByTestId('plan-loading-state')).toBeTruthy();
+      });
+
+      fireEvent.press(getByTestId('cancel-generation-button'));
+      await waitFor(() => {
+        expect(queryByTestId('plan-loading-state')).toBeNull();
+      });
+      expect(firstCallSignal?.aborted).toBe(true);
+
+      // Iniciar segunda generación
+      fireEvent.press(getByTestId('generate-meal-plan-button'));
+
+      // La segunda llamada al API fue ejecutada
+      await waitFor(() => {
+        expect(mockApiClient.generateMealPlan).toHaveBeenCalledTimes(2);
+      });
+
+      // El resultado del nuevo plan debe mostrarse
+      const resultsSection = await findByTestId('plan-results-section');
+      expect(resultsSection).toBeTruthy();
+      expect(queryByTestId('plan-loading-state')).toBeNull();
+    });
+
+    it('4. La petición anterior cancelada que resuelve tarde no afecta ni corrompe la nueva generación', async () => {
+      let resolveFirstCall!: (val: any) => void;
+      const firstCallPromise = new Promise((resolve) => {
+        resolveFirstCall = resolve;
+      });
+
+      let resolveSecondCall!: (val: any) => void;
+      const secondCallPromise = new Promise((resolve) => {
+        resolveSecondCall = resolve;
+      });
+
+      const secondBackendResponse: BackendMealPlanResponseData = {
+        ...sampleBackendResponse,
+        days: [
+          {
+            day: 1,
+            recipe: {
+              ...sampleBackendResponse.days[0].recipe,
+              name: 'Receta Definitiva de la Segunda Generación',
+            },
+          },
+          sampleBackendResponse.days[1],
+          sampleBackendResponse.days[2],
+        ],
+      };
+
+      const mockApiClient = {
+        generateMealPlan: jest
+          .fn()
+          .mockImplementationOnce(() => firstCallPromise)
+          .mockImplementationOnce(() => secondCallPromise),
+      };
+
+      const { getByTestId, queryByTestId, findByText } = await renderPlanScreen(
+        mockPantryItems,
+        null,
+        20000,
+        2,
+        undefined,
+        mockApiClient
+      );
+
+      // Iniciar op 1
+      fireEvent.press(getByTestId('generate-meal-plan-button'));
+      await waitFor(() => {
+        expect(getByTestId('plan-loading-state')).toBeTruthy();
+      });
+
+      // Cancelar op 1
+      fireEvent.press(getByTestId('cancel-generation-button'));
+      await waitFor(() => {
+        expect(queryByTestId('plan-loading-state')).toBeNull();
+      });
+
+      // Iniciar op 2
+      fireEvent.press(getByTestId('generate-meal-plan-button'));
+      await waitFor(() => {
+        expect(getByTestId('plan-loading-state')).toBeTruthy();
+      });
+
+      // Op 1 resuelve tarde con datos obsoletos
+      resolveFirstCall(sampleBackendResponse);
+      await new Promise((r) => setTimeout(r, 20));
+
+      // Op 2 aún debe estar cargando (op 1 no reseteó el estado de carga de op 2)
+      expect(getByTestId('plan-loading-state')).toBeTruthy();
+
+      // Op 2 ahora resuelve con éxito
+      resolveSecondCall(secondBackendResponse);
+
+      // El plan visible debe ser el de op 2
+      expect(await findByText('Receta Definitiva de la Segunda Generación')).toBeTruthy();
+      expect(queryByTestId('plan-loading-state')).toBeNull();
+    });
+
+    it('5. Toques rápidos sucesivos invocan la API exactamente una vez', async () => {
+      const mockApiClient = {
+        generateMealPlan: jest.fn().mockReturnValue(new Promise(() => {})),
+      };
+
+      const { getByTestId } = await renderPlanScreen(
+        mockPantryItems,
+        null,
+        20000,
+        2,
+        undefined,
+        mockApiClient
+      );
+
+      const generateBtn = getByTestId('generate-meal-plan-button');
+
+      // Tres pulsaciones simultáneas/rápidas
+      fireEvent.press(generateBtn);
+      fireEvent.press(generateBtn);
+      fireEvent.press(generateBtn);
+
+      expect(mockApiClient.generateMealPlan).toHaveBeenCalledTimes(1);
     });
   });
 });

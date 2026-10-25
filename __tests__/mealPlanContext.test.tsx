@@ -88,7 +88,8 @@ describe('MealPlanContext (Fase 3C)', () => {
     initialIngredients: Ingredient[] = mockIngredients,
     budgetVal: number = 20000,
     servingsVal: number = 2,
-    mockApiClient?: any
+    mockApiClient?: any,
+    storageAdapterOverride?: any
   ) => {
     return ({ children }: { children: React.ReactNode }) => (
       <TypographyProvider usingFallback={true}>
@@ -97,7 +98,7 @@ describe('MealPlanContext (Fase 3C)', () => {
             <RecipeProvider>
               <MealPlanProvider
                 mealPlanApiClient={mockApiClient}
-                storageAdapter={mockStorageAdapter}
+                storageAdapter={storageAdapterOverride ?? mockStorageAdapter}
               >
                 {children}
               </MealPlanProvider>
@@ -414,5 +415,189 @@ describe('MealPlanContext (Fase 3C)', () => {
     });
 
     expect(result.current.mealPlan.isStale).toBe(true);
+  });
+
+  describe('Pruebas de regresión FIX 1: Protección de restauración persistida', () => {
+    const createStoredDay = (day: number, name?: string) => ({
+      day,
+      recipe: {
+        id: `plan-dia-${day}-receta`,
+        name: name ?? `Receta del día ${day}`,
+        description: `Plato para el día ${day}`,
+        totalMinutes: 20 + day * 5,
+        servings: 2,
+        ingredients: [{ name: 'Pollo', quantity: 200, unit: 'g' }],
+        steps: ['Cocinar'],
+        availableIngredients: [{ name: 'Pollo', quantity: 200, unit: 'g' }],
+        missingIngredients: [],
+        estimatedMissingCost: 0,
+        budgetRemaining: 20000,
+        withinBudget: true,
+        convenience: '90%',
+        reason: 'Restaurado',
+        isDemoFixture: false,
+      },
+    });
+
+    const oldStoredData = {
+      plan: {
+        days: [
+          createStoredDay(1, 'Receta Antigua Guardada'),
+          createStoredDay(2, 'Receta Antigua Día 2'),
+          createStoredDay(3, 'Receta Antigua Día 3'),
+        ],
+        totalEstimatedMissingCost: 0,
+        budgetRemaining: 20000,
+        withinBudget: true,
+        uniqueMissingIngredients: [],
+      },
+      snapshot: {
+        pantryFingerprint: 'old-fingerprint',
+        budget: 20000,
+        servings: 2,
+        maxMinutes: 30,
+        generatedAt: '2026-01-01T00:00:00.000Z',
+      },
+    };
+
+    it('1. Restauración lenta seguida de una generación más reciente exitosa no sobrescribe el nuevo plan', async () => {
+      let resolveSlowRestoration!: (val: any) => void;
+      const slowRestorationPromise = new Promise((resolve) => {
+        resolveSlowRestoration = resolve;
+      });
+
+      const slowStorageAdapter = {
+        getStoredMealPlan: jest.fn().mockReturnValue(slowRestorationPromise),
+        saveMealPlan: jest.fn().mockResolvedValue(undefined),
+        clearMealPlan: jest.fn().mockResolvedValue(undefined),
+      };
+
+      const newBackendResponse: BackendMealPlanResponseData = {
+        days: [
+          {
+            day: 1,
+            recipe: {
+              name: 'Receta Nueva Recién Generada',
+              description: 'Plato generado con datos nuevos',
+              totalMinutes: 25,
+              ingredients: [{ name: 'Pollo', quantity: 200, unit: 'g' }],
+              steps: ['Preparar'],
+              availableIngredients: [{ name: 'Pollo', quantity: 200, unit: 'g' }],
+              missingIngredients: [],
+              estimatedMissingCost: 0,
+              budgetRemaining: 20000,
+              withinBudget: true,
+              convenience: 95,
+              reason: 'Nueva generación',
+            },
+          },
+        ],
+        totalEstimatedMissingCost: 0,
+        budgetRemaining: 20000,
+        withinBudget: true,
+      };
+
+      const mockApiClient = {
+        generateMealPlan: jest.fn().mockResolvedValue(newBackendResponse),
+      };
+
+      const { result } = await renderHook(() => useMealPlan(), {
+        wrapper: createWrapper(mockIngredients, 20000, 2, mockApiClient, slowStorageAdapter),
+      });
+
+      expect(slowStorageAdapter.getStoredMealPlan).toHaveBeenCalledTimes(1);
+
+      // El usuario genera un nuevo plan mientras la restauración está en vuelo
+      await act(async () => {
+        await result.current.generateMealPlan();
+      });
+
+      expect(result.current.plan?.days[0].recipe.name).toBe('Receta Nueva Recién Generada');
+
+      // Ahora la restauración lenta finalmente resuelve con el plan antiguo
+      await act(async () => {
+        resolveSlowRestoration(oldStoredData);
+        await slowRestorationPromise;
+      });
+
+      // El plan NO debe haber sido sobrescrito por el plan antiguo
+      expect(result.current.plan?.days[0].recipe.name).toBe('Receta Nueva Recién Generada');
+      expect(result.current.isRestoring).toBe(false);
+    });
+
+    it('2. Restauración lenta seguida de clearMealPlan() no restaura el plan eliminado', async () => {
+      let resolveSlowRestoration!: (val: any) => void;
+      const slowRestorationPromise = new Promise((resolve) => {
+        resolveSlowRestoration = resolve;
+      });
+
+      const slowStorageAdapter = {
+        getStoredMealPlan: jest.fn().mockReturnValue(slowRestorationPromise),
+        saveMealPlan: jest.fn().mockResolvedValue(undefined),
+        clearMealPlan: jest.fn().mockResolvedValue(undefined),
+      };
+
+      const { result } = await renderHook(() => useMealPlan(), {
+        wrapper: createWrapper(mockIngredients, 20000, 2, undefined, slowStorageAdapter),
+      });
+
+      // El usuario borra el plan mientras la restauración aún está en curso
+      await act(async () => {
+        await result.current.clearMealPlan();
+      });
+
+      expect(result.current.plan).toBeNull();
+
+      // La restauración lenta finalmente resuelve con datos antiguos
+      await act(async () => {
+        resolveSlowRestoration(oldStoredData);
+        await slowRestorationPromise;
+      });
+
+      // El plan debe permanecer en null y no restaurarse
+      expect(result.current.plan).toBeNull();
+      expect(result.current.isRestoring).toBe(false);
+    });
+
+    it('3. Desmontaje antes de que la restauración complete no genera inconsistencias ni fugas', async () => {
+      let resolveSlowRestoration!: (val: any) => void;
+      const slowRestorationPromise = new Promise((resolve) => {
+        resolveSlowRestoration = resolve;
+      });
+
+      const slowStorageAdapter = {
+        getStoredMealPlan: jest.fn().mockReturnValue(slowRestorationPromise),
+        saveMealPlan: jest.fn().mockResolvedValue(undefined),
+        clearMealPlan: jest.fn().mockResolvedValue(undefined),
+      };
+
+      const { unmount } = await renderHook(() => useMealPlan(), {
+        wrapper: createWrapper(mockIngredients, 20000, 2, undefined, slowStorageAdapter),
+      });
+
+      unmount();
+      resolveSlowRestoration(oldStoredData);
+      await slowRestorationPromise;
+      await new Promise((r) => setTimeout(r, 50));
+
+      // Si no hubo excepciones o warnings no capturados, pasó la prueba limpia
+    });
+
+    it('4. La restauración normal continúa funcionando al reiniciar la app', async () => {
+      // Guardar previamente en el storage adapter
+      await mockStorageAdapter.saveMealPlan(oldStoredData.plan as any, oldStoredData.snapshot);
+
+      const { result } = await renderHook(() => useMealPlan(), {
+        wrapper: createWrapper(mockIngredients, 20000, 2, undefined, mockStorageAdapter),
+      });
+
+      await waitFor(() => {
+        expect(result.current.isRestoring).toBe(false);
+      });
+
+      expect(result.current.plan).not.toBeNull();
+      expect(result.current.plan?.days[0].recipe.name).toBe('Receta Antigua Guardada');
+      expect(result.current.lastGeneratedAt).toBe(oldStoredData.snapshot.generatedAt);
+    });
   });
 });

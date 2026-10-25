@@ -115,9 +115,10 @@ export function MealPlanProvider({
       .join('|');
   }, [ingredients]);
 
-  // Carga inicial transparente desde el almacenamiento local
+  // Carga inicial transparente desde el almacenamiento local con protección de concurrencia
   useEffect(() => {
     let isMounted = true;
+    const restorationVersion = operationVersionRef.current;
 
     if (initialPlan) {
       return () => {
@@ -128,7 +129,9 @@ export function MealPlanProvider({
     (async () => {
       try {
         const stored = await storageAdapter.getStoredMealPlan();
-        if (stored && isMounted) {
+        // Solo restauramos si el componente sigue montado y ninguna operación
+        // posterior (generación o clearMealPlan) ha incrementado operationVersionRef
+        if (stored && isMounted && restorationVersion === operationVersionRef.current) {
           setPlan(stored.plan);
           setLastSnapshot(stored.snapshot);
           setLastGeneratedAt(stored.snapshot.generatedAt);
@@ -241,6 +244,7 @@ export function MealPlanProvider({
       isGeneratingRef.current = true;
       setIsGenerating(true);
       setIsLoading(true);
+      setIsRestoring(false);
       setError(null);
       setErrorCode(null);
 
@@ -346,10 +350,12 @@ export function MealPlanProvider({
   );
 
   const clearMealPlan = useCallback(async (): Promise<void> => {
+    operationVersionRef.current++;
     cancelGeneration();
     setPlan(null);
     setLastSnapshot(null);
     setLastGeneratedAt(null);
+    setIsRestoring(false);
     setError(null);
     setErrorCode(null);
 

@@ -12,7 +12,7 @@
  * - Navegación segura hacia el detalle de cada receta planificada y modo cocina.
  */
 
-import React, { useState } from 'react';
+import React, { useRef } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -50,22 +50,32 @@ export default function PlanScreen() {
     clearError,
   } = useMealPlan();
 
-  const [isLocalGenerating, setIsLocalGenerating] = useState<boolean>(false);
+  // Guard contra toques rápidos y token de operación en curso
+  const activeRequestIdRef = useRef<number>(0);
 
   const hasPantryItems = ingredients.length > 0;
-  const isLoading = isGenerating || isLocalGenerating;
+  // Un único estado autoritativo de carga: isGenerating del contexto
+  const isLoading = isGenerating;
 
   const handleGeneratePlan = async () => {
-    if (!hasPantryItems || isLoading) return;
+    if (!hasPantryItems || isLoading || activeRequestIdRef.current !== 0) return;
+
+    const requestId = ++activeRequestIdRef.current;
 
     try {
-      setIsLocalGenerating(true);
       await generateMealPlan();
     } catch {
       // El error ya es capturado y expuesto reactivamente por MealPlanContext
     } finally {
-      setIsLocalGenerating(false);
+      if (activeRequestIdRef.current === requestId) {
+        activeRequestIdRef.current = 0;
+      }
     }
+  };
+
+  const handleCancelGeneration = () => {
+    activeRequestIdRef.current = 0;
+    cancelGeneration();
   };
 
   const handleNavigateToRecipe = (recipeId: string) => {
@@ -213,7 +223,7 @@ export default function PlanScreen() {
               title="Cancelar"
               variant="outline"
               size="sm"
-              onPress={cancelGeneration}
+              onPress={handleCancelGeneration}
               leftIcon={<MaterialIcons name="close" size={16} color={colors.primary} />}
             />
           </Card>

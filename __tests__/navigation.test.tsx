@@ -10,6 +10,7 @@ import { TypographyProvider } from '../src/theme';
 import { PantryProvider } from '../src/context/PantryContext';
 import { BudgetProvider } from '../src/context/BudgetContext';
 import { RecipeProvider } from '../src/context/RecipeContext';
+import { MealPlanProvider } from '../src/context/MealPlanContext';
 import { Ingredient } from '../src/types/pantry';
 
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -107,7 +108,9 @@ describe('Phase 2A: Navigation & Mobile Screens (Google Stitch)', () => {
           <PantryProvider initialIngredients={initialIngredients}>
             <BudgetProvider initialPreferences={{ budget: 20000, servings: 2 }}>
               <RecipeProvider>
-                {ui}
+                <MealPlanProvider>
+                  {ui}
+                </MealPlanProvider>
               </RecipeProvider>
             </BudgetProvider>
           </PantryProvider>
@@ -381,16 +384,17 @@ describe('Phase 2A: Navigation & Mobile Screens (Google Stitch)', () => {
       expect(getByTestId('pantry-scan-placeholder-button')).toBeTruthy();
     });
 
-    it('renders Plan Semanal placeholder with Phase 3 development status', async () => {
+    it('renders Plan screen with 3-day meal planning header, parameters summary and CTA', async () => {
       const { getByText, getByTestId } = await renderWithProviders(<PlanScreen />);
 
-      expect(getByText('Plan Semanal')).toBeTruthy();
-      expect(getByText('Fase 3')).toBeTruthy();
-      expect(getByText('Planificación de Comidas y Presupuesto')).toBeTruthy();
+      expect(getByText('Mi plan de comidas')).toBeTruthy();
+      expect(getByText('Organiza tres días según tu despensa y presupuesto')).toBeTruthy();
+      expect(getByText('Planifica tus comidas de los próximos 3 días')).toBeTruthy();
+      expect(getByTestId('generate-meal-plan-button')).toBeTruthy();
 
-      const backButton = getByTestId('plan-back-home-button');
-      fireEvent.press(backButton);
-      expect(mockPush).toHaveBeenCalledWith('/(tabs)');
+      const profileAvatar = getByTestId('plan-profile-avatar');
+      fireEvent.press(profileAvatar);
+      expect(mockPush).toHaveBeenCalledWith('/(tabs)/perfil');
     });
 
     it('renders Perfil placeholder with Phase 4 development status and replay links', async () => {

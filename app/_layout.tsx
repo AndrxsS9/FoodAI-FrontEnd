@@ -8,6 +8,7 @@ import { TypographyProvider, colors } from '../src/theme';
 import { PantryProvider } from '../src/context/PantryContext';
 import { BudgetProvider } from '../src/context/BudgetContext';
 import { RecipeProvider } from '../src/context/RecipeContext';
+import { MealPlanProvider } from '../src/context/MealPlanContext';
 
 export default function RootLayout() {
   const { isReady, fontError, usingFallback } = useAppFonts();
@@ -39,19 +40,21 @@ export default function RootLayout() {
         <PantryProvider>
           <BudgetProvider>
             <RecipeProvider>
-              <StatusBar style="dark" />
-              <Stack
-                screenOptions={{
-                  headerShown: false,
-                  contentStyle: { backgroundColor: colors.canvas },
-                }}
-              >
-                <Stack.Screen name="index" />
-                <Stack.Screen name="(tabs)" />
-                <Stack.Screen name="design-system" />
-                <Stack.Screen name="recetas" />
-                <Stack.Screen name="escaner" />
-              </Stack>
+              <MealPlanProvider>
+                <StatusBar style="dark" />
+                <Stack
+                  screenOptions={{
+                    headerShown: false,
+                    contentStyle: { backgroundColor: colors.canvas },
+                  }}
+                >
+                  <Stack.Screen name="index" />
+                  <Stack.Screen name="(tabs)" />
+                  <Stack.Screen name="design-system" />
+                  <Stack.Screen name="recetas" />
+                  <Stack.Screen name="escaner" />
+                </Stack>
+              </MealPlanProvider>
             </RecipeProvider>
           </BudgetProvider>
         </PantryProvider>

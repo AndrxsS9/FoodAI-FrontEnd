@@ -34,7 +34,17 @@ import {
 } from '../../src/types/recipe';
 import { colors, radius, spacing, useTypography } from '../../src/theme';
 
-export default function PlanScreen() {
+export interface PlanScreenProps {
+  /** Callback opcional para pruebas y observabilidad de concurrencia/ciclo de vida de peticiones */
+  onRequestTracked?: (info: {
+    requestId: number;
+    activeRequestId: number | null;
+    sequenceId: number;
+    phase: 'start' | 'cancel' | 'settled';
+  }) => void;
+}
+
+export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
   const typography = useTypography();
   const router = useRouter();
 
@@ -50,31 +60,62 @@ export default function PlanScreen() {
     clearError,
   } = useMealPlan();
 
-  // Guard contra toques rápidos y token de operación en curso
-  const activeRequestIdRef = useRef<number>(0);
+  // Secuencia monótona estricta e identificador de la petición activa (nunca se resetea la secuencia)
+  const requestSequenceRef = useRef<number>(0);
+  const activeRequestIdRef = useRef<number | null>(null);
 
   const hasPantryItems = ingredients.length > 0;
   // Un único estado autoritativo de carga: isGenerating del contexto
   const isLoading = isGenerating;
 
-  const handleGeneratePlan = async () => {
-    if (!hasPantryItems || isLoading || activeRequestIdRef.current !== 0) return;
+  const handleGeneratePlan = () => {
+    // Si no hay alimentos, ya está cargando o ya existe una petición activa en curso, ignorar síncronamente
+    if (!hasPantryItems || isLoading || activeRequestIdRef.current !== null) return;
 
-    const requestId = ++activeRequestIdRef.current;
+    const requestId = ++requestSequenceRef.current;
+    activeRequestIdRef.current = requestId;
 
-    try {
-      await generateMealPlan();
-    } catch {
-      // El error ya es capturado y expuesto reactivamente por MealPlanContext
-    } finally {
-      if (activeRequestIdRef.current === requestId) {
-        activeRequestIdRef.current = 0;
+    onRequestTracked?.({
+      requestId,
+      activeRequestId: activeRequestIdRef.current,
+      sequenceId: requestSequenceRef.current,
+      phase: 'start',
+    });
+
+    void (async () => {
+      try {
+        await generateMealPlan();
+      } catch {
+        // El error ya es capturado y expuesto reactivamente por MealPlanContext
+      } finally {
+        // Solo liberamos si este requestId sigue siendo el activo
+        if (activeRequestIdRef.current === requestId) {
+          activeRequestIdRef.current = null;
+          onRequestTracked?.({
+            requestId,
+            activeRequestId: null,
+            sequenceId: requestSequenceRef.current,
+            phase: 'settled',
+          });
+        }
       }
-    }
+    })();
   };
 
   const handleCancelGeneration = () => {
-    activeRequestIdRef.current = 0;
+    // Limpiamos la referencia activa pero NUNCA reseteamos la secuencia monótona
+    const previousActive = activeRequestIdRef.current;
+    activeRequestIdRef.current = null;
+
+    if (previousActive !== null) {
+      onRequestTracked?.({
+        requestId: previousActive,
+        activeRequestId: null,
+        sequenceId: requestSequenceRef.current,
+        phase: 'cancel',
+      });
+    }
+
     cancelGeneration();
   };
 

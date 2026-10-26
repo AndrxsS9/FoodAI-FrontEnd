@@ -654,5 +654,14 @@ export class AsyncStoragePantryAdapter implements PantryStorageAdapter {
   }
 }
 
+export function getPantryStorageKey(userId?: string | null): string {
+  return userId ? `@foodai:${userId}:pantry_v1` : PANTRY_STORAGE_KEY;
+}
+
+export function createPantryStorage(userId?: string | null): PantryStorageAdapter {
+  return new AsyncStoragePantryAdapter(getPantryStorageKey(userId));
+}
+
 export const pantryStorage: PantryStorageAdapter =
   new AsyncStoragePantryAdapter();
+

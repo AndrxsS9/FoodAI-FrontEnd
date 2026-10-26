@@ -277,4 +277,13 @@ export class AsyncStorageMealPlanAdapter implements MealPlanStorageAdapter {
   }
 }
 
+export function getMealPlanStorageKey(userId?: string | null): string {
+  return userId ? `@foodai:${userId}:meal_plan_v1` : MEAL_PLAN_STORAGE_KEY;
+}
+
+export function createMealPlanStorage(userId?: string | null): MealPlanStorageAdapter {
+  return new AsyncStorageMealPlanAdapter(getMealPlanStorageKey(userId));
+}
+
 export const mealPlanStorage = new AsyncStorageMealPlanAdapter();
+

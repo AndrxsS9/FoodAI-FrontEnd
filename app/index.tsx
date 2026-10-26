@@ -21,6 +21,7 @@ export default function WelcomeScreen() {
     router.replace('/(tabs)');
   };
 
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom', 'left', 'right']}>
       <ScrollView

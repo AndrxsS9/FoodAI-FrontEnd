@@ -24,7 +24,7 @@ import {
 } from '../types/budget';
 import {
   BudgetStorageAdapter,
-  budgetStorage as defaultBudgetStorage,
+  createBudgetStorage,
   defaultBudgetPreferences,
 } from '../services/storage/budgetStorage';
 import {
@@ -32,6 +32,7 @@ import {
   validateMaxMinutesInput,
   validateServingsInput,
 } from '../types/recipe';
+import { useAuthSafe } from './AuthContext';
 
 export interface BudgetContextValue {
   budget: number;
@@ -69,23 +70,37 @@ export interface BudgetProviderProps {
   children: React.ReactNode;
   storageAdapter?: BudgetStorageAdapter;
   initialPreferences?: Partial<BudgetPreferences>;
+  userId?: string | null;
 }
 
 export function BudgetProvider({
   children,
-  storageAdapter = defaultBudgetStorage,
+  storageAdapter,
   initialPreferences,
+  userId,
 }: BudgetProviderProps) {
+  const auth = useAuthSafe();
+  const effectiveUserId = userId !== undefined ? userId : auth?.user?.id ?? null;
+
+  const activeStorage = useMemo(() => {
+    if (storageAdapter) return storageAdapter;
+    return createBudgetStorage(effectiveUserId);
+  }, [storageAdapter, effectiveUserId]);
+
   const [preferences, setPreferences] = useState<BudgetPreferences>(() => ({
     ...defaultBudgetPreferences,
     ...initialPreferences,
   }));
-  const [isLoading, setIsLoading] = useState<boolean>(!initialPreferences);
+  const [isLoading, setIsLoading] = useState<boolean>(
+    !initialPreferences && (storageAdapter !== undefined || effectiveUserId !== null)
+  );
   const [storageError, setStorageError] = useState<string | null>(null);
 
   // Rastreo de versión operacional para evitar que lecturas asíncronas
   // lentas sobreescriban mutaciones de usuario más recientes
-  const activeLoadsCountRef = useRef<number>(!initialPreferences ? 1 : 0);
+  const activeLoadsCountRef = useRef<number>(
+    !initialPreferences && (storageAdapter !== undefined || effectiveUserId !== null) ? 1 : 0
+  );
   const lastAppliedVersionRef = useRef<number>(0);
   const nextOperationVersionRef = useRef<number>(0);
 
@@ -95,7 +110,7 @@ export function BudgetProvider({
     setIsLoading(true);
     setStorageError(null);
     try {
-      const loaded = await storageAdapter.getPreferences();
+      const loaded = await activeStorage.getPreferences();
       if (opVersion >= lastAppliedVersionRef.current) {
         lastAppliedVersionRef.current = opVersion;
         setPreferences(loaded);
@@ -114,13 +129,63 @@ export function BudgetProvider({
         setIsLoading(false);
       }
     }
-  }, [storageAdapter]);
+  }, [activeStorage]);
 
+  // Ajuste de estado inmediato durante render al cambiar de usuario (evita intermediate renders y cascading effects)
+  const [prevUserIdState, setPrevUserIdState] = useState<string | null>(effectiveUserId);
+  if (effectiveUserId !== prevUserIdState) {
+    setPrevUserIdState(effectiveUserId);
+    setPreferences(defaultBudgetPreferences);
+    setStorageError(null);
+    setIsLoading(Boolean(effectiveUserId));
+  }
+
+  // Aislamiento reactivo ante cambio de usuario o cierre de sesión (Fase 5)
+  useEffect(() => {
+    if (storageAdapter || initialPreferences || !effectiveUserId) return;
+
+    let isMounted = true;
+    const opVersion = ++nextOperationVersionRef.current;
+    lastAppliedVersionRef.current = opVersion;
+
+    activeLoadsCountRef.current = 1;
+
+    const syncUserData = async () => {
+      try {
+        const loaded = await activeStorage.getPreferences();
+        if (isMounted && opVersion >= lastAppliedVersionRef.current) {
+          lastAppliedVersionRef.current = opVersion;
+          setPreferences(loaded);
+        }
+      } catch (error) {
+        if (isMounted && opVersion >= lastAppliedVersionRef.current) {
+          const message =
+            error instanceof Error
+              ? error.message
+              : 'Error al cargar las preferencias de presupuesto.';
+          setStorageError(message);
+        }
+      } finally {
+        if (isMounted) {
+          activeLoadsCountRef.current = 0;
+          setIsLoading(false);
+        }
+      }
+    };
+
+    void syncUserData();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [effectiveUserId, activeStorage, initialPreferences, storageAdapter]);
+
+  // Compatibilidad con pruebas unitarias que inyectan storageAdapter
   useEffect(() => {
     let isMounted = true;
-    if (!initialPreferences) {
+    if (storageAdapter && !initialPreferences) {
       const opVersion = ++nextOperationVersionRef.current;
-      storageAdapter
+      activeStorage
         .getPreferences()
         .then((loaded) => {
           if (!isMounted) return;
@@ -151,7 +216,8 @@ export function BudgetProvider({
     return () => {
       isMounted = false;
     };
-  }, [storageAdapter, initialPreferences]);
+  }, [storageAdapter, initialPreferences, activeStorage]);
+
 
   /**
    * Operación atómica de actualización de preferencias de presupuesto.
@@ -203,7 +269,7 @@ export function BudgetProvider({
       setStorageError(null);
 
       try {
-        const committed = await storageAdapter.savePreferences(patch);
+        const committed = await activeStorage.savePreferences(patch);
         if (opVersion >= lastAppliedVersionRef.current) {
           lastAppliedVersionRef.current = opVersion;
           setPreferences(committed);
@@ -218,7 +284,7 @@ export function BudgetProvider({
         throw error;
       }
     },
-    [storageAdapter]
+    [activeStorage]
   );
 
   const setBudget = useCallback(
@@ -250,7 +316,7 @@ export function BudgetProvider({
     const opVersion = ++nextOperationVersionRef.current;
     setStorageError(null);
     try {
-      const fresh = await storageAdapter.resetPreferences();
+      const fresh = await activeStorage.resetPreferences();
       if (opVersion >= lastAppliedVersionRef.current) {
         lastAppliedVersionRef.current = opVersion;
         setPreferences(fresh);
@@ -263,7 +329,8 @@ export function BudgetProvider({
       setStorageError(message);
       throw error;
     }
-  }, [storageAdapter]);
+  }, [activeStorage]);
+
 
   const clearStorageError = useCallback(() => {
     setStorageError(null);

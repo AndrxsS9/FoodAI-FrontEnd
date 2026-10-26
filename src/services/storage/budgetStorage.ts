@@ -318,4 +318,13 @@ export class AsyncStorageBudgetAdapter implements BudgetStorageAdapter {
   }
 }
 
+export function getBudgetStorageKey(userId?: string | null): string {
+  return userId ? `@foodai:${userId}:budget_v1` : BUDGET_STORAGE_KEY;
+}
+
+export function createBudgetStorage(userId?: string | null): BudgetStorageAdapter {
+  return new AsyncStorageBudgetAdapter(getBudgetStorageKey(userId));
+}
+
 export const budgetStorage = new AsyncStorageBudgetAdapter();
+

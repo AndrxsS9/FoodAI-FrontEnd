@@ -31,12 +31,13 @@ import {
 } from '../types/mealPlan';
 import { useBudget } from './BudgetContext';
 import { usePantrySafe } from './PantryContext';
+import { useAuthSafe } from './AuthContext';
 import {
   mealPlanApi as defaultMealPlanApi,
   MealPlanApiError,
 } from '../services/api/mealPlanApi';
 import {
-  mealPlanStorage as defaultMealPlanStorage,
+  createMealPlanStorage,
   MealPlanStorageAdapter,
 } from '../services/storage/mealPlanStorage';
 
@@ -79,14 +80,24 @@ export interface MealPlanProviderProps {
   initialPlan?: ClientMealPlan | null;
   mealPlanApiClient?: typeof defaultMealPlanApi;
   storageAdapter?: MealPlanStorageAdapter;
+  userId?: string | null;
 }
 
 export function MealPlanProvider({
   children,
   initialPlan = null,
   mealPlanApiClient = defaultMealPlanApi,
-  storageAdapter = defaultMealPlanStorage,
+  storageAdapter,
+  userId,
 }: MealPlanProviderProps) {
+  const auth = useAuthSafe();
+  const effectiveUserId = userId !== undefined ? userId : auth?.user?.id ?? null;
+
+  const activeStorage = useMemo(() => {
+    if (storageAdapter) return storageAdapter;
+    return createMealPlanStorage(effectiveUserId);
+  }, [storageAdapter, effectiveUserId]);
+
   const { budget, servings, maxMinutes } = useBudget();
   const pantry = usePantrySafe();
   const ingredients = useMemo(() => pantry?.ingredients ?? [], [pantry?.ingredients]);
@@ -94,7 +105,9 @@ export function MealPlanProvider({
   const [plan, setPlan] = useState<ClientMealPlan | null>(initialPlan);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
-  const [isRestoring, setIsRestoring] = useState<boolean>(!initialPlan);
+  const [isRestoring, setIsRestoring] = useState<boolean>(
+    !initialPlan && (storageAdapter !== undefined || effectiveUserId !== null)
+  );
   const [lastGeneratedAt, setLastGeneratedAt] = useState<string | null>(
     initialPlan?.generatedAt ?? null
   );
@@ -106,6 +119,21 @@ export function MealPlanProvider({
   const activeAbortControllerRef = useRef<AbortController | null>(null);
   const isGeneratingRef = useRef<boolean>(false);
   const operationVersionRef = useRef<number>(0);
+  const activeUserIdRef = useRef<string | null>(effectiveUserId);
+
+  // Ajuste de estado inmediato durante render al cambiar de usuario (evita intermediate renders y cascading effects)
+  const [prevUserIdState, setPrevUserIdState] = useState<string | null>(effectiveUserId);
+  if (effectiveUserId !== prevUserIdState) {
+    setPrevUserIdState(effectiveUserId);
+    setIsGenerating(false);
+    setIsLoading(false);
+    setPlan(null);
+    setLastSnapshot(null);
+    setLastGeneratedAt(null);
+    setError(null);
+    setErrorCode(null);
+    setIsRestoring(Boolean(effectiveUserId));
+  }
 
   // Huella digital reproducible de la despensa actual
   const currentPantryFingerprint = useMemo(() => {
@@ -115,40 +143,76 @@ export function MealPlanProvider({
       .join('|');
   }, [ingredients]);
 
-  // Carga inicial transparente desde el almacenamiento local con protección de concurrencia
+  // Aislamiento reactivo ante cambio de usuario o logout (Fase 5)
   useEffect(() => {
+    if (storageAdapter || initialPlan || !effectiveUserId) return;
+
     let isMounted = true;
-    const restorationVersion = operationVersionRef.current;
+    const currentVersion = ++operationVersionRef.current;
+    activeUserIdRef.current = effectiveUserId;
 
-    if (initialPlan) {
-      return () => {
-        isMounted = false;
-      };
+    if (activeAbortControllerRef.current) {
+      activeAbortControllerRef.current.abort();
+      activeAbortControllerRef.current = null;
     }
+    isGeneratingRef.current = false;
 
-    (async () => {
+    const syncMealPlan = async () => {
       try {
-        const stored = await storageAdapter.getStoredMealPlan();
-        // Solo restauramos si el componente sigue montado y ninguna operación
-        // posterior (generación o clearMealPlan) ha incrementado operationVersionRef
-        if (stored && isMounted && restorationVersion === operationVersionRef.current) {
+        const stored = await activeStorage.getStoredMealPlan();
+        if (
+          isMounted &&
+          currentVersion === operationVersionRef.current &&
+          effectiveUserId === activeUserIdRef.current &&
+          stored
+        ) {
           setPlan(stored.plan);
           setLastSnapshot(stored.snapshot);
           setLastGeneratedAt(stored.snapshot.generatedAt);
         }
       } catch (err) {
-        console.warn('[MealPlanContext] No se pudo restaurar el plan guardado:', err);
+        console.warn('[MealPlanContext] Error al restaurar plan de usuario:', err);
       } finally {
-        if (isMounted) {
+        if (isMounted && currentVersion === operationVersionRef.current) {
           setIsRestoring(false);
         }
       }
-    })();
+    };
+
+    void syncMealPlan();
 
     return () => {
       isMounted = false;
     };
-  }, [initialPlan, storageAdapter]);
+  }, [effectiveUserId, activeStorage, initialPlan, storageAdapter]);
+
+  // Compatibilidad con pruebas unitarias que inyectan storageAdapter
+  useEffect(() => {
+    let isMounted = true;
+    if (storageAdapter && !initialPlan) {
+      const restorationVersion = operationVersionRef.current;
+      activeStorage
+        .getStoredMealPlan()
+        .then((stored) => {
+          if (stored && isMounted && restorationVersion === operationVersionRef.current) {
+            setPlan(stored.plan);
+            setLastSnapshot(stored.snapshot);
+            setLastGeneratedAt(stored.snapshot.generatedAt);
+          }
+        })
+        .catch((err) => {
+          console.warn('[MealPlanContext] No se pudo restaurar el plan guardado:', err);
+        })
+        .finally(() => {
+          if (isMounted) {
+            setIsRestoring(false);
+          }
+        });
+    }
+    return () => {
+      isMounted = false;
+    };
+  }, [storageAdapter, initialPlan, activeStorage]);
 
   // Detección reactiva de obsolescencia
   const isStale = useMemo(() => {
@@ -240,6 +304,7 @@ export function MealPlanProvider({
       const abortController = new AbortController();
       activeAbortControllerRef.current = abortController;
 
+      const requestUserId = effectiveUserId;
       const currentOpVersion = ++operationVersionRef.current;
       isGeneratingRef.current = true;
       setIsGenerating(true);
@@ -282,9 +347,12 @@ export function MealPlanProvider({
           signal: abortController.signal,
         });
 
-        // 6. Verificar si la operación sigue siendo la más reciente
-        if (currentOpVersion < operationVersionRef.current) {
-          return plan;
+        // 6. Verificar si la operación sigue siendo la más reciente y del usuario activo
+        if (
+          currentOpVersion !== operationVersionRef.current ||
+          requestUserId !== activeUserIdRef.current
+        ) {
+          return null;
         }
 
         // 7. Normalizar el plan al modelo de cliente
@@ -306,16 +374,19 @@ export function MealPlanProvider({
 
         // 8. Persistir localmente de forma segura
         try {
-          await storageAdapter.saveMealPlan(normalizedPlan, snapshot);
+          await activeStorage.saveMealPlan(normalizedPlan, snapshot);
         } catch (storageErr) {
           console.warn('[MealPlanContext] Advertencia: No se pudo persistir el plan localmente:', storageErr);
         }
 
         return normalizedPlan;
       } catch (err) {
-        // Si la operación fue superada por una posterior, ignorar
-        if (currentOpVersion < operationVersionRef.current) {
-          return plan;
+        // Si la operación fue superada o el usuario cambió, descartar completamente
+        if (
+          currentOpVersion !== operationVersionRef.current ||
+          requestUserId !== activeUserIdRef.current
+        ) {
+          return null;
         }
 
         const msg =
@@ -329,7 +400,10 @@ export function MealPlanProvider({
         setErrorCode(code);
         throw err;
       } finally {
-        if (currentOpVersion === operationVersionRef.current) {
+        if (
+          currentOpVersion === operationVersionRef.current &&
+          requestUserId === activeUserIdRef.current
+        ) {
           isGeneratingRef.current = false;
           setIsGenerating(false);
           setIsLoading(false);
@@ -345,7 +419,8 @@ export function MealPlanProvider({
       maxMinutes,
       currentPantryFingerprint,
       mealPlanApiClient,
-      storageAdapter,
+      activeStorage,
+      effectiveUserId,
     ]
   );
 
@@ -360,11 +435,12 @@ export function MealPlanProvider({
     setErrorCode(null);
 
     try {
-      await storageAdapter.clearMealPlan();
+      await activeStorage.clearMealPlan();
     } catch (err) {
       console.warn('[MealPlanContext] Error al limpiar el almacenamiento local del plan:', err);
     }
-  }, [cancelGeneration, storageAdapter]);
+  }, [cancelGeneration, activeStorage]);
+
 
   // Limpieza al desmontar
   useEffect(() => {

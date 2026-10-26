@@ -20,8 +20,9 @@ import {
 } from '../types/pantry';
 import {
   PantryStorageAdapter,
-  pantryStorage as defaultPantryStorage,
+  createPantryStorage,
 } from '../services/storage/pantryStorage';
+import { useAuthSafe } from './AuthContext';
 
 export interface PantryContextValue {
   ingredients: Ingredient[];
@@ -42,24 +43,39 @@ export interface PantryProviderProps {
   children: React.ReactNode;
   storageAdapter?: PantryStorageAdapter;
   initialIngredients?: Ingredient[];
+  userId?: string | null;
 }
+
 
 export function PantryProvider({
   children,
-  storageAdapter = defaultPantryStorage,
+  storageAdapter,
   initialIngredients,
+  userId,
 }: PantryProviderProps) {
+  const auth = useAuthSafe();
+  const effectiveUserId = userId !== undefined ? userId : auth?.user?.id ?? null;
+
+  const activeStorage = useMemo(() => {
+    if (storageAdapter) return storageAdapter;
+    return createPantryStorage(effectiveUserId);
+  }, [storageAdapter, effectiveUserId]);
+
   const [ingredients, setIngredients] = useState<Ingredient[]>(
     initialIngredients ?? []
   );
-  const [isLoading, setIsLoading] = useState<boolean>(!initialIngredients);
+  const [isLoading, setIsLoading] = useState<boolean>(
+    !initialIngredients && (storageAdapter !== undefined || effectiveUserId !== null)
+  );
   const [storageError, setStorageError] = useState<string | null>(null);
 
   // Rastreador de operaciones de carga activas (hidratación inicial, refresh).
   // Permite desacoplar el ciclo de vida del indicador de carga (spinner)
   // de la validez de los datos recibidos, evitando que lecturas obsoletas
   // o superadas dejen a la interfaz permanentemente bloqueada en `isLoading = true`.
-  const activeLoadsCountRef = React.useRef<number>(!initialIngredients ? 1 : 0);
+  const activeLoadsCountRef = React.useRef<number>(
+    !initialIngredients && (storageAdapter !== undefined || effectiveUserId !== null) ? 1 : 0
+  );
   const lastAppliedVersionRef = React.useRef<number>(0);
   const nextOperationVersionRef = React.useRef<number>(0);
 
@@ -69,7 +85,7 @@ export function PantryProvider({
     setIsLoading(true);
     setStorageError(null);
     try {
-      const loaded = await storageAdapter.getIngredients();
+      const loaded = await activeStorage.getIngredients();
       if (opVersion >= lastAppliedVersionRef.current) {
         lastAppliedVersionRef.current = opVersion;
         setIngredients(loaded);
@@ -88,13 +104,63 @@ export function PantryProvider({
         setIsLoading(false);
       }
     }
-  }, [storageAdapter]);
+  }, [activeStorage]);
 
+  // Ajuste de estado inmediato durante render al cambiar de usuario (evita intermediate renders y cascading effects)
+  const [prevUserIdState, setPrevUserIdState] = useState<string | null>(effectiveUserId);
+  if (effectiveUserId !== prevUserIdState) {
+    setPrevUserIdState(effectiveUserId);
+    setIngredients([]);
+    setStorageError(null);
+    setIsLoading(Boolean(effectiveUserId));
+  }
+
+  // Carga reactiva ante cambio de usuario o cierre de sesión (Fase 5 - Aislamiento estricto)
+  useEffect(() => {
+    if (storageAdapter || initialIngredients || !effectiveUserId) return;
+
+    let isMounted = true;
+    const opVersion = ++nextOperationVersionRef.current;
+    lastAppliedVersionRef.current = opVersion;
+
+    activeLoadsCountRef.current = 1;
+
+    const syncUserData = async () => {
+      try {
+        const loaded = await activeStorage.getIngredients();
+        if (isMounted && opVersion >= lastAppliedVersionRef.current) {
+          lastAppliedVersionRef.current = opVersion;
+          setIngredients(loaded);
+        }
+      } catch (error) {
+        if (isMounted && opVersion >= lastAppliedVersionRef.current) {
+          const message =
+            error instanceof Error
+              ? error.message
+              : 'Error inesperado al cargar la despensa.';
+          setStorageError(message);
+        }
+      } finally {
+        if (isMounted) {
+          activeLoadsCountRef.current = 0;
+          setIsLoading(false);
+        }
+      }
+    };
+
+    void syncUserData();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [effectiveUserId, activeStorage, initialIngredients, storageAdapter]);
+
+  // Soporte para pruebas y entornos con storageAdapter explícito
   useEffect(() => {
     let isMounted = true;
-    if (!initialIngredients) {
+    if (storageAdapter && !initialIngredients) {
       const opVersion = ++nextOperationVersionRef.current;
-      storageAdapter
+      activeStorage
         .getIngredients()
         .then((loaded) => {
           if (!isMounted) return;
@@ -128,14 +194,15 @@ export function PantryProvider({
     return () => {
       isMounted = false;
     };
-  }, [storageAdapter, initialIngredients]);
+  }, [storageAdapter, initialIngredients, activeStorage]);
+
 
   const addIngredient = useCallback(
     async (input: CreateIngredientInput): Promise<Ingredient> => {
       const opVersion = ++nextOperationVersionRef.current;
       setStorageError(null);
       try {
-        const created = await storageAdapter.addIngredient(input);
+        const created = await activeStorage.addIngredient(input);
         if (opVersion >= lastAppliedVersionRef.current) {
           lastAppliedVersionRef.current = opVersion;
           setIngredients((prev) => [
@@ -153,7 +220,7 @@ export function PantryProvider({
         throw error;
       }
     },
-    [storageAdapter]
+    [activeStorage]
   );
 
   const updateIngredient = useCallback(
@@ -161,7 +228,7 @@ export function PantryProvider({
       const opVersion = ++nextOperationVersionRef.current;
       setStorageError(null);
       try {
-        const updated = await storageAdapter.updateIngredient(input);
+        const updated = await activeStorage.updateIngredient(input);
         if (opVersion >= lastAppliedVersionRef.current) {
           lastAppliedVersionRef.current = opVersion;
           setIngredients((prev) =>
@@ -178,7 +245,7 @@ export function PantryProvider({
         throw error;
       }
     },
-    [storageAdapter]
+    [activeStorage]
   );
 
   const deleteIngredient = useCallback(
@@ -186,7 +253,7 @@ export function PantryProvider({
       const opVersion = ++nextOperationVersionRef.current;
       setStorageError(null);
       try {
-        await storageAdapter.deleteIngredient(id);
+        await activeStorage.deleteIngredient(id);
         if (opVersion >= lastAppliedVersionRef.current) {
           lastAppliedVersionRef.current = opVersion;
           setIngredients((prev) => prev.filter((item) => item.id !== id));
@@ -200,7 +267,7 @@ export function PantryProvider({
         throw error;
       }
     },
-    [storageAdapter]
+    [activeStorage]
   );
 
   const ingredientsRef = React.useRef(ingredients);
@@ -213,8 +280,8 @@ export function PantryProvider({
       const opVersion = ++nextOperationVersionRef.current;
       setStorageError(null);
       try {
-        if (storageAdapter.adjustQuantity) {
-          const updated = await storageAdapter.adjustQuantity(id, delta);
+        if (activeStorage.adjustQuantity) {
+          const updated = await activeStorage.adjustQuantity(id, delta);
           if (opVersion >= lastAppliedVersionRef.current) {
             lastAppliedVersionRef.current = opVersion;
             setIngredients((prev) =>
@@ -224,7 +291,7 @@ export function PantryProvider({
         } else {
           // Adaptador sin adjustQuantity nativo: derivar del valor persistido confirmado
           // sin aplicar mutaciones optimistas especulativas antes de tiempo.
-          const currentList = await storageAdapter.getIngredients();
+          const currentList = await activeStorage.getIngredients();
           const target = currentList.find((item) => item.id === id);
           if (!target) return;
 
@@ -233,7 +300,7 @@ export function PantryProvider({
             return;
           }
 
-          const updated = await storageAdapter.updateIngredient({
+          const updated = await activeStorage.updateIngredient({
             id,
             quantity: newQty,
           });
@@ -253,8 +320,9 @@ export function PantryProvider({
         throw error;
       }
     },
-    [storageAdapter]
+    [activeStorage]
   );
+
 
   const clearStorageError = useCallback(() => {
     setStorageError(null);

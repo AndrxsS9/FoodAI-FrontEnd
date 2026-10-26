@@ -106,28 +106,26 @@ export function PantryProvider({
     }
   }, [activeStorage]);
 
+  // Ajuste de estado inmediato durante render al cambiar de usuario (evita intermediate renders y cascading effects)
+  const [prevUserIdState, setPrevUserIdState] = useState<string | null>(effectiveUserId);
+  if (effectiveUserId !== prevUserIdState) {
+    setPrevUserIdState(effectiveUserId);
+    setIngredients([]);
+    setStorageError(null);
+    setIsLoading(Boolean(effectiveUserId));
+  }
+
   // Carga reactiva ante cambio de usuario o cierre de sesión (Fase 5 - Aislamiento estricto)
   useEffect(() => {
-    if (storageAdapter || initialIngredients) return;
+    if (storageAdapter || initialIngredients || !effectiveUserId) return;
 
     let isMounted = true;
     const opVersion = ++nextOperationVersionRef.current;
     lastAppliedVersionRef.current = opVersion;
 
+    activeLoadsCountRef.current = 1;
+
     const syncUserData = async () => {
-      // Invalida inmediatamente el estado en memoria de la sesión anterior
-      if (!isMounted) return;
-      setIngredients([]);
-      setStorageError(null);
-
-      if (!effectiveUserId) {
-        setIsLoading(false);
-        return;
-      }
-
-      setIsLoading(true);
-      activeLoadsCountRef.current = 1;
-
       try {
         const loaded = await activeStorage.getIngredients();
         if (isMounted && opVersion >= lastAppliedVersionRef.current) {

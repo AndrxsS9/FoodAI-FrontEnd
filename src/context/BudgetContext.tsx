@@ -131,28 +131,26 @@ export function BudgetProvider({
     }
   }, [activeStorage]);
 
+  // Ajuste de estado inmediato durante render al cambiar de usuario (evita intermediate renders y cascading effects)
+  const [prevUserIdState, setPrevUserIdState] = useState<string | null>(effectiveUserId);
+  if (effectiveUserId !== prevUserIdState) {
+    setPrevUserIdState(effectiveUserId);
+    setPreferences(defaultBudgetPreferences);
+    setStorageError(null);
+    setIsLoading(Boolean(effectiveUserId));
+  }
+
   // Aislamiento reactivo ante cambio de usuario o cierre de sesión (Fase 5)
   useEffect(() => {
-    if (storageAdapter || initialPreferences) return;
+    if (storageAdapter || initialPreferences || !effectiveUserId) return;
 
     let isMounted = true;
     const opVersion = ++nextOperationVersionRef.current;
     lastAppliedVersionRef.current = opVersion;
 
+    activeLoadsCountRef.current = 1;
+
     const syncUserData = async () => {
-      // Resetear en memoria para la nueva sesión
-      if (!isMounted) return;
-      setPreferences(defaultBudgetPreferences);
-      setStorageError(null);
-
-      if (!effectiveUserId) {
-        setIsLoading(false);
-        return;
-      }
-
-      setIsLoading(true);
-      activeLoadsCountRef.current = 1;
-
       try {
         const loaded = await activeStorage.getPreferences();
         if (isMounted && opVersion >= lastAppliedVersionRef.current) {

@@ -124,38 +124,38 @@ export function RecipeProvider({
   // Referencias para control de concurrencia y cancelación de peticiones asíncronas
   const activeAbortControllerRef = useRef<AbortController | null>(null);
   const isGeneratingRef = useRef<boolean>(false);
+  const operationVersionRef = useRef<number>(0);
+  const activeUserIdRef = useRef<string | null>(effectiveUserId);
 
-  // Aislamiento reactivo de recetas ante cambio de sesión o logout (Fase 5)
+  // Ajuste de estado inmediato durante render al cambiar de usuario (evita intermediate renders y cascading effects)
+  const [prevUserIdState, setPrevUserIdState] = useState<string | null>(effectiveUserId);
+  if (effectiveUserId !== prevUserIdState) {
+    setPrevUserIdState(effectiveUserId);
+    setIsGenerating(false);
+    setIsLoading(false);
+    setSelectedRecipeId(null);
+    setCustomSelectedRecipe(null);
+    setLastSnapshot(null);
+    setError(null);
+    setErrorCode(null);
+    if (!initialRecipes) {
+      setRealRecipesState([]);
+      setLastGeneratedAt(null);
+    }
+  }
+
+  // Aislamiento reactivo de efectos externos ante cambio de sesión o logout (Fase 5)
   useEffect(() => {
-    let isMounted = true;
+    // 1. Invalidar cualquier operación asíncrona activa al cambiar de usuario
+    operationVersionRef.current++;
+    activeUserIdRef.current = effectiveUserId;
+
     if (activeAbortControllerRef.current) {
       activeAbortControllerRef.current.abort();
       activeAbortControllerRef.current = null;
     }
     isGeneratingRef.current = false;
-
-    queueMicrotask(() => {
-      if (!isMounted) return;
-      setIsGenerating(false);
-      setIsLoading(false);
-      setSelectedRecipeId(null);
-      setCustomSelectedRecipe(null);
-      setLastSnapshot(null);
-      setError(null);
-      setErrorCode(null);
-
-      if (!initialRecipes) {
-        setRealRecipesState([]);
-        setLastGeneratedAt(null);
-      }
-    });
-
-    return () => {
-      isMounted = false;
-    };
-  }, [effectiveUserId, initialRecipes]);
-
-  const operationVersionRef = useRef<number>(0);
+  }, [effectiveUserId]);
 
   // Huella digital reproducible de la despensa actual
   const currentPantryFingerprint = useMemo(() => {
@@ -382,6 +382,7 @@ export function RecipeProvider({
       const abortController = new AbortController();
       activeAbortControllerRef.current = abortController;
 
+      const requestUserId = effectiveUserId;
       const currentOpVersion = ++operationVersionRef.current;
       isGeneratingRef.current = true;
       setIsGenerating(true);
@@ -402,7 +403,7 @@ export function RecipeProvider({
         }
         // 4. Mapear datos de la despensa al contrato del backend
         const requestPayload = mapPantryToRecommendRequest(
-          ingredients,
+           ingredients,
           budget,
           servings,
           targetMaxMinutes
@@ -413,9 +414,12 @@ export function RecipeProvider({
           signal: abortController.signal,
         });
 
-        // 6. Verificar si esta operación sigue siendo la más reciente (evitar stale data)
-        if (currentOpVersion < operationVersionRef.current) {
-          return realRecipes;
+        // 6. Verificar si esta operación sigue siendo la más reciente y del usuario activo (evitar stale data)
+        if (
+          currentOpVersion !== operationVersionRef.current ||
+          requestUserId !== activeUserIdRef.current
+        ) {
+          return [];
         }
 
         // 7. Normalizar y registrar recetas reales
@@ -452,9 +456,12 @@ export function RecipeProvider({
 
         return finalNormalized;
       } catch (err) {
-        // Si fue una versión superada por otra operación, no registrar error
-        if (currentOpVersion < operationVersionRef.current) {
-          return realRecipes;
+        // Si fue una versión superada por otra operación o el usuario cambió, descartar completamente
+        if (
+          currentOpVersion !== operationVersionRef.current ||
+          requestUserId !== activeUserIdRef.current
+        ) {
+          return [];
         }
 
         const msg =
@@ -469,7 +476,10 @@ export function RecipeProvider({
         setErrorCode(code);
         throw err;
       } finally {
-        if (currentOpVersion === operationVersionRef.current) {
+        if (
+          currentOpVersion === operationVersionRef.current &&
+          requestUserId === activeUserIdRef.current
+        ) {
           isGeneratingRef.current = false;
           setIsGenerating(false);
           setIsLoading(false);
@@ -486,6 +496,7 @@ export function RecipeProvider({
       currentPantryFingerprint,
       recipeApiClient,
       setRealRecipes,
+      effectiveUserId,
     ]
   );
 

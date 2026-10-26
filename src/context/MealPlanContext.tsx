@@ -119,6 +119,21 @@ export function MealPlanProvider({
   const activeAbortControllerRef = useRef<AbortController | null>(null);
   const isGeneratingRef = useRef<boolean>(false);
   const operationVersionRef = useRef<number>(0);
+  const activeUserIdRef = useRef<string | null>(effectiveUserId);
+
+  // Ajuste de estado inmediato durante render al cambiar de usuario (evita intermediate renders y cascading effects)
+  const [prevUserIdState, setPrevUserIdState] = useState<string | null>(effectiveUserId);
+  if (effectiveUserId !== prevUserIdState) {
+    setPrevUserIdState(effectiveUserId);
+    setIsGenerating(false);
+    setIsLoading(false);
+    setPlan(null);
+    setLastSnapshot(null);
+    setLastGeneratedAt(null);
+    setError(null);
+    setErrorCode(null);
+    setIsRestoring(Boolean(effectiveUserId));
+  }
 
   // Huella digital reproducible de la despensa actual
   const currentPantryFingerprint = useMemo(() => {
@@ -130,10 +145,11 @@ export function MealPlanProvider({
 
   // Aislamiento reactivo ante cambio de usuario o logout (Fase 5)
   useEffect(() => {
-    if (storageAdapter || initialPlan) return;
+    if (storageAdapter || initialPlan || !effectiveUserId) return;
 
     let isMounted = true;
     const currentVersion = ++operationVersionRef.current;
+    activeUserIdRef.current = effectiveUserId;
 
     if (activeAbortControllerRef.current) {
       activeAbortControllerRef.current.abort();
@@ -142,25 +158,14 @@ export function MealPlanProvider({
     isGeneratingRef.current = false;
 
     const syncMealPlan = async () => {
-      if (!isMounted) return;
-      setIsGenerating(false);
-      setIsLoading(false);
-      setPlan(null);
-      setLastSnapshot(null);
-      setLastGeneratedAt(null);
-      setError(null);
-      setErrorCode(null);
-
-      if (!effectiveUserId) {
-        setIsRestoring(false);
-        return;
-      }
-
-      setIsRestoring(true);
-
       try {
         const stored = await activeStorage.getStoredMealPlan();
-        if (isMounted && currentVersion === operationVersionRef.current && stored) {
+        if (
+          isMounted &&
+          currentVersion === operationVersionRef.current &&
+          effectiveUserId === activeUserIdRef.current &&
+          stored
+        ) {
           setPlan(stored.plan);
           setLastSnapshot(stored.snapshot);
           setLastGeneratedAt(stored.snapshot.generatedAt);
@@ -168,7 +173,7 @@ export function MealPlanProvider({
       } catch (err) {
         console.warn('[MealPlanContext] Error al restaurar plan de usuario:', err);
       } finally {
-        if (isMounted) {
+        if (isMounted && currentVersion === operationVersionRef.current) {
           setIsRestoring(false);
         }
       }
@@ -299,6 +304,7 @@ export function MealPlanProvider({
       const abortController = new AbortController();
       activeAbortControllerRef.current = abortController;
 
+      const requestUserId = effectiveUserId;
       const currentOpVersion = ++operationVersionRef.current;
       isGeneratingRef.current = true;
       setIsGenerating(true);
@@ -341,9 +347,12 @@ export function MealPlanProvider({
           signal: abortController.signal,
         });
 
-        // 6. Verificar si la operación sigue siendo la más reciente
-        if (currentOpVersion < operationVersionRef.current) {
-          return plan;
+        // 6. Verificar si la operación sigue siendo la más reciente y del usuario activo
+        if (
+          currentOpVersion !== operationVersionRef.current ||
+          requestUserId !== activeUserIdRef.current
+        ) {
+          return null;
         }
 
         // 7. Normalizar el plan al modelo de cliente
@@ -372,9 +381,12 @@ export function MealPlanProvider({
 
         return normalizedPlan;
       } catch (err) {
-        // Si la operación fue superada por una posterior, ignorar
-        if (currentOpVersion < operationVersionRef.current) {
-          return plan;
+        // Si la operación fue superada o el usuario cambió, descartar completamente
+        if (
+          currentOpVersion !== operationVersionRef.current ||
+          requestUserId !== activeUserIdRef.current
+        ) {
+          return null;
         }
 
         const msg =
@@ -388,7 +400,10 @@ export function MealPlanProvider({
         setErrorCode(code);
         throw err;
       } finally {
-        if (currentOpVersion === operationVersionRef.current) {
+        if (
+          currentOpVersion === operationVersionRef.current &&
+          requestUserId === activeUserIdRef.current
+        ) {
           isGeneratingRef.current = false;
           setIsGenerating(false);
           setIsLoading(false);
@@ -405,6 +420,7 @@ export function MealPlanProvider({
       currentPantryFingerprint,
       mealPlanApiClient,
       activeStorage,
+      effectiveUserId,
     ]
   );
 

@@ -32,6 +32,7 @@ import {
 } from '../fixtures/demoRecipes';
 import { useBudget } from './BudgetContext';
 import { usePantrySafe } from './PantryContext';
+import { useAuthSafe } from './AuthContext';
 import { recipeApi as defaultRecipeApi, RecipeApiError } from '../services/api/recipeApi';
 
 export interface GenerationSnapshot {
@@ -90,6 +91,7 @@ export interface RecipeProviderProps {
   initialRecipes?: ClientRecipe[];
   initialIsDemoMode?: boolean;
   recipeApiClient?: typeof defaultRecipeApi;
+  userId?: string | null;
 }
 
 export function RecipeProvider({
@@ -97,7 +99,11 @@ export function RecipeProvider({
   initialRecipes,
   initialIsDemoMode = true,
   recipeApiClient = defaultRecipeApi,
+  userId,
 }: RecipeProviderProps) {
+  const auth = useAuthSafe();
+  const effectiveUserId = userId !== undefined ? userId : auth?.user?.id ?? null;
+
   const { budget, servings, maxMinutes } = useBudget();
   const pantry = usePantrySafe();
   const ingredients = useMemo(() => pantry?.ingredients ?? [], [pantry?.ingredients]);
@@ -118,6 +124,37 @@ export function RecipeProvider({
   // Referencias para control de concurrencia y cancelación de peticiones asíncronas
   const activeAbortControllerRef = useRef<AbortController | null>(null);
   const isGeneratingRef = useRef<boolean>(false);
+
+  // Aislamiento reactivo de recetas ante cambio de sesión o logout (Fase 5)
+  useEffect(() => {
+    let isMounted = true;
+    if (activeAbortControllerRef.current) {
+      activeAbortControllerRef.current.abort();
+      activeAbortControllerRef.current = null;
+    }
+    isGeneratingRef.current = false;
+
+    queueMicrotask(() => {
+      if (!isMounted) return;
+      setIsGenerating(false);
+      setIsLoading(false);
+      setSelectedRecipeId(null);
+      setCustomSelectedRecipe(null);
+      setLastSnapshot(null);
+      setError(null);
+      setErrorCode(null);
+
+      if (!initialRecipes) {
+        setRealRecipesState([]);
+        setLastGeneratedAt(null);
+      }
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [effectiveUserId, initialRecipes]);
+
   const operationVersionRef = useRef<number>(0);
 
   // Huella digital reproducible de la despensa actual

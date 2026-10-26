@@ -31,12 +31,13 @@ import {
 } from '../types/mealPlan';
 import { useBudget } from './BudgetContext';
 import { usePantrySafe } from './PantryContext';
+import { useAuthSafe } from './AuthContext';
 import {
   mealPlanApi as defaultMealPlanApi,
   MealPlanApiError,
 } from '../services/api/mealPlanApi';
 import {
-  mealPlanStorage as defaultMealPlanStorage,
+  createMealPlanStorage,
   MealPlanStorageAdapter,
 } from '../services/storage/mealPlanStorage';
 
@@ -79,14 +80,24 @@ export interface MealPlanProviderProps {
   initialPlan?: ClientMealPlan | null;
   mealPlanApiClient?: typeof defaultMealPlanApi;
   storageAdapter?: MealPlanStorageAdapter;
+  userId?: string | null;
 }
 
 export function MealPlanProvider({
   children,
   initialPlan = null,
   mealPlanApiClient = defaultMealPlanApi,
-  storageAdapter = defaultMealPlanStorage,
+  storageAdapter,
+  userId,
 }: MealPlanProviderProps) {
+  const auth = useAuthSafe();
+  const effectiveUserId = userId !== undefined ? userId : auth?.user?.id ?? null;
+
+  const activeStorage = useMemo(() => {
+    if (storageAdapter) return storageAdapter;
+    return createMealPlanStorage(effectiveUserId);
+  }, [storageAdapter, effectiveUserId]);
+
   const { budget, servings, maxMinutes } = useBudget();
   const pantry = usePantrySafe();
   const ingredients = useMemo(() => pantry?.ingredients ?? [], [pantry?.ingredients]);
@@ -94,7 +105,9 @@ export function MealPlanProvider({
   const [plan, setPlan] = useState<ClientMealPlan | null>(initialPlan);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
-  const [isRestoring, setIsRestoring] = useState<boolean>(!initialPlan);
+  const [isRestoring, setIsRestoring] = useState<boolean>(
+    !initialPlan && (storageAdapter !== undefined || effectiveUserId !== null)
+  );
   const [lastGeneratedAt, setLastGeneratedAt] = useState<string | null>(
     initialPlan?.generatedAt ?? null
   );
@@ -115,40 +128,86 @@ export function MealPlanProvider({
       .join('|');
   }, [ingredients]);
 
-  // Carga inicial transparente desde el almacenamiento local con protección de concurrencia
+  // Aislamiento reactivo ante cambio de usuario o logout (Fase 5)
   useEffect(() => {
+    if (storageAdapter || initialPlan) return;
+
     let isMounted = true;
-    const restorationVersion = operationVersionRef.current;
+    const currentVersion = ++operationVersionRef.current;
 
-    if (initialPlan) {
-      return () => {
-        isMounted = false;
-      };
+    if (activeAbortControllerRef.current) {
+      activeAbortControllerRef.current.abort();
+      activeAbortControllerRef.current = null;
     }
+    isGeneratingRef.current = false;
 
-    (async () => {
+    const syncMealPlan = async () => {
+      if (!isMounted) return;
+      setIsGenerating(false);
+      setIsLoading(false);
+      setPlan(null);
+      setLastSnapshot(null);
+      setLastGeneratedAt(null);
+      setError(null);
+      setErrorCode(null);
+
+      if (!effectiveUserId) {
+        setIsRestoring(false);
+        return;
+      }
+
+      setIsRestoring(true);
+
       try {
-        const stored = await storageAdapter.getStoredMealPlan();
-        // Solo restauramos si el componente sigue montado y ninguna operación
-        // posterior (generación o clearMealPlan) ha incrementado operationVersionRef
-        if (stored && isMounted && restorationVersion === operationVersionRef.current) {
+        const stored = await activeStorage.getStoredMealPlan();
+        if (isMounted && currentVersion === operationVersionRef.current && stored) {
           setPlan(stored.plan);
           setLastSnapshot(stored.snapshot);
           setLastGeneratedAt(stored.snapshot.generatedAt);
         }
       } catch (err) {
-        console.warn('[MealPlanContext] No se pudo restaurar el plan guardado:', err);
+        console.warn('[MealPlanContext] Error al restaurar plan de usuario:', err);
       } finally {
         if (isMounted) {
           setIsRestoring(false);
         }
       }
-    })();
+    };
+
+    void syncMealPlan();
 
     return () => {
       isMounted = false;
     };
-  }, [initialPlan, storageAdapter]);
+  }, [effectiveUserId, activeStorage, initialPlan, storageAdapter]);
+
+  // Compatibilidad con pruebas unitarias que inyectan storageAdapter
+  useEffect(() => {
+    let isMounted = true;
+    if (storageAdapter && !initialPlan) {
+      const restorationVersion = operationVersionRef.current;
+      activeStorage
+        .getStoredMealPlan()
+        .then((stored) => {
+          if (stored && isMounted && restorationVersion === operationVersionRef.current) {
+            setPlan(stored.plan);
+            setLastSnapshot(stored.snapshot);
+            setLastGeneratedAt(stored.snapshot.generatedAt);
+          }
+        })
+        .catch((err) => {
+          console.warn('[MealPlanContext] No se pudo restaurar el plan guardado:', err);
+        })
+        .finally(() => {
+          if (isMounted) {
+            setIsRestoring(false);
+          }
+        });
+    }
+    return () => {
+      isMounted = false;
+    };
+  }, [storageAdapter, initialPlan, activeStorage]);
 
   // Detección reactiva de obsolescencia
   const isStale = useMemo(() => {
@@ -306,7 +365,7 @@ export function MealPlanProvider({
 
         // 8. Persistir localmente de forma segura
         try {
-          await storageAdapter.saveMealPlan(normalizedPlan, snapshot);
+          await activeStorage.saveMealPlan(normalizedPlan, snapshot);
         } catch (storageErr) {
           console.warn('[MealPlanContext] Advertencia: No se pudo persistir el plan localmente:', storageErr);
         }
@@ -345,7 +404,7 @@ export function MealPlanProvider({
       maxMinutes,
       currentPantryFingerprint,
       mealPlanApiClient,
-      storageAdapter,
+      activeStorage,
     ]
   );
 
@@ -360,11 +419,12 @@ export function MealPlanProvider({
     setErrorCode(null);
 
     try {
-      await storageAdapter.clearMealPlan();
+      await activeStorage.clearMealPlan();
     } catch (err) {
       console.warn('[MealPlanContext] Error al limpiar el almacenamiento local del plan:', err);
     }
-  }, [cancelGeneration, storageAdapter]);
+  }, [cancelGeneration, activeStorage]);
+
 
   // Limpieza al desmontar
   useEffect(() => {

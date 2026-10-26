@@ -29,10 +29,13 @@ import {
   MIN_SERVINGS,
 } from '../../src/types/budget';
 import { colors, radius, spacing, useTypography } from '../../src/theme';
+import { useAuthSafe } from '../../src/context/AuthContext';
 
 export default function PerfilScreen() {
   const typography = useTypography();
   const router = useRouter();
+  const auth = useAuthSafe();
+
 
   // Estado global de presupuesto y preferencias culinarias
   const {
@@ -69,6 +72,33 @@ export default function PerfilScreen() {
   const [isResetDialogVisible, setIsResetDialogVisible] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
   const [resetError, setResetError] = useState<string | null>(null);
+
+  // Estados locales para el diálogo de confirmación de cierre de sesión (Fase 5 - Stitch Screen 13)
+  const isLoggingOutRef = React.useRef(false);
+  const [isLogoutModalVisible, setIsLogoutModalVisible] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [logoutError, setLogoutError] = useState<string | null>(null);
+
+  const handleConfirmLogout = useCallback(async () => {
+    if (isLoggingOutRef.current || isLoggingOut) return;
+    isLoggingOutRef.current = true;
+    setIsLoggingOut(true);
+    setLogoutError(null);
+
+    try {
+      if (auth?.signOut) {
+        await auth.signOut();
+      }
+      setIsLogoutModalVisible(false);
+      router.replace('/(auth)/login');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Error al cerrar sesión.';
+      setLogoutError(msg);
+    } finally {
+      isLoggingOutRef.current = false;
+      setIsLoggingOut(false);
+    }
+  }, [auth, router, isLoggingOut]);
 
   // Modal informativo para soporte/configuración/acerca de
   const [activeInfoModal, setActiveInfoModal] = useState<'config' | 'help' | 'about' | null>(null);
@@ -692,6 +722,41 @@ export default function PerfilScreen() {
           </Text>
         </View>
 
+        {/* 6B. Enlace de cierre de sesión sobrio y seguro (Google Stitch Screen 13) */}
+        <View style={styles.logoutActionSection}>
+          <Pressable
+            style={({ pressed }) => [
+              styles.logoutButton,
+              isLoggingOut && styles.buttonDisabled,
+              pressed && !isLoggingOut && styles.logoutButtonPressed,
+            ]}
+            onPress={() => {
+              setLogoutError(null);
+              setIsLogoutModalVisible(true);
+            }}
+            disabled={isLoggingOut}
+            accessibilityRole="button"
+            accessibilityLabel="Cerrar sesión"
+            accessibilityHint="Cierra la sesión actual en este dispositivo"
+            testID="btn-logout"
+          >
+            {isLoggingOut ? (
+              <ActivityIndicator size="small" color={colors.secondary} />
+            ) : (
+              <>
+                <MaterialIcons name="logout" size={18} color={colors.secondary} />
+                <Text style={[styles.logoutButtonText, typography.labelMd]}>
+                  Cerrar sesión
+                </Text>
+              </>
+            )}
+          </Pressable>
+
+          <Text style={[styles.resetCaptionText, typography.bodySm]}>
+            Tus datos de despensa permanecen guardados en este dispositivo.
+          </Text>
+        </View>
+
         {/* 7. Accesos rápidos de desarrollo y navegación (compatibilidad total de suite y navegación) */}
         <Card variant="outlined" style={styles.devToolsCard}>
           <Text style={[styles.devToolsTitle, typography.labelSm]}>
@@ -1103,6 +1168,77 @@ export default function PerfilScreen() {
                 fullWidth
                 onPress={() => setIsResetDialogVisible(false)}
                 disabled={isResetting}
+              />
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ================================================================= */}
+      {/* DIÁLOGO MODAL: CONFIRMACIÓN DE CIERRE DE SESIÓN (STITCH SCREEN 13) */}
+      {/* ================================================================= */}
+      <Modal
+        visible={isLogoutModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          if (!isLoggingOut) setIsLogoutModalVisible(false);
+        }}
+        testID="logout-confirm-modal"
+      >
+        <View style={styles.dialogOverlay}>
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={() => {
+              if (!isLoggingOut) setIsLogoutModalVisible(false);
+            }}
+            accessibilityLabel="Cerrar diálogo de confirmación"
+          />
+
+          <View style={styles.dialogCard}>
+            <View style={styles.dialogIconBox}>
+              <MaterialIcons name="logout" size={32} color={colors.secondary} />
+            </View>
+
+            <Text
+              style={[styles.dialogTitle, typography.headlineMd]}
+              testID="logout-dialog-title"
+            >
+              ¿Deseas cerrar tu sesión actual?
+            </Text>
+
+            <Text style={[styles.dialogMessage, typography.bodyMd]}>
+              Tus datos de despensa permanecen guardados en este dispositivo. Tendrás que iniciar sesión nuevamente para acceder a tu cuenta.
+            </Text>
+
+            {logoutError && (
+              <View style={styles.dialogErrorBox} testID="logout-error-banner">
+                <Text style={[styles.dialogErrorText, typography.bodySm]}>
+                  {logoutError}
+                </Text>
+              </View>
+            )}
+
+            <View style={styles.dialogButtonsCol}>
+              <Button
+                testID="logout-confirm-button"
+                title={isLoggingOut ? 'Cerrando sesión...' : 'Cerrar sesión'}
+                variant="secondary"
+                size="md"
+                fullWidth
+                onPress={handleConfirmLogout}
+                disabled={isLoggingOut}
+                loading={isLoggingOut}
+              />
+
+              <Button
+                testID="logout-cancel-button"
+                title="Cancelar"
+                variant="outline"
+                size="md"
+                fullWidth
+                disabled={isLoggingOut}
+                onPress={() => setIsLogoutModalVisible(false)}
               />
             </View>
           </View>
@@ -1614,6 +1750,30 @@ const styles = StyleSheet.create({
     color: colors.outline,
     textAlign: 'center',
     paddingHorizontal: spacing.md,
+  },
+  logoutActionSection: {
+    paddingTop: spacing.xs,
+    paddingBottom: spacing.sm,
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  logoutButton: {
+    width: '100%',
+    paddingVertical: 12,
+    borderRadius: radius.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    backgroundColor: 'transparent',
+  },
+  logoutButtonPressed: {
+    backgroundColor: 'rgba(233, 119, 94, 0.12)',
+    transform: [{ scale: 0.99 }],
+  },
+  logoutButtonText: {
+    color: colors.secondary,
+    fontWeight: '600',
   },
   devToolsCard: {
     backgroundColor: colors.surface,

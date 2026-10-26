@@ -51,6 +51,7 @@ export function AuthProvider({
   const lastAppliedSeqRef = useRef<number>(0);
   const isSigningOutRef = useRef<boolean>(false);
   const lastLoginSeqRef = useRef<number>(0);
+  const initialSessionHandledRef = useRef<boolean>(initialSession !== undefined);
 
   // Inicialización de sesión y suscripción al listener de Supabase Auth
   useEffect(() => {
@@ -63,10 +64,21 @@ export function AuthProvider({
           if (!isMountedRef.current) return;
           const eventSeq = ++authOpSeqRef.current;
 
+          // Protección de ciclo de vida:
+          // Si el estado inicial ya fue determinado o superado por una acción posterior (ej. SIGNED_IN o signOut),
+          // cualquier INITIAL_SESSION tardío o desordenado es obsoleto y se descarta.
+          if (event === 'INITIAL_SESSION') {
+            if (initialSessionHandledRef.current) {
+              setIsInitializing(false);
+              return;
+            }
+            initialSessionHandledRef.current = true;
+          }
+
           // Protección significativa contra eventos fuera de orden
           if (eventSeq < lastAppliedSeqRef.current) return;
 
-          // Si un signOut explícito está en progreso y llega INITIAL_SESSION con usuario previo,
+          // Si un signOut explícito está en progreso y llega un evento con usuario previo,
           // evitamos revivir esa sesión mientras se procesa la salida
           if (isSigningOutRef.current && (event === 'INITIAL_SESSION' || currentSession?.user)) {
             if (event === 'SIGNED_OUT' || !currentSession) {
@@ -78,8 +90,15 @@ export function AuthProvider({
             return;
           }
 
-          if (event === 'SIGNED_IN' && currentSession?.user) {
-            lastLoginSeqRef.current = eventSeq;
+          if (event === 'SIGNED_IN') {
+            initialSessionHandledRef.current = true;
+            if (currentSession?.user) {
+              lastLoginSeqRef.current = eventSeq;
+            }
+          }
+
+          if (event === 'SIGNED_OUT') {
+            initialSessionHandledRef.current = true;
           }
 
           lastAppliedSeqRef.current = eventSeq;
@@ -113,9 +132,11 @@ export function AuthProvider({
           if (
             isMountedRef.current &&
             !isSigningOutRef.current &&
+            !initialSessionHandledRef.current &&
             initSeq >= lastAppliedSeqRef.current
           ) {
             lastAppliedSeqRef.current = initSeq;
+            initialSessionHandledRef.current = true;
             const restoredSession = data?.session ?? null;
             setSession(restoredSession);
             setUser(restoredSession?.user ?? null);
@@ -126,6 +147,7 @@ export function AuthProvider({
         })
         .finally(() => {
           // La inicialización siempre concluye al resolver getSession (éxito, error o descarte por evento)
+          initialSessionHandledRef.current = true;
           if (isMountedRef.current) {
             setIsInitializing(false);
           }
@@ -199,6 +221,7 @@ export function AuthProvider({
         const confirmationPending = Boolean(registeredUser && !registeredSession);
 
         if (registeredSession && isMountedRef.current) {
+          initialSessionHandledRef.current = true;
           const signUpSeq = ++authOpSeqRef.current;
           if (signUpSeq >= lastAppliedSeqRef.current) {
             lastAppliedSeqRef.current = signUpSeq;
@@ -276,6 +299,7 @@ export function AuthProvider({
         }
 
         if (isMountedRef.current) {
+          initialSessionHandledRef.current = true;
           if (signInSeq >= lastAppliedSeqRef.current) {
             lastAppliedSeqRef.current = signInSeq;
             lastLoginSeqRef.current = signInSeq;
@@ -323,6 +347,7 @@ export function AuthProvider({
       }
 
       if (isMountedRef.current) {
+        initialSessionHandledRef.current = true;
         // Garantizar cierre de sesión a menos que un login posterior más nuevo haya ocurrido
         if (signOutSeq >= lastLoginSeqRef.current) {
           lastAppliedSeqRef.current = Math.max(lastAppliedSeqRef.current, signOutSeq);

@@ -48,6 +48,9 @@ export function AuthProvider({
   const isSubmittingRef = useRef<boolean>(false);
   const isMountedRef = useRef<boolean>(true);
   const authOpSeqRef = useRef<number>(0);
+  const lastAppliedSeqRef = useRef<number>(0);
+  const isSigningOutRef = useRef<boolean>(false);
+  const lastLoginSeqRef = useRef<number>(0);
 
   // Inicialización de sesión y suscripción al listener de Supabase Auth
   useEffect(() => {
@@ -56,16 +59,39 @@ export function AuthProvider({
     let authSubscription: { unsubscribe: () => void } | null = null;
     try {
       const { data: authListener } = supabaseClient.auth.onAuthStateChange(
-        (_event, currentSession) => {
+        (event, currentSession) => {
           if (!isMountedRef.current) return;
           const eventSeq = ++authOpSeqRef.current;
-          if (eventSeq < authOpSeqRef.current) return;
 
+          // Protección significativa contra eventos fuera de orden
+          if (eventSeq < lastAppliedSeqRef.current) return;
+
+          // Si un signOut explícito está en progreso y llega INITIAL_SESSION con usuario previo,
+          // evitamos revivir esa sesión mientras se procesa la salida
+          if (isSigningOutRef.current && (event === 'INITIAL_SESSION' || currentSession?.user)) {
+            if (event === 'SIGNED_OUT' || !currentSession) {
+              lastAppliedSeqRef.current = eventSeq;
+              setSession(null);
+              setUser(null);
+              setIsInitializing(false);
+            }
+            return;
+          }
+
+          if (event === 'SIGNED_IN' && currentSession?.user) {
+            lastLoginSeqRef.current = eventSeq;
+          }
+
+          lastAppliedSeqRef.current = eventSeq;
           setSession(currentSession);
           setUser(currentSession?.user ?? null);
           if (currentSession) {
             setAuthError(null);
           }
+
+          // Cualquier evento de ciclo de vida (INITIAL_SESSION, SIGNED_IN, SIGNED_OUT, TOKEN_REFRESHED)
+          // confirma que el estado de autenticación se determinó
+          setIsInitializing(false);
         }
       );
       authSubscription = authListener?.subscription ?? null;
@@ -83,7 +109,13 @@ export function AuthProvider({
           if (error) {
             console.warn('[FoodAI:Auth] Error al restaurar sesión previa:', error.message);
           }
-          if (isMountedRef.current && initSeq === authOpSeqRef.current) {
+          // Solo aplicar si no hay signOut en curso y ningún evento más reciente fijó el estado
+          if (
+            isMountedRef.current &&
+            !isSigningOutRef.current &&
+            initSeq >= lastAppliedSeqRef.current
+          ) {
+            lastAppliedSeqRef.current = initSeq;
             const restoredSession = data?.session ?? null;
             setSession(restoredSession);
             setUser(restoredSession?.user ?? null);
@@ -93,7 +125,8 @@ export function AuthProvider({
           console.warn('[FoodAI:Auth] Excepción al restaurar sesión inicial:', err);
         })
         .finally(() => {
-          if (isMountedRef.current && initSeq >= authOpSeqRef.current) {
+          // La inicialización siempre concluye al resolver getSession (éxito, error o descarte por evento)
+          if (isMountedRef.current) {
             setIsInitializing(false);
           }
         });
@@ -166,9 +199,14 @@ export function AuthProvider({
         const confirmationPending = Boolean(registeredUser && !registeredSession);
 
         if (registeredSession && isMountedRef.current) {
-          authOpSeqRef.current++;
-          setSession(registeredSession);
-          setUser(registeredUser);
+          const signUpSeq = ++authOpSeqRef.current;
+          if (signUpSeq >= lastAppliedSeqRef.current) {
+            lastAppliedSeqRef.current = signUpSeq;
+            lastLoginSeqRef.current = signUpSeq;
+            setSession(registeredSession);
+            setUser(registeredUser);
+          }
+          setIsInitializing(false);
         }
 
         return {
@@ -220,6 +258,7 @@ export function AuthProvider({
         throw new Error(msg);
       }
 
+      const signInSeq = ++authOpSeqRef.current;
       isSubmittingRef.current = true;
       setIsSubmitting(true);
       setAuthError(null);
@@ -237,10 +276,14 @@ export function AuthProvider({
         }
 
         if (isMountedRef.current) {
-          authOpSeqRef.current++;
-          setSession(data.session);
-          setUser(data.user);
-          setAuthError(null);
+          if (signInSeq >= lastAppliedSeqRef.current) {
+            lastAppliedSeqRef.current = signInSeq;
+            lastLoginSeqRef.current = signInSeq;
+            setSession(data.session);
+            setUser(data.user);
+            setAuthError(null);
+          }
+          setIsInitializing(false);
         }
 
         return {
@@ -265,7 +308,8 @@ export function AuthProvider({
    * Cierre de sesión seguro mediante supabase.auth.signOut()
    */
   const signOut = useCallback(async () => {
-    const opSeq = ++authOpSeqRef.current;
+    const signOutSeq = ++authOpSeqRef.current;
+    isSigningOutRef.current = true;
     isSubmittingRef.current = true;
     setIsSubmitting(true);
     setAuthError(null);
@@ -278,9 +322,13 @@ export function AuthProvider({
         throw new Error(friendlyMessage);
       }
 
-      if (isMountedRef.current && opSeq >= authOpSeqRef.current) {
-        setSession(null);
-        setUser(null);
+      if (isMountedRef.current) {
+        // Garantizar cierre de sesión a menos que un login posterior más nuevo haya ocurrido
+        if (signOutSeq >= lastLoginSeqRef.current) {
+          lastAppliedSeqRef.current = Math.max(lastAppliedSeqRef.current, signOutSeq);
+          setSession(null);
+          setUser(null);
+        }
         setIsInitializing(false);
       }
     } catch (err) {
@@ -288,6 +336,7 @@ export function AuthProvider({
       setAuthError(msg);
       throw err instanceof Error ? err : new Error(msg);
     } finally {
+      isSigningOutRef.current = false;
       isSubmittingRef.current = false;
       if (isMountedRef.current) {
         setIsSubmitting(false);

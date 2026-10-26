@@ -32,7 +32,7 @@ export function ProfileHeader({
 }: ProfileHeaderProps) {
   const typography = useTypography();
   const displayName = getUserDisplayName(user);
-  const email = user?.email ?? 'correo@no-disponible.com';
+  const email = user?.email ?? 'Correo no disponible';
   const initials = getAvatarInitials(displayName || email);
   const isEmailVerified = Boolean(user?.email_confirmed_at || user?.confirmed_at);
 

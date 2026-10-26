@@ -19,6 +19,7 @@ export interface StepperProps {
   disabled?: boolean;
   accessibilityLabel?: string;
   accessibilityHint?: string;
+  testID?: string;
   style?: ViewStyle;
 }
 
@@ -43,6 +44,7 @@ export const Stepper: React.FC<StepperProps> = ({
   disabled = false,
   accessibilityLabel = 'Ajustar cantidad',
   accessibilityHint,
+  testID,
   style,
 }) => {
   const typography = useTypography();
@@ -110,6 +112,7 @@ export const Stepper: React.FC<StepperProps> = ({
       style={[styles.container, disabled && styles.containerDisabled, style]}
       accessibilityLabel={accessibilityLabel}
       accessibilityHint={accessibilityHint}
+      testID={testID}
     >
       <Pressable
         onPress={handleDecrement}

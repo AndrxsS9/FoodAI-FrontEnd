@@ -239,4 +239,179 @@ describe('BudgetContext & useBudget (Fase 2C)', () => {
     expect(result.current.servings).toBe(DEFAULT_SERVINGS);
     expect(result.current.maxMinutes).toBeUndefined();
   });
+
+  describe('updatePreferences atómico (Fase 4 - FIX 1)', () => {
+    it('persiste y actualiza múltiples preferencias de forma atómica en una única operación', async () => {
+      const mockSaveAdapter: BudgetStorageAdapter = {
+        getPreferences: jest.fn().mockResolvedValue(defaultBudgetPreferences),
+        savePreferences: jest.fn().mockImplementation(async (patch) => ({
+          budget: patch.budget ?? 20000,
+          servings: patch.servings ?? 2,
+          maxMinutes: patch.resetMaxMinutes ? undefined : patch.maxMinutes,
+          updatedAt: new Date().toISOString(),
+        })),
+        resetPreferences: jest.fn().mockResolvedValue(defaultBudgetPreferences),
+      };
+
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        <BudgetProvider
+          storageAdapter={mockSaveAdapter}
+          initialPreferences={{ budget: 20000, servings: 2, maxMinutes: 30 }}
+        >
+          {children}
+        </BudgetProvider>
+      );
+
+      const { result } = await renderHook(() => useBudget(), { wrapper });
+
+      await act(async () => {
+        const committed = await result.current.updatePreferences({
+          budget: 55000,
+          servings: 4,
+          maxMinutes: 45,
+        });
+        expect(committed.budget).toBe(55000);
+        expect(committed.servings).toBe(4);
+        expect(committed.maxMinutes).toBe(45);
+      });
+
+      expect(mockSaveAdapter.savePreferences).toHaveBeenCalledTimes(1);
+      expect(mockSaveAdapter.savePreferences).toHaveBeenCalledWith({
+        budget: 55000,
+        servings: 4,
+        maxMinutes: 45,
+      });
+      expect(result.current.budget).toBe(55000);
+      expect(result.current.servings).toBe(4);
+      expect(result.current.maxMinutes).toBe(45);
+    });
+
+    it('valida todas las entradas antes de persistir y no invoca almacenamiento si hay campos inválidos', async () => {
+      const mockSaveAdapter: BudgetStorageAdapter = {
+        getPreferences: jest.fn().mockResolvedValue(defaultBudgetPreferences),
+        savePreferences: jest.fn(),
+        resetPreferences: jest.fn(),
+      };
+
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        <BudgetProvider
+          storageAdapter={mockSaveAdapter}
+          initialPreferences={{ budget: 20000, servings: 2 }}
+        >
+          {children}
+        </BudgetProvider>
+      );
+
+      const { result } = await renderHook(() => useBudget(), { wrapper });
+
+      // Presupuesto inválido
+      let budgetError: Error | undefined;
+      await act(async () => {
+        try {
+          await result.current.updatePreferences({ budget: -5000, servings: 4 });
+        } catch (e) {
+          budgetError = e as Error;
+        }
+      });
+      expect(budgetError?.message).toBe('El presupuesto no puede ser un valor negativo.');
+
+      // Porciones inválidas
+      let servingsError: Error | undefined;
+      await act(async () => {
+        try {
+          await result.current.updatePreferences({ budget: 30000, servings: 20 });
+        } catch (e) {
+          servingsError = e as Error;
+        }
+      });
+      expect(servingsError?.message).toBe('El número de personas debe estar entre 1 y 12.');
+
+      // Tiempo inválido
+      let timeError: Error | undefined;
+      await act(async () => {
+        try {
+          await result.current.updatePreferences({ maxMinutes: 500 });
+        } catch (e) {
+          timeError = e as Error;
+        }
+      });
+      expect(timeError?.message).toBe('El tiempo máximo debe estar entre 1 y 240 minutos.');
+
+      expect(mockSaveAdapter.savePreferences).not.toHaveBeenCalled();
+    });
+
+    it('permite remover el límite de tiempo opcional con resetMaxMinutes o maxMinutes null', async () => {
+      const mockSaveAdapter: BudgetStorageAdapter = {
+        getPreferences: jest.fn().mockResolvedValue(defaultBudgetPreferences),
+        savePreferences: jest.fn().mockImplementation(async (patch) => ({
+          budget: patch.budget ?? 20000,
+          servings: patch.servings ?? 2,
+          maxMinutes: patch.resetMaxMinutes ? undefined : patch.maxMinutes,
+          updatedAt: new Date().toISOString(),
+        })),
+        resetPreferences: jest.fn(),
+      };
+
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        <BudgetProvider
+          storageAdapter={mockSaveAdapter}
+          initialPreferences={{ budget: 20000, servings: 2, maxMinutes: 60 }}
+        >
+          {children}
+        </BudgetProvider>
+      );
+
+      const { result } = await renderHook(() => useBudget(), { wrapper });
+      expect(result.current.maxMinutes).toBe(60);
+
+      await act(async () => {
+        await result.current.updatePreferences({ maxMinutes: null });
+      });
+
+      expect(mockSaveAdapter.savePreferences).toHaveBeenCalledWith({
+        resetMaxMinutes: true,
+        maxMinutes: null,
+      });
+      expect(result.current.maxMinutes).toBeUndefined();
+    });
+
+    it('no aplica mutaciones parciales ni altera el estado si storageAdapter.savePreferences falla', async () => {
+      const failingAdapter: BudgetStorageAdapter = {
+        getPreferences: jest.fn().mockResolvedValue(defaultBudgetPreferences),
+        savePreferences: jest.fn().mockRejectedValue(new Error('Fallo de almacenamiento')),
+        resetPreferences: jest.fn(),
+      };
+
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        <BudgetProvider
+          storageAdapter={failingAdapter}
+          initialPreferences={{ budget: 20000, servings: 2, maxMinutes: 30 }}
+        >
+          {children}
+        </BudgetProvider>
+      );
+
+      const { result } = await renderHook(() => useBudget(), { wrapper });
+
+      let thrownError: Error | undefined;
+      await act(async () => {
+        try {
+          await result.current.updatePreferences({
+            budget: 90000,
+            servings: 6,
+            maxMinutes: 90,
+          });
+        } catch (err) {
+          thrownError = err as Error;
+        }
+      });
+
+      expect(thrownError?.message).toBe('Fallo de almacenamiento');
+      expect(result.current.storageError).toBe('Fallo de almacenamiento');
+      // Estado intacto: ninguna propiedad cambió
+      expect(result.current.budget).toBe(20000);
+      expect(result.current.servings).toBe(2);
+      expect(result.current.maxMinutes).toBe(30);
+    });
+  });
 });

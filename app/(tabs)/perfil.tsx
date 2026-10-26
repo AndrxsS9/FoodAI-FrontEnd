@@ -94,9 +94,10 @@ export default function PerfilScreen() {
     async (newName: string) => {
       setIsUpdatingName(true);
       try {
-        if (auth?.updateProfile) {
-          await auth.updateProfile({ displayName: newName });
+        if (!auth?.updateProfile) {
+          throw new Error('No se pudo actualizar el perfil. Inicia sesión nuevamente.');
         }
+        await auth.updateProfile({ displayName: newName });
         setSuccessFeedback('Nombre de perfil actualizado correctamente.');
       } finally {
         setIsUpdatingName(false);

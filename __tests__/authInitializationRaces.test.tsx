@@ -385,4 +385,77 @@ describe('FoodAI Phase 5 — Auth Initialization Race Protection Tests', () => {
     expect(result.current.isAuthenticated).toBe(false);
     expect(result.current.user).toBeNull();
   });
+
+  // 10. Targeted Check 1: User B receives SIGNED_IN, then a delayed INITIAL_SESSION containing User A arrives. User B must remain authenticated.
+  it('keeps User B authenticated when a delayed INITIAL_SESSION containing User A arrives after SIGNED_IN', async () => {
+    const getSessionDeferred = createDeferred<{ data: { session: AuthSession | null }; error: null }>();
+    const mockSupabase = createMockSupabase(getSessionDeferred.promise);
+
+    const { result } = await renderHook(() => useAuth(), {
+      wrapper: ({ children }: { children: React.ReactNode }) => (
+        <AuthProvider supabaseClient={mockSupabase}>{children}</AuthProvider>
+      ),
+    });
+
+    // 1. User B receives SIGNED_IN
+    await act(async () => {
+      authListenerCallback('SIGNED_IN', SESSION_B);
+    });
+
+    expect(result.current.isAuthenticated).toBe(true);
+    expect(result.current.user?.id).toBe(USER_B.id);
+    expect(result.current.user?.email).toBe(USER_B.email);
+
+    // 2. Delayed INITIAL_SESSION containing User A arrives
+    await act(async () => {
+      authListenerCallback('INITIAL_SESSION', SESSION_A);
+    });
+
+    // User B must remain authenticated; stale User A must not overwrite User B
+    expect(result.current.isAuthenticated).toBe(true);
+    expect(result.current.user?.id).toBe(USER_B.id);
+    expect(result.current.user?.email).toBe(USER_B.email);
+    expect(result.current.session?.access_token).toBe(SESSION_B.access_token);
+    expect(result.current.isInitializing).toBe(false);
+  });
+
+  // 11. Targeted Check 2: User A successfully completes signOut, then a delayed INITIAL_SESSION containing User A arrives. The user must remain signed out.
+  it('keeps user signed out when a delayed INITIAL_SESSION containing User A arrives after signOut completed', async () => {
+    const getSessionDeferred = createDeferred<{ data: { session: AuthSession | null }; error: null }>();
+    const signOutDeferred = createDeferred<{ error: null }>();
+    const mockSupabase = createMockSupabase(getSessionDeferred.promise, signOutDeferred.promise);
+
+    const { result } = await renderHook(() => useAuth(), {
+      wrapper: ({ children }: { children: React.ReactNode }) => (
+        <AuthProvider supabaseClient={mockSupabase} initialSession={SESSION_A}>
+          {children}
+        </AuthProvider>
+      ),
+    });
+
+    expect(result.current.isAuthenticated).toBe(true);
+    expect(result.current.user?.id).toBe(USER_A.id);
+
+    // 1. User A successfully completes signOut
+    await act(async () => {
+      const p = result.current.signOut();
+      signOutDeferred.resolve({ error: null });
+      await p;
+    });
+
+    expect(result.current.isAuthenticated).toBe(false);
+    expect(result.current.user).toBeNull();
+    expect(result.current.session).toBeNull();
+
+    // 2. Delayed INITIAL_SESSION containing User A arrives
+    await act(async () => {
+      authListenerCallback('INITIAL_SESSION', SESSION_A);
+    });
+
+    // The user must remain signed out; delayed INITIAL_SESSION must not revive User A
+    expect(result.current.isAuthenticated).toBe(false);
+    expect(result.current.user).toBeNull();
+    expect(result.current.session).toBeNull();
+    expect(result.current.isInitializing).toBe(false);
+  });
 });

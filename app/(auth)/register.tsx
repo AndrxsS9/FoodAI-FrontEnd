@@ -161,8 +161,9 @@ export default function RegisterScreen() {
           </View>
 
           <Text style={[styles.confirmationSubtext, typography.bodySm]}>
-            Por favor, revisa tu bandeja de entrada y confirma tu cuenta antes de iniciar sesión.
-            No podrás acceder a la aplicación hasta completar este paso.
+            1. Revisa tu bandeja de entrada y confirma tu cuenta abriendo el enlace en tu navegador web.
+            {'\n\n'}
+            2. Una vez confirmada tu cuenta en el navegador, regresa a FoodAI e inicia sesión manualmente con tu correo y contraseña.
           </Text>
 
           <Pressable

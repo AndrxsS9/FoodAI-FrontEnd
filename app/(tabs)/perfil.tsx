@@ -41,9 +41,7 @@ export default function PerfilScreen() {
     maxMinutes,
     isLoading: isBudgetLoading,
     storageError,
-    setBudget,
-    setServings,
-    setMaxMinutes,
+    updatePreferences,
     resetBudget,
     clearStorageError,
   } = useBudget();
@@ -80,6 +78,7 @@ export default function PerfilScreen() {
 
   // Sincronizar valores temporales cuando se abre el modal de edición
   const handleOpenEditModal = useCallback(() => {
+    if (isBudgetLoading || isSaving || isSavingRef.current) return;
     setTempBudget(String(budget));
     setTempServings(servings);
     setHasTimeLimit(maxMinutes !== undefined && maxMinutes !== null);
@@ -88,7 +87,7 @@ export default function PerfilScreen() {
     setSaveError(null);
     clearStorageError();
     setIsEditModalVisible(true);
-  }, [budget, servings, maxMinutes, clearStorageError]);
+  }, [isBudgetLoading, isSaving, budget, servings, maxMinutes, clearStorageError]);
 
   const handleCloseEditModal = useCallback(() => {
     if (isSaving || isSavingRef.current) return;
@@ -106,9 +105,9 @@ export default function PerfilScreen() {
     return () => clearTimeout(timer);
   }, [successFeedback]);
 
-  // Guardar preferencias con validación y serialización asíncrona
+  // Guardar preferencias con validación y persistencia atómica multipropiedad
   const handleSavePreferences = async () => {
-    if (isSaving || isSavingRef.current) return;
+    if (isBudgetLoading || isSaving || isSavingRef.current) return;
     const errors: { budget?: string; servings?: string; maxMinutes?: string } = {};
 
     // 1. Validar presupuesto
@@ -157,19 +156,13 @@ export default function PerfilScreen() {
 
     try {
       const finalBudget = Math.round(Number(sanitizedBudget));
-      const budgetChanged = finalBudget !== budget;
-      const servingsChanged = tempServings !== servings;
-      const maxMinutesChanged = (parsedMinutesToSave ?? undefined) !== (maxMinutes ?? undefined);
 
-      if (budgetChanged) {
-        await setBudget(finalBudget);
-      }
-      if (servingsChanged) {
-        await setServings(tempServings);
-      }
-      if (maxMinutesChanged) {
-        await setMaxMinutes(parsedMinutesToSave);
-      }
+      await updatePreferences({
+        budget: finalBudget,
+        servings: tempServings,
+        maxMinutes: hasTimeLimit ? parsedMinutesToSave : null,
+        resetMaxMinutes: !hasTimeLimit,
+      });
 
       setIsEditModalVisible(false);
       setSuccessFeedback('Preferencias guardadas exitosamente.');
@@ -187,7 +180,7 @@ export default function PerfilScreen() {
 
   // Restablecer valores predeterminados tras confirmación
   const handleConfirmReset = async () => {
-    if (isResetting || isResettingRef.current) return;
+    if (isBudgetLoading || isResetting || isResettingRef.current) return;
     isResettingRef.current = true;
     setIsResetting(true);
     setResetError(null);
@@ -303,21 +296,21 @@ export default function PerfilScreen() {
           </View>
         )}
 
-        {/* 2. Tarjeta Cabecera de Usuario (Stitch Screen 13) */}
+        {/* 2. Tarjeta Cabecera de Hogar Local (Stitch Screen 13) */}
         <Card variant="elevated" style={styles.userHeaderCard}>
           <View style={styles.userHeaderLeft}>
             <View
               style={styles.userAvatarInitials}
               accessibilityRole="image"
-              accessibilityLabel="Avatar de Camila R."
+              accessibilityLabel="Avatar de Mi hogar"
             >
-              <Text style={[styles.userAvatarText, typography.headlineMd]}>CR</Text>
+              <Text style={[styles.userAvatarText, typography.headlineMd]}>MH</Text>
             </View>
 
             <View style={styles.userMetaCol}>
               <View style={styles.userNameRow}>
                 <Text style={[styles.userNameText, typography.headlineMd]}>
-                  Camila R.
+                  Mi hogar
                 </Text>
                 <View style={styles.householdPill}>
                   <Text style={[styles.householdPillText, typography.labelSm]}>
@@ -331,8 +324,12 @@ export default function PerfilScreen() {
             </View>
           </View>
 
-          <View style={styles.verifiedIconWrapper}>
-            <MaterialIcons name="verified-user" size={22} color={colors.outline} />
+          <View
+            style={styles.verifiedIconWrapper}
+            accessibilityRole="image"
+            accessibilityLabel="Perfil local del dispositivo"
+          >
+            <MaterialIcons name="home" size={22} color={colors.primary} />
           </View>
         </Card>
 
@@ -401,7 +398,12 @@ export default function PerfilScreen() {
 
           {/* Indicador sutil de carga de presupuesto */}
           {isBudgetLoading && (
-            <View style={styles.budgetLoadingInline}>
+            <View
+              style={styles.budgetLoadingInline}
+              accessibilityRole="progressbar"
+              accessibilityLabel="Cargando preferencias guardadas..."
+              testID="budget-loading-banner"
+            >
               <ActivityIndicator size="small" color={colors.primary} />
               <Text style={[styles.budgetLoadingText, typography.bodySm]}>
                 Cargando preferencias guardadas...
@@ -414,10 +416,13 @@ export default function PerfilScreen() {
             <Pressable
               style={({ pressed }) => [
                 styles.preferenceRow,
-                pressed && styles.preferenceRowPressed,
+                (isBudgetLoading || isSaving) && styles.buttonDisabled,
+                pressed && !(isBudgetLoading || isSaving) && styles.preferenceRowPressed,
               ]}
               onPress={handleOpenEditModal}
+              disabled={isBudgetLoading || isSaving}
               accessibilityRole="button"
+              accessibilityState={{ disabled: isBudgetLoading || isSaving, busy: isBudgetLoading }}
               accessibilityLabel={`Porciones habituales: ${servings} ${servings === 1 ? 'persona' : 'personas'}. Toca para modificar.`}
               testID="preference-row-servings"
             >
@@ -446,10 +451,13 @@ export default function PerfilScreen() {
             <Pressable
               style={({ pressed }) => [
                 styles.preferenceRow,
-                pressed && styles.preferenceRowPressed,
+                (isBudgetLoading || isSaving) && styles.buttonDisabled,
+                pressed && !(isBudgetLoading || isSaving) && styles.preferenceRowPressed,
               ]}
               onPress={handleOpenEditModal}
+              disabled={isBudgetLoading || isSaving}
               accessibilityRole="button"
+              accessibilityState={{ disabled: isBudgetLoading || isSaving, busy: isBudgetLoading }}
               accessibilityLabel={`Presupuesto por comida: ${formatCopCurrency(budget, true)}. Toca para modificar.`}
               testID="preference-row-budget"
             >
@@ -478,10 +486,13 @@ export default function PerfilScreen() {
             <Pressable
               style={({ pressed }) => [
                 styles.preferenceRow,
-                pressed && styles.preferenceRowPressed,
+                (isBudgetLoading || isSaving) && styles.buttonDisabled,
+                pressed && !(isBudgetLoading || isSaving) && styles.preferenceRowPressed,
               ]}
               onPress={handleOpenEditModal}
+              disabled={isBudgetLoading || isSaving}
               accessibilityRole="button"
+              accessibilityState={{ disabled: isBudgetLoading || isSaving, busy: isBudgetLoading }}
               accessibilityLabel={`Tiempo máximo de cocción: ${maxMinutes ? `${maxMinutes} min` : 'Sin límite'}. Toca para modificar.`}
               testID="preference-row-time"
             >
@@ -511,16 +522,33 @@ export default function PerfilScreen() {
           <Pressable
             style={({ pressed }) => [
               styles.editPreferencesButton,
-              pressed && styles.editPreferencesButtonPressed,
+              (isBudgetLoading || isSaving) && styles.buttonDisabled,
+              pressed && !(isBudgetLoading || isSaving) && styles.editPreferencesButtonPressed,
             ]}
             onPress={handleOpenEditModal}
+            disabled={isBudgetLoading || isSaving}
             accessibilityRole="button"
-            accessibilityLabel="Editar preferencias culinarias"
+            accessibilityState={{ disabled: isBudgetLoading || isSaving, busy: isBudgetLoading }}
+            accessibilityLabel={
+              isBudgetLoading
+                ? 'Cargando preferencias guardadas. Por favor espera.'
+                : 'Editar preferencias culinarias'
+            }
             testID="btn-edit-pref"
           >
-            <MaterialIcons name="edit" size={18} color={colors.primary} />
-            <Text style={[styles.editPreferencesButtonText, typography.labelLg]}>
-              Editar preferencias
+            {isBudgetLoading ? (
+              <ActivityIndicator size="small" color={colors.outline} style={{ marginRight: spacing.xs }} />
+            ) : (
+              <MaterialIcons name="edit" size={18} color={colors.primary} />
+            )}
+            <Text
+              style={[
+                styles.editPreferencesButtonText,
+                typography.labelLg,
+                (isBudgetLoading || isSaving) && styles.textDisabled,
+              ]}
+            >
+              {isBudgetLoading ? 'Cargando preferencias...' : 'Editar preferencias'}
             </Text>
           </Pressable>
         </Card>
@@ -625,19 +653,37 @@ export default function PerfilScreen() {
           <Pressable
             style={({ pressed }) => [
               styles.resetPreferencesButton,
-              pressed && styles.resetPreferencesButtonPressed,
+              (isBudgetLoading || isResetting) && styles.buttonDisabled,
+              pressed && !(isBudgetLoading || isResetting) && styles.resetPreferencesButtonPressed,
             ]}
             onPress={() => {
+              if (isBudgetLoading || isResetting || isResettingRef.current) return;
               setResetError(null);
               setIsResetDialogVisible(true);
             }}
+            disabled={isBudgetLoading || isResetting}
             accessibilityRole="button"
-            accessibilityLabel="Restablecer preferencias a los valores iniciales"
+            accessibilityState={{ disabled: isBudgetLoading || isResetting, busy: isBudgetLoading }}
+            accessibilityLabel={
+              isBudgetLoading
+                ? 'Cargando preferencias guardadas. Por favor espera.'
+                : 'Restablecer preferencias a los valores iniciales'
+            }
             testID="btn-reset-preferences"
           >
-            <MaterialIcons name="restart-alt" size={20} color={colors.secondary} />
-            <Text style={[styles.resetPreferencesButtonText, typography.labelMd]}>
-              Restablecer preferencias
+            <MaterialIcons
+              name="restart-alt"
+              size={20}
+              color={isBudgetLoading || isResetting ? colors.outline : colors.secondary}
+            />
+            <Text
+              style={[
+                styles.resetPreferencesButtonText,
+                typography.labelMd,
+                (isBudgetLoading || isResetting) && styles.textDisabled,
+              ]}
+            >
+              {isBudgetLoading ? 'Cargando preferencias...' : 'Restablecer preferencias'}
             </Text>
           </Pressable>
 
@@ -1045,7 +1091,7 @@ export default function PerfilScreen() {
                 size="md"
                 fullWidth
                 onPress={handleConfirmReset}
-                disabled={isResetting}
+                disabled={isResetting || isBudgetLoading}
                 loading={isResetting}
               />
 
@@ -1557,6 +1603,12 @@ const styles = StyleSheet.create({
   resetPreferencesButtonText: {
     color: colors.secondary,
     fontWeight: '700',
+  },
+  buttonDisabled: {
+    opacity: 0.5,
+  },
+  textDisabled: {
+    color: colors.outline,
   },
   resetCaptionText: {
     color: colors.outline,

@@ -1,10 +1,11 @@
 /**
- * FoodAI - Contexto global y proveedor de presupuesto compartido (Fase 2C).
+ * FoodAI - Contexto global y proveedor de presupuesto compartido (Fase 2C & Fase 4).
  * Sincroniza el presupuesto disponible, número de comensales y tiempo preferido
  * entre el Inicio, la Despensa y el Descubrimiento de Recetas.
  *
  * Incluye protección contra condiciones de carrera, hidratación obsoleta,
- * serialización de mutaciones y propagación explícita de errores de almacenamiento.
+ * persistencia atómica multipropiedad, serialización de mutaciones y propagación
+ * explícita de errores de almacenamiento.
  */
 import React, {
   createContext,
@@ -19,6 +20,7 @@ import {
   DEFAULT_BUDGET_COP,
   DEFAULT_SERVINGS,
   BudgetPreferences,
+  SaveBudgetPreferencesInput,
 } from '../types/budget';
 import {
   BudgetStorageAdapter,
@@ -40,6 +42,7 @@ export interface BudgetContextValue {
   setBudget: (amount: number) => Promise<void>;
   setServings: (servings: number) => Promise<void>;
   setMaxMinutes: (minutes?: number | null) => Promise<void>;
+  updatePreferences: (input: SaveBudgetPreferencesInput) => Promise<BudgetPreferences>;
   resetBudget: () => Promise<void>;
   clearStorageError: () => void;
   refresh: () => Promise<void>;
@@ -54,6 +57,7 @@ const defaultBudgetContextValue: BudgetContextValue = {
   setBudget: async () => {},
   setServings: async () => {},
   setMaxMinutes: async () => {},
+  updatePreferences: async () => defaultBudgetPreferences,
   resetBudget: async () => {},
   clearStorageError: () => {},
   refresh: async () => {},
@@ -149,94 +153,97 @@ export function BudgetProvider({
     };
   }, [storageAdapter, initialPreferences]);
 
-  const setBudget = useCallback(
-    async (amount: number): Promise<void> => {
-      const validation = validateBudgetInput(amount);
-      if (!validation.isValid) {
-        throw new Error(validation.error);
-      }
-      const safeAmount = Math.round(amount);
-      const opVersion = ++nextOperationVersionRef.current;
-      setStorageError(null);
-
-      try {
-        const committed = await storageAdapter.savePreferences({ budget: safeAmount });
-        if (opVersion >= lastAppliedVersionRef.current) {
-          lastAppliedVersionRef.current = opVersion;
-          setPreferences(committed);
-        }
-      } catch (error) {
-        const message =
-          error instanceof Error
-            ? error.message
-            : 'Error al persistir el nuevo presupuesto.';
-        setStorageError(message);
-        throw error;
-      }
-    },
-    [storageAdapter]
-  );
-
-  const setServings = useCallback(
-    async (servings: number): Promise<void> => {
-      const validation = validateServingsInput(servings);
-      if (!validation.isValid) {
-        throw new Error(validation.error);
-      }
-      const safeServings = Math.round(servings);
-      const opVersion = ++nextOperationVersionRef.current;
-      setStorageError(null);
-
-      try {
-        const committed = await storageAdapter.savePreferences({ servings: safeServings });
-        if (opVersion >= lastAppliedVersionRef.current) {
-          lastAppliedVersionRef.current = opVersion;
-          setPreferences(committed);
-        }
-      } catch (error) {
-        const message =
-          error instanceof Error
-            ? error.message
-            : 'Error al persistir el número de comensales.';
-        setStorageError(message);
-        throw error;
-      }
-    },
-    [storageAdapter]
-  );
-
-  const setMaxMinutes = useCallback(
-    async (minutes?: number | null): Promise<void> => {
-      if (minutes !== undefined && minutes !== null) {
-        const validation = validateMaxMinutesInput(minutes);
+  /**
+   * Operación atómica de actualización de preferencias de presupuesto.
+   * Valida exhaustivamente todas las mutaciones antes de persistir,
+   * despacha una sola transacción contra el adaptador y actualiza el
+   * estado únicamente tras el éxito de la escritura.
+   */
+  const updatePreferences = useCallback(
+    async (input: SaveBudgetPreferencesInput): Promise<BudgetPreferences> => {
+      // 1. Validar exhaustivamente todas las entradas solicitadas antes de invocar almacenamiento
+      if (input.budget !== undefined) {
+        const validation = validateBudgetInput(input.budget);
         if (!validation.isValid) {
           throw new Error(validation.error);
         }
       }
 
+      if (input.servings !== undefined) {
+        const validation = validateServingsInput(input.servings);
+        if (!validation.isValid) {
+          throw new Error(validation.error);
+        }
+      }
+
+      const isRemovingLimit = input.resetMaxMinutes === true || input.maxMinutes === null;
+      if (!isRemovingLimit && input.maxMinutes !== undefined) {
+        const validation = validateMaxMinutesInput(input.maxMinutes);
+        if (!validation.isValid) {
+          throw new Error(validation.error);
+        }
+      }
+
+      // 2. Construir el parche atómico validado y sanitizado
+      const patch: SaveBudgetPreferencesInput = {};
+      if (input.budget !== undefined) {
+        patch.budget = Math.round(input.budget);
+      }
+      if (input.servings !== undefined) {
+        patch.servings = Math.round(input.servings);
+      }
+      if (isRemovingLimit) {
+        patch.resetMaxMinutes = true;
+        patch.maxMinutes = null;
+      } else if (typeof input.maxMinutes === 'number') {
+        patch.maxMinutes = Math.round(input.maxMinutes);
+      }
+
       const opVersion = ++nextOperationVersionRef.current;
       setStorageError(null);
 
       try {
-        const committed = await storageAdapter.savePreferences(
-          minutes === null || minutes === undefined
-            ? { resetMaxMinutes: true }
-            : { maxMinutes: Math.round(minutes) }
-        );
+        const committed = await storageAdapter.savePreferences(patch);
         if (opVersion >= lastAppliedVersionRef.current) {
           lastAppliedVersionRef.current = opVersion;
           setPreferences(committed);
         }
+        return committed;
       } catch (error) {
         const message =
           error instanceof Error
             ? error.message
-            : 'Error al persistir el tiempo máximo de preparación.';
+            : 'Error al persistir las preferencias de presupuesto.';
         setStorageError(message);
         throw error;
       }
     },
     [storageAdapter]
+  );
+
+  const setBudget = useCallback(
+    async (amount: number): Promise<void> => {
+      await updatePreferences({ budget: amount });
+    },
+    [updatePreferences]
+  );
+
+  const setServings = useCallback(
+    async (servings: number): Promise<void> => {
+      await updatePreferences({ servings });
+    },
+    [updatePreferences]
+  );
+
+  const setMaxMinutes = useCallback(
+    async (minutes?: number | null): Promise<void> => {
+      await updatePreferences(
+        minutes === null || minutes === undefined
+          ? { resetMaxMinutes: true, maxMinutes: null }
+          : { maxMinutes: minutes }
+      );
+    },
+    [updatePreferences]
   );
 
   const resetBudget = useCallback(async (): Promise<void> => {
@@ -255,7 +262,7 @@ export function BudgetProvider({
           : 'Error al reiniciar las preferencias de presupuesto.';
       setStorageError(message);
       throw error;
-      }
+    }
   }, [storageAdapter]);
 
   const clearStorageError = useCallback(() => {
@@ -272,6 +279,7 @@ export function BudgetProvider({
       setBudget,
       setServings,
       setMaxMinutes,
+      updatePreferences,
       resetBudget,
       clearStorageError,
       refresh: loadFromStorage,
@@ -285,6 +293,7 @@ export function BudgetProvider({
       setBudget,
       setServings,
       setMaxMinutes,
+      updatePreferences,
       resetBudget,
       clearStorageError,
       loadFromStorage,

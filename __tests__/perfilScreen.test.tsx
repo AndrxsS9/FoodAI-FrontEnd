@@ -133,14 +133,15 @@ describe('Pantalla de Perfil y Configuración (PerfilScreen - Fase 4)', () => {
       expect(getByLabelText('Logotipo de Recetario por Presupuesto')).toBeTruthy();
     });
 
-    it('renderiza la tarjeta de cabecera de usuario con avatar CR y etiqueta Hogar', async () => {
+    it('renderiza la tarjeta de presentación de hogar local con avatar MH y etiqueta Hogar', async () => {
       const { getByText, getByLabelText } = await renderWithProviders(<PerfilScreen />);
 
-      expect(getByText('CR')).toBeTruthy();
-      expect(getByText('Camila R.')).toBeTruthy();
+      expect(getByText('MH')).toBeTruthy();
+      expect(getByText('Mi hogar')).toBeTruthy();
       expect(getByText('Hogar')).toBeTruthy();
       expect(getByText('Gestión de despensa activa')).toBeTruthy();
-      expect(getByLabelText('Avatar de Camila R.')).toBeTruthy();
+      expect(getByLabelText('Avatar de Mi hogar')).toBeTruthy();
+      expect(getByLabelText('Perfil local del dispositivo')).toBeTruthy();
     });
 
     it('renderiza el micro-panel de impacto doméstico con métricas de la despensa', async () => {
@@ -617,6 +618,85 @@ describe('Pantalla de Perfil y Configuración (PerfilScreen - Fase 4)', () => {
       // NUNCA debe reportar éxito si la persistencia falló
       expect(queryByTestId('preferences-saved-feedback')).toBeNull();
     });
+
+    it('garantiza atomicidad total (FIX 1): un fallo de almacenamiento al modificar las tres preferencias no aplica actualizaciones parciales', async () => {
+      let saveAttempts = 0;
+      const failingAdapter: BudgetStorageAdapter = {
+        getPreferences: async () => ({
+          budget: 20000,
+          servings: 2,
+          maxMinutes: 30,
+          updatedAt: new Date().toISOString(),
+        }),
+        savePreferences: async () => {
+          saveAttempts += 1;
+          throw new Error('Fallo crítico simulado en almacenamiento al guardar preferencias.');
+        },
+        resetPreferences: async () => defaultBudgetPreferences,
+      };
+
+      const { getByTestId, getAllByText, getByText, getByLabelText, queryByTestId } =
+        await renderWithProviders(
+          <PerfilScreen />,
+          { budget: 20000, servings: 2, maxMinutes: 30 },
+          failingAdapter
+        );
+
+      // Valores iniciales visibles y verificados
+      expect(getByText('$20.000 COP')).toBeTruthy();
+      expect(getByText('2 personas')).toBeTruthy();
+      expect(getByText('30 min')).toBeTruthy();
+
+      // Abrir modal de edición
+      await act(async () => {
+        fireEvent.press(getByTestId('btn-edit-pref'));
+      });
+
+      // Modificar simultáneamente las tres preferencias:
+      // 1. Presupuesto: 20000 -> 50000
+      await act(async () => {
+        fireEvent.changeText(getByTestId('budget-input'), '50000');
+      });
+
+      // 2. Porciones: 2 -> 4 personas
+      const incrementServings = getByLabelText('Aumentar');
+      await act(async () => {
+        fireEvent.press(incrementServings); // 3
+        fireEvent.press(incrementServings); // 4
+      });
+
+      // 3. Tiempo máximo: 30 -> 60 minutos
+      await act(async () => {
+        fireEvent.changeText(getByTestId('max-minutes-input'), '60');
+      });
+
+      // Intentar guardar el parche atómico completo
+      await act(async () => {
+        fireEvent.press(getByTestId('save-preferences-button'));
+      });
+
+      // Verificar que se despachó una única operación de guardado atómica
+      expect(saveAttempts).toBe(1);
+
+      // El error debe visualizarse claramente y el modal mantenerse abierto
+      await waitFor(() => {
+        expect(getByTestId('edit-preferences-save-error')).toBeTruthy();
+        expect(
+          getAllByText('Fallo crítico simulado en almacenamiento al guardar preferencias.').length
+        ).toBeGreaterThanOrEqual(1);
+      });
+
+      // Cerrar el modal mediante Cancelar
+      await act(async () => {
+        fireEvent.press(getByTestId('cancel-preferences-button'));
+      });
+
+      // Verificación estricta de NO actualización parcial: los 3 valores permanecen intactos
+      expect(getByText('$20.000 COP')).toBeTruthy();
+      expect(getByText('2 personas')).toBeTruthy();
+      expect(getByText('30 min')).toBeTruthy();
+      expect(queryByTestId('preferences-saved-feedback')).toBeNull();
+    });
   });
 
   // =========================================================================
@@ -1007,6 +1087,85 @@ describe('Pantalla de Perfil y Configuración (PerfilScreen - Fase 4)', () => {
       expect(getByTestId('btn-reset-preferences').props.accessibilityRole).toBe('button');
       expect(getByLabelText('Editar preferencias culinarias')).toBeTruthy();
       expect(getByLabelText('Restablecer preferencias a los valores iniciales')).toBeTruthy();
+    });
+  });
+
+  // =========================================================================
+  // 14. PROTECCIÓN DURANTE LA HIDRATACIÓN DE PREFERENCIAS (FIX 3)
+  // =========================================================================
+  describe('Protección durante la hidratación de preferencias (FIX 3)', () => {
+    it('bloquea la edición y el restablecimiento mientras isLoading es true y restaura la interacción al completar', async () => {
+      let resolveStorage: (prefs: BudgetPreferences) => void = () => {};
+      const delayedPromise = new Promise<BudgetPreferences>((resolve) => {
+        resolveStorage = resolve;
+      });
+
+      const controlledAdapter: BudgetStorageAdapter = {
+        getPreferences: () => delayedPromise,
+        savePreferences: async (input) => ({
+          ...defaultBudgetPreferences,
+          ...input,
+          maxMinutes: input.maxMinutes ?? undefined,
+          updatedAt: new Date().toISOString(),
+        }),
+        resetPreferences: async () => defaultBudgetPreferences,
+      };
+
+      // Sin initialPreferences para forzar isLoading=true hasta que storage responda
+      const { getByTestId, queryByTestId, getByText } = await renderWithProviders(
+        <PerfilScreen />,
+        undefined,
+        controlledAdapter
+      );
+
+      // 1. Debe mostrarse el indicador claro de hidratación
+      expect(getByTestId('budget-loading-banner')).toBeTruthy();
+      expect(getByText('Cargando preferencias guardadas...')).toBeTruthy();
+
+      // 2. Los botones interactivos deben estar marcados como deshabilitados
+      const editButton = getByTestId('btn-edit-pref');
+      const resetButton = getByTestId('btn-reset-preferences');
+      expect(editButton.props.accessibilityState?.disabled).toBe(true);
+      expect(resetButton.props.accessibilityState?.disabled).toBe(true);
+
+      // 3. Pulsar editar o restablecer durante la hidratación no debe abrir los diálogos/modales
+      await act(async () => {
+        fireEvent.press(editButton);
+      });
+      expect(queryByTestId('edit-preferences-modal')).toBeNull();
+
+      await act(async () => {
+        fireEvent.press(resetButton);
+      });
+      expect(queryByTestId('reset-confirm-modal')).toBeNull();
+
+      // 4. Completar la restauración asíncrona con valores persistidos personalizados
+      await act(async () => {
+        resolveStorage({
+          budget: 45000,
+          servings: 5,
+          maxMinutes: 25,
+          updatedAt: new Date().toISOString(),
+        });
+      });
+
+      // 5. El banner de carga debe desaparecer y los datos hidratados deben mostrarse fielmente
+      await waitFor(() => {
+        expect(queryByTestId('budget-loading-banner')).toBeNull();
+        expect(getByText('$45.000 COP')).toBeTruthy();
+        expect(getByText('5 personas')).toBeTruthy();
+        expect(getByText('25 min')).toBeTruthy();
+      });
+
+      // 6. La edición normal debe quedar completamente desbloqueada
+      expect(editButton.props.accessibilityState?.disabled).toBe(false);
+      expect(resetButton.props.accessibilityState?.disabled).toBe(false);
+
+      await act(async () => {
+        fireEvent.press(editButton);
+      });
+      expect(getByTestId('edit-preferences-modal')).toBeTruthy();
+      expect(getByTestId('budget-input').props.value).toBe('45000');
     });
   });
 });

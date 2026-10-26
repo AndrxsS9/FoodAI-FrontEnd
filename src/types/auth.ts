@@ -30,6 +30,7 @@ export interface AuthContextValue {
   signIn: (email: string, password: string) => Promise<SignInResult>;
   signOut: () => Promise<void>;
   clearAuthError: () => void;
+  updateProfile?: (attributes: { displayName: string }) => Promise<AuthUser>;
 }
 
 /**
@@ -100,4 +101,63 @@ export function mapSupabaseAuthError(error: unknown): string {
   }
 
   return message;
+}
+
+/**
+ * Obtiene el nombre para mostrar del usuario a partir de sus metadatos o correo.
+ */
+export function getUserDisplayName(user: AuthUser | null | undefined): string {
+  if (!user) return 'Usuario';
+
+  const metadata = user.user_metadata;
+  if (metadata) {
+    if (typeof metadata.display_name === 'string' && metadata.display_name.trim().length > 0) {
+      return metadata.display_name.trim();
+    }
+    if (typeof metadata.name === 'string' && metadata.name.trim().length > 0) {
+      return metadata.name.trim();
+    }
+    if (typeof metadata.full_name === 'string' && metadata.full_name.trim().length > 0) {
+      return metadata.full_name.trim();
+    }
+  }
+
+  if (user.email && typeof user.email === 'string') {
+    const prefix = user.email.split('@')[0];
+    if (prefix) {
+      return prefix.charAt(0).toUpperCase() + prefix.slice(1);
+    }
+  }
+
+  return 'Usuario';
+}
+
+/**
+ * Genera iniciales dinámicas legibles para el avatar (1 o 2 letras mayúsculas).
+ */
+export function getAvatarInitials(nameOrEmail?: string | null): string {
+  if (!nameOrEmail || typeof nameOrEmail !== 'string') return 'U';
+
+  const clean = nameOrEmail.trim();
+  if (!clean) return 'U';
+
+  // Si contiene @ y no espacios, usar la parte antes del @
+  const target = clean.includes('@') && !clean.includes(' ') ? clean.split('@')[0] : clean;
+  const words = target.split(/\s+/).filter(Boolean);
+
+  if (words.length >= 2) {
+    const firstLetter = words[0].charAt(0).toUpperCase();
+    const secondLetter = words[1].charAt(0).toUpperCase();
+    return `${firstLetter}${secondLetter}`;
+  }
+
+  if (words.length === 1) {
+    const single = words[0];
+    if (single.length >= 2) {
+      return single.slice(0, 2).toUpperCase();
+    }
+    return single.charAt(0).toUpperCase();
+  }
+
+  return 'U';
 }

@@ -397,27 +397,18 @@ describe('Phase 2A: Navigation & Mobile Screens (Google Stitch)', () => {
       expect(mockPush).toHaveBeenCalledWith('/(tabs)/perfil');
     });
 
-    it('renders Perfil placeholder with Phase 4 development status and replay links', async () => {
-      const { getByText, getByTestId } = await renderWithProviders(<PerfilScreen />);
+    it('renders Perfil screen with user profile navigation and settings without development shortcuts', async () => {
+      const { getByText, getByTestId, queryByText, queryByTestId } = await renderWithProviders(<PerfilScreen />);
 
       expect(getByText('Perfil de Usuario')).toBeTruthy();
-      expect(getByText('Fase 4')).toBeTruthy();
       expect(getByText('Preferencias y Configuración')).toBeTruthy();
+      expect(getByTestId('settings-row-config')).toBeTruthy();
 
-      // Test replay welcome
-      const welcomeLink = getByTestId('perfil-welcome-button');
-      await fireEvent.press(welcomeLink);
-      expect(mockPush).toHaveBeenCalledWith('/');
-
-      // Test design system showcase link
-      const dsLink = getByTestId('perfil-design-system-button');
-      await fireEvent.press(dsLink);
-      expect(mockPush).toHaveBeenCalledWith('/design-system');
-
-      // Test back to home
-      const backHome = getByTestId('perfil-back-home-button');
-      await fireEvent.press(backHome);
-      expect(mockPush).toHaveBeenCalledWith('/(tabs)');
+      // En Fase 5B los atajos y etiquetas de desarrollo deben estar eliminados en producción
+      expect(queryByText('Fase 4')).toBeNull();
+      expect(queryByTestId('perfil-welcome-button')).toBeNull();
+      expect(queryByTestId('perfil-design-system-button')).toBeNull();
+      expect(queryByTestId('perfil-back-home-button')).toBeNull();
     });
   });
 });

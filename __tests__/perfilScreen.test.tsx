@@ -26,14 +26,17 @@ import { PantryProvider } from '../src/context/PantryContext';
 import { BudgetProvider, useBudget } from '../src/context/BudgetContext';
 import { RecipeProvider } from '../src/context/RecipeContext';
 import { MealPlanProvider, useMealPlan } from '../src/context/MealPlanContext';
+import { AuthProvider } from '../src/context/AuthContext';
 import { TypographyProvider } from '../src/theme';
 import { Ingredient } from '../src/types/pantry';
 import { BudgetPreferences, defaultBudgetPreferences } from '../src/types/budget';
 import { BudgetStorageAdapter } from '../src/services/storage/budgetStorage';
-import { recipeApi } from '../src/services/api/recipeApi';
-import { mealPlanApi } from '../src/services/api/mealPlanApi';
 import { ClientMealPlan, MealPlanGenerationSnapshot } from '../src/types/mealPlan';
 import { MealPlanStorageAdapter } from '../src/services/storage/mealPlanStorage';
+import { recipeApi } from '../src/services/api/recipeApi';
+import { mealPlanApi } from '../src/services/api/mealPlanApi';
+import { AuthSession, AuthUser } from '../src/types/auth';
+import type { SupabaseClient } from '@supabase/supabase-js';
 
 // Mock expo-router
 const mockPush = jest.fn();
@@ -48,7 +51,56 @@ jest.mock('expo-router', () => ({
   }),
 }));
 
-describe('Pantalla de Perfil y Configuración (PerfilScreen - Fase 4)', () => {
+const MOCK_DEFAULT_USER: AuthUser = {
+  id: 'usr-default-chef',
+  email: 'chef.default@foodai.app',
+  created_at: '2026-10-26T10:00:00Z',
+  email_confirmed_at: '2026-10-26T10:05:00Z',
+  app_metadata: {},
+  user_metadata: { name: 'Chef FoodAI' },
+  aud: 'authenticated',
+};
+
+const MOCK_DEFAULT_SESSION: AuthSession = {
+  access_token: 'mock-jwt-token',
+  refresh_token: 'mock-refresh-token',
+  expires_in: 3600,
+  token_type: 'bearer',
+  user: MOCK_DEFAULT_USER,
+};
+
+function createMockSupabaseClient(overrides?: {
+  updateUserResult?: { data: { user: AuthUser | null }; error: any };
+  signOutResult?: { error: any };
+}) {
+  return {
+    auth: {
+      getSession: jest.fn().mockResolvedValue({ data: { session: null }, error: null }),
+      updateUser: jest.fn().mockImplementation((params) =>
+        Promise.resolve(
+          overrides?.updateUserResult ?? {
+            data: {
+              user: {
+                ...MOCK_DEFAULT_USER,
+                user_metadata: {
+                  ...MOCK_DEFAULT_USER.user_metadata,
+                  ...(params?.data ?? {}),
+                },
+              },
+            },
+            error: null,
+          }
+        )
+      ),
+      signOut: jest.fn().mockResolvedValue(overrides?.signOutResult ?? { error: null }),
+      onAuthStateChange: jest.fn().mockReturnValue({
+        data: { subscription: { unsubscribe: jest.fn() } },
+      }),
+    },
+  } as unknown as SupabaseClient;
+}
+
+describe('Pantalla de Perfil Personalizado y Configuración (PerfilScreen - Fase 5B)', () => {
   beforeEach(async () => {
     await AsyncStorage.clear();
     jest.clearAllMocks();
@@ -89,7 +141,9 @@ describe('Pantalla de Perfil y Configuración (PerfilScreen - Fase 4)', () => {
     storageAdapter?: BudgetStorageAdapter,
     pantryIngredients: Ingredient[] = mockPantryItems,
     initialMealPlan: ClientMealPlan | null = null,
-    mealPlanStorageAdapter?: MealPlanStorageAdapter
+    mealPlanStorageAdapter?: MealPlanStorageAdapter,
+    authSession: AuthSession | null = MOCK_DEFAULT_SESSION,
+    supabaseClient: SupabaseClient = createMockSupabaseClient()
   ) => {
     return render(
       <SafeAreaProvider
@@ -99,21 +153,23 @@ describe('Pantalla de Perfil y Configuración (PerfilScreen - Fase 4)', () => {
         }}
       >
         <TypographyProvider usingFallback={true}>
-          <PantryProvider initialIngredients={pantryIngredients}>
-            <BudgetProvider
-              initialPreferences={initialPreferences}
-              storageAdapter={storageAdapter}
-            >
-              <RecipeProvider>
-                <MealPlanProvider
-                  initialPlan={initialMealPlan}
-                  storageAdapter={mealPlanStorageAdapter}
-                >
-                  {ui}
-                </MealPlanProvider>
-              </RecipeProvider>
-            </BudgetProvider>
-          </PantryProvider>
+          <AuthProvider initialSession={authSession} supabaseClient={supabaseClient}>
+            <PantryProvider initialIngredients={pantryIngredients}>
+              <BudgetProvider
+                initialPreferences={initialPreferences}
+                storageAdapter={storageAdapter}
+              >
+                <RecipeProvider>
+                  <MealPlanProvider
+                    initialPlan={initialMealPlan}
+                    storageAdapter={mealPlanStorageAdapter}
+                  >
+                    {ui}
+                  </MealPlanProvider>
+                </RecipeProvider>
+              </BudgetProvider>
+            </PantryProvider>
+          </AuthProvider>
         </TypographyProvider>
       </SafeAreaProvider>
     );
@@ -124,24 +180,34 @@ describe('Pantalla de Perfil y Configuración (PerfilScreen - Fase 4)', () => {
   // =========================================================================
   describe('Renderizado inicial y estructura visual Google Stitch', () => {
     it('renderiza el título oficial en español y subtítulo institucional', async () => {
-      const { getByText, getByLabelText } = await renderWithProviders(<PerfilScreen />);
+      const { getByText, getByLabelText, queryByText } = await renderWithProviders(<PerfilScreen />);
 
       expect(getByText('Mi perfil y configuración')).toBeTruthy();
       expect(getByText('Recetario por Presupuesto')).toBeTruthy();
       expect(getByText('Perfil de Usuario')).toBeTruthy();
-      expect(getByText('Fase 4')).toBeTruthy();
+      expect(queryByText('Fase 4')).toBeNull();
       expect(getByLabelText('Logotipo de Recetario por Presupuesto')).toBeTruthy();
     });
 
-    it('renderiza la tarjeta de presentación de hogar local con avatar MH y etiqueta Hogar', async () => {
-      const { getByText, getByLabelText } = await renderWithProviders(<PerfilScreen />);
+    it('renderiza la cabecera personalizada del usuario con avatar dinámico, correo y estado activo', async () => {
+      const { getByText, getByTestId, queryByText } = await renderWithProviders(<PerfilScreen />);
 
-      expect(getByText('MH')).toBeTruthy();
-      expect(getByText('Mi hogar')).toBeTruthy();
-      expect(getByText('Hogar')).toBeTruthy();
-      expect(getByText('Gestión de despensa activa')).toBeTruthy();
-      expect(getByLabelText('Avatar de Mi hogar')).toBeTruthy();
-      expect(getByLabelText('Perfil local del dispositivo')).toBeTruthy();
+      // Iniciales generadas dinámicamente ("Chef FoodAI" -> "CF")
+      expect(getByTestId('profile-avatar-initials')).toBeTruthy();
+      expect(getByText('CF')).toBeTruthy();
+
+      // Nombre y correo autenticado
+      expect(getByTestId('profile-display-name')).toBeTruthy();
+      expect(getByText('Chef FoodAI')).toBeTruthy();
+      expect(getByTestId('profile-email')).toBeTruthy();
+      expect(getByText('chef.default@foodai.app')).toBeTruthy();
+      expect(getByTestId('profile-email-badge')).toBeTruthy();
+      expect(getByText('Verificado')).toBeTruthy();
+      expect(getByTestId('btn-edit-name')).toBeTruthy();
+
+      // Garantizar que valores hardcodeados obsoletos fueron eliminados
+      expect(queryByText('Mi hogar')).toBeNull();
+      expect(queryByText('MH')).toBeNull();
     });
 
     it('renderiza el micro-panel de impacto doméstico con métricas de la despensa', async () => {
@@ -188,7 +254,7 @@ describe('Pantalla de Perfil y Configuración (PerfilScreen - Fase 4)', () => {
 
       expect(getByTestId('settings-row-config')).toBeTruthy();
       expect(getByText('Configuración')).toBeTruthy();
-      expect(getByText('Unidades métricas, moneda y alertas')).toBeTruthy();
+      expect(getByText('Unidades métricas, moneda y almacenamiento')).toBeTruthy();
 
       expect(getByTestId('settings-row-help')).toBeTruthy();
       expect(getByText('Ayuda y preguntas frecuentes')).toBeTruthy();
@@ -209,12 +275,300 @@ describe('Pantalla de Perfil y Configuración (PerfilScreen - Fase 4)', () => {
       ).toBeTruthy();
     });
 
-    it('renderiza los accesos rápidos de desarrollo y navegación requeridos', async () => {
-      const { getByTestId } = await renderWithProviders(<PerfilScreen />);
+    it('no renderiza atajos de desarrollo ni enlaces de depuración en producción (Fase 5B)', async () => {
+      const { queryByTestId, queryByText } = await renderWithProviders(<PerfilScreen />);
 
-      expect(getByTestId('perfil-welcome-button')).toBeTruthy();
-      expect(getByTestId('perfil-design-system-button')).toBeTruthy();
-      expect(getByTestId('perfil-back-home-button')).toBeTruthy();
+      expect(queryByTestId('perfil-welcome-button')).toBeNull();
+      expect(queryByTestId('perfil-design-system-button')).toBeNull();
+      expect(queryByTestId('perfil-back-home-button')).toBeNull();
+      expect(queryByText('ACCESOS RÁPIDOS Y REPRODUCCIÓN')).toBeNull();
+      expect(queryByText('Fase 4')).toBeNull();
+    });
+
+    it('muestra "Sin verificar" cuando la cuenta de correo no ha sido confirmada', async () => {
+      const unverifiedSession: AuthSession = {
+        ...MOCK_DEFAULT_SESSION,
+        user: {
+          ...MOCK_DEFAULT_USER,
+          email_confirmed_at: undefined,
+          confirmed_at: undefined,
+        },
+      };
+
+      const { getByText, queryByText, getByTestId } = await renderWithProviders(
+        <PerfilScreen />,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        unverifiedSession
+      );
+
+      expect(getByTestId('profile-email-badge')).toBeTruthy();
+      expect(getByText('Sin verificar')).toBeTruthy();
+      expect(queryByText('Verificado')).toBeNull();
+    });
+
+    it('la configuración informativa no sugiere funciones inexistentes ni alertas no implementadas', async () => {
+      const { getByTestId, getByText, queryByText } = await renderWithProviders(<PerfilScreen />);
+
+      // Abre el modal de configuración
+      await act(async () => {
+        fireEvent.press(getByTestId('settings-row-config'));
+      });
+
+      expect(getByTestId('info-detail-modal')).toBeTruthy();
+      expect(getByText('Configuración de la app')).toBeTruthy();
+      expect(getByText(/Moneda predeterminada:/)).toBeTruthy();
+      expect(getByText(/Unidades métricas:/)).toBeTruthy();
+      expect(getByText(/Privacidad y datos aislados:/)).toBeTruthy();
+
+      // Garantizar que no se prometen alertas inexistentes
+      expect(queryByText(/alertas/i)).toBeNull();
+    });
+  });
+
+  // =========================================================================
+  // 1B. PERSONALIZACIÓN Y EDICIÓN DEL PERFIL DE USUARIO (FASE 5B)
+  // =========================================================================
+  describe('Personalización y Edición del Perfil de Usuario (Fase 5B)', () => {
+    it('abre el modal de edición de nombre al presionar el botón editar', async () => {
+      const { getByTestId, getByText } = await renderWithProviders(<PerfilScreen />);
+
+      await act(async () => {
+        fireEvent.press(getByTestId('btn-edit-name'));
+      });
+
+      expect(getByTestId('edit-name-modal')).toBeTruthy();
+      expect(getByText('Editar nombre')).toBeTruthy();
+      expect(getByTestId('name-input')).toBeTruthy();
+      expect(getByTestId('save-name-button')).toBeTruthy();
+      expect(getByTestId('cancel-name-button')).toBeTruthy();
+    });
+
+    it('actualiza exitosamente el nombre, sincroniza avatar y emite notificación de éxito', async () => {
+      const mockClient = createMockSupabaseClient();
+      const { getByTestId, getByText, queryByTestId } = await renderWithProviders(
+        <PerfilScreen />,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        MOCK_DEFAULT_SESSION,
+        mockClient
+      );
+
+      // Abrir modal de edición de nombre
+      await act(async () => {
+        fireEvent.press(getByTestId('btn-edit-name'));
+      });
+
+      // Escribir nuevo nombre "Carlos Gomez"
+      const input = getByTestId('name-input');
+      await act(async () => {
+        fireEvent.changeText(input, 'Carlos Gomez');
+      });
+
+      // Guardar
+      await act(async () => {
+        fireEvent.press(getByTestId('save-name-button'));
+      });
+
+      // Comprobar llamada a Supabase updateUser
+      expect(mockClient.auth.updateUser).toHaveBeenCalledWith({
+        data: {
+          display_name: 'Carlos Gomez',
+          name: 'Carlos Gomez',
+        },
+      });
+
+      // El modal se cierra y la UI refleja el nuevo nombre e iniciales CG
+      await waitFor(() => {
+        expect(queryByTestId('edit-name-modal')).toBeNull();
+      });
+      expect(getByText('Carlos Gomez')).toBeTruthy();
+      expect(getByText('CG')).toBeTruthy();
+      expect(getByText('Nombre de perfil actualizado correctamente.')).toBeTruthy();
+    });
+
+    it('rechaza nombres vacíos mostrando mensaje de validación', async () => {
+      const mockClient = createMockSupabaseClient();
+      const { getByTestId, getByText } = await renderWithProviders(
+        <PerfilScreen />,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        MOCK_DEFAULT_SESSION,
+        mockClient
+      );
+
+      await act(async () => {
+        fireEvent.press(getByTestId('btn-edit-name'));
+      });
+
+      const input = getByTestId('name-input');
+      await act(async () => {
+        fireEvent.changeText(input, '   ');
+      });
+
+      await act(async () => {
+        fireEvent.press(getByTestId('save-name-button'));
+      });
+
+      expect(getByTestId('edit-name-error')).toBeTruthy();
+      expect(getByText('Por favor ingresa tu nombre.')).toBeTruthy();
+      expect(mockClient.auth.updateUser).not.toHaveBeenCalled();
+    });
+
+    it('permite cancelar la edición sin alterar el nombre del usuario', async () => {
+      const mockClient = createMockSupabaseClient();
+      const { getByTestId, getByText, queryByTestId } = await renderWithProviders(
+        <PerfilScreen />,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        MOCK_DEFAULT_SESSION,
+        mockClient
+      );
+
+      await act(async () => {
+        fireEvent.press(getByTestId('btn-edit-name'));
+      });
+
+      const input = getByTestId('name-input');
+      await act(async () => {
+        fireEvent.changeText(input, 'Nombre Temporal Cancelado');
+      });
+
+      await act(async () => {
+        fireEvent.press(getByTestId('cancel-name-button'));
+      });
+
+      expect(queryByTestId('edit-name-modal')).toBeNull();
+      expect(mockClient.auth.updateUser).not.toHaveBeenCalled();
+      expect(getByText('Chef FoodAI')).toBeTruthy();
+    });
+
+    it('maneja y muestra errores de persistencia si falla Supabase updateUser', async () => {
+      const failingClient = createMockSupabaseClient({
+        updateUserResult: {
+          data: { user: null },
+          error: new Error('Error al actualizar metadatos en el servidor'),
+        },
+      });
+
+      const { getByTestId, getByText } = await renderWithProviders(
+        <PerfilScreen />,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        MOCK_DEFAULT_SESSION,
+        failingClient
+      );
+
+      await act(async () => {
+        fireEvent.press(getByTestId('btn-edit-name'));
+      });
+
+      await act(async () => {
+        fireEvent.changeText(getByTestId('name-input'), 'Nuevo Chef');
+      });
+
+      await act(async () => {
+        fireEvent.press(getByTestId('save-name-button'));
+      });
+
+      await waitFor(() => {
+        expect(getByTestId('edit-name-submit-error')).toBeTruthy();
+      });
+      expect(getByText('Error al actualizar metadatos en el servidor')).toBeTruthy();
+    });
+  });
+
+  // =========================================================================
+  // 1C. AISLAMIENTO DE CUENTAS USUARIO A VS USUARIO B EN PERFIL (FASE 5B)
+  // =========================================================================
+  describe('Aislamiento de Cuentas Usuario A vs Usuario B en Perfil (Fase 5B)', () => {
+    const USER_A: AuthUser = {
+      id: 'usr-alice-111',
+      email: 'alice@foodai.app',
+      created_at: '2026-10-26T10:00:00Z',
+      app_metadata: {},
+      user_metadata: { name: 'Alice Walker', display_name: 'Alice Walker' },
+      aud: 'authenticated',
+    };
+
+    const SESSION_A: AuthSession = {
+      access_token: 'jwt-alice',
+      refresh_token: 'refresh-alice',
+      expires_in: 3600,
+      token_type: 'bearer',
+      user: USER_A,
+    };
+
+    const USER_B: AuthUser = {
+      id: 'usr-bob-222',
+      email: 'bob@foodai.app',
+      created_at: '2026-10-26T11:00:00Z',
+      app_metadata: {},
+      user_metadata: { name: 'Bob Smith', display_name: 'Bob Smith' },
+      aud: 'authenticated',
+    };
+
+    const SESSION_B: AuthSession = {
+      access_token: 'jwt-bob',
+      refresh_token: 'refresh-bob',
+      expires_in: 3600,
+      token_type: 'bearer',
+      user: USER_B,
+    };
+
+    it('renderiza la identidad y correo de Usuario A de forma fiel', async () => {
+      const { getByText, queryByText } = await renderWithProviders(
+        <PerfilScreen />,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        SESSION_A
+      );
+
+      expect(getByText('Alice Walker')).toBeTruthy();
+      expect(getByText('alice@foodai.app')).toBeTruthy();
+      expect(getByText('AW')).toBeTruthy(); // Iniciales Alice Walker
+
+      // Sin contaminación de Usuario B
+      expect(queryByText('Bob Smith')).toBeNull();
+      expect(queryByText('bob@foodai.app')).toBeNull();
+    });
+
+    it('renderiza la identidad y correo de Usuario B de forma completamente aislada', async () => {
+      const { getByText, queryByText } = await renderWithProviders(
+        <PerfilScreen />,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        SESSION_B
+      );
+
+      expect(getByText('Bob Smith')).toBeTruthy();
+      expect(getByText('bob@foodai.app')).toBeTruthy();
+      expect(getByText('BS')).toBeTruthy(); // Iniciales Bob Smith
+
+      // Sin contaminación de Usuario A
+      expect(queryByText('Alice Walker')).toBeNull();
+      expect(queryByText('alice@foodai.app')).toBeNull();
     });
   });
 
@@ -1036,7 +1390,8 @@ describe('Pantalla de Perfil y Configuración (PerfilScreen - Fase 4)', () => {
 
       expect(getByTestId('info-detail-modal')).toBeTruthy();
       expect(getByText('Acerca de FoodAI')).toBeTruthy();
-      expect(getByText(/Fase 4 · Perfil y Configuración/)).toBeTruthy();
+      expect(getByText(/Primero usa lo que tienes/)).toBeTruthy();
+      expect(getByText('Versión:')).toBeTruthy();
 
       await act(async () => {
         fireEvent.press(getByTestId('close-info-modal-button'));
@@ -1047,37 +1402,77 @@ describe('Pantalla de Perfil y Configuración (PerfilScreen - Fase 4)', () => {
   });
 
   // =========================================================================
-  // 13. NAVEGACIÓN Y ACCESIBILIDAD
+  // 13. ACCESIBILIDAD Y CIERRE DE SESIÓN SEGURO
   // =========================================================================
-  describe('Navegación y accesibilidad', () => {
-    it('navega hacia la bienvenida cuando se presiona Ver pantalla de bienvenida', async () => {
-      const { getByTestId } = await renderWithProviders(<PerfilScreen />);
+  describe('Accesibilidad y flujo de cierre de sesión', () => {
+    it('garantiza la ausencia absoluta de botones de desarrollo de fases anteriores', async () => {
+      const { queryByTestId, queryByText } = await renderWithProviders(<PerfilScreen />);
 
-      await act(async () => {
-        fireEvent.press(getByTestId('perfil-welcome-button'));
-      });
-
-      expect(mockPush).toHaveBeenCalledWith('/');
+      expect(queryByTestId('perfil-welcome-button')).toBeNull();
+      expect(queryByTestId('perfil-design-system-button')).toBeNull();
+      expect(queryByTestId('perfil-back-home-button')).toBeNull();
+      expect(queryByText('ACCESOS RÁPIDOS Y REPRODUCCIÓN')).toBeNull();
     });
 
-    it('navega hacia el catálogo de diseño cuando se presiona Catálogo de componentes', async () => {
-      const { getByTestId } = await renderWithProviders(<PerfilScreen />);
+    it('abre el diálogo de confirmación de logout y permite cancelarlo de forma segura', async () => {
+      const mockClient = createMockSupabaseClient();
+      const { getByTestId, queryByTestId, getByText } = await renderWithProviders(
+        <PerfilScreen />,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        MOCK_DEFAULT_SESSION,
+        mockClient
+      );
 
+      // El modal de logout está inicialmente cerrado
+      expect(queryByTestId('logout-confirm-modal')).toBeNull();
+
+      // Presionar botón de logout
       await act(async () => {
-        fireEvent.press(getByTestId('perfil-design-system-button'));
+        fireEvent.press(getByTestId('btn-logout'));
       });
 
-      expect(mockPush).toHaveBeenCalledWith('/design-system');
+      expect(getByTestId('logout-confirm-modal')).toBeTruthy();
+      expect(getByText('¿Deseas cerrar tu sesión actual?')).toBeTruthy();
+
+      // Cancelar
+      await act(async () => {
+        fireEvent.press(getByTestId('logout-cancel-button'));
+      });
+
+      expect(queryByTestId('logout-confirm-modal')).toBeNull();
+      expect(mockClient.auth.signOut).not.toHaveBeenCalled();
+      expect(mockReplace).not.toHaveBeenCalled();
     });
 
-    it('navega hacia el Inicio cuando se presiona Volver al Inicio', async () => {
-      const { getByTestId } = await renderWithProviders(<PerfilScreen />);
+    it('ejecuta signOut y redirige al login cuando se confirma el cierre de sesión', async () => {
+      const mockClient = createMockSupabaseClient();
+      const { getByTestId } = await renderWithProviders(
+        <PerfilScreen />,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        MOCK_DEFAULT_SESSION,
+        mockClient
+      );
 
       await act(async () => {
-        fireEvent.press(getByTestId('perfil-back-home-button'));
+        fireEvent.press(getByTestId('btn-logout'));
       });
 
-      expect(mockPush).toHaveBeenCalledWith('/(tabs)');
+      await act(async () => {
+        fireEvent.press(getByTestId('logout-confirm-button'));
+      });
+
+      await waitFor(() => {
+        expect(mockClient.auth.signOut).toHaveBeenCalled();
+        expect(mockReplace).toHaveBeenCalledWith('/(auth)/login');
+      });
     });
 
     it('provee roles y etiquetas accesibles en todos los elementos interactivos clave', async () => {
@@ -1085,8 +1480,12 @@ describe('Pantalla de Perfil y Configuración (PerfilScreen - Fase 4)', () => {
 
       expect(getByTestId('btn-edit-pref').props.accessibilityRole).toBe('button');
       expect(getByTestId('btn-reset-preferences').props.accessibilityRole).toBe('button');
+      expect(getByTestId('btn-edit-name').props.accessibilityRole).toBe('button');
+      expect(getByTestId('btn-logout').props.accessibilityRole).toBe('button');
       expect(getByLabelText('Editar preferencias culinarias')).toBeTruthy();
       expect(getByLabelText('Restablecer preferencias a los valores iniciales')).toBeTruthy();
+      expect(getByLabelText('Editar nombre de usuario')).toBeTruthy();
+      expect(getByLabelText('Cerrar sesión')).toBeTruthy();
     });
   });
 

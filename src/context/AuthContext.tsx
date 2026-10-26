@@ -369,6 +369,69 @@ export function AuthProvider({
     }
   }, [supabaseClient]);
 
+  /**
+   * Actualización del perfil y metadatos del usuario autenticado (Fase 5B).
+   * Persiste el nombre para mostrar en Supabase Auth user_metadata y sincroniza el contexto.
+   */
+  const updateProfile = useCallback(
+    async (attributes: { displayName: string }): Promise<AuthUser> => {
+      const trimmed = attributes?.displayName?.trim();
+      if (!trimmed) {
+        const msg = 'El nombre no puede estar vacío.';
+        setAuthError(msg);
+        throw new Error(msg);
+      }
+
+      if (isSubmittingRef.current) {
+        throw new Error('Ya hay una operación de autenticación en curso.');
+      }
+
+      const updateSeq = ++authOpSeqRef.current;
+      isSubmittingRef.current = true;
+      setIsSubmitting(true);
+      setAuthError(null);
+
+      try {
+        const { data, error } = await supabaseClient.auth.updateUser({
+          data: {
+            display_name: trimmed,
+            name: trimmed,
+          },
+        });
+
+        if (error) {
+          const friendlyMessage = mapSupabaseAuthError(error);
+          setAuthError(friendlyMessage);
+          throw new Error(friendlyMessage);
+        }
+
+        const updatedUser = data?.user;
+        if (!updatedUser) {
+          throw new Error('No se pudo actualizar el perfil del usuario.');
+        }
+
+        if (isMountedRef.current && updateSeq >= lastAppliedSeqRef.current) {
+          lastAppliedSeqRef.current = updateSeq;
+          setUser(updatedUser);
+          setSession((prev) => (prev ? { ...prev, user: updatedUser } : null));
+          setAuthError(null);
+        }
+
+        return updatedUser;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : mapSupabaseAuthError(err);
+        setAuthError(msg);
+        throw err instanceof Error ? err : new Error(msg);
+      } finally {
+        isSubmittingRef.current = false;
+        if (isMountedRef.current) {
+          setIsSubmitting(false);
+        }
+      }
+    },
+    [supabaseClient]
+  );
+
   const value = useMemo<AuthContextValue>(
     () => ({
       user,
@@ -381,8 +444,20 @@ export function AuthProvider({
       signIn,
       signOut,
       clearAuthError,
+      updateProfile,
     }),
-    [user, session, isInitializing, isSubmitting, authError, signUp, signIn, signOut, clearAuthError]
+    [
+      user,
+      session,
+      isInitializing,
+      isSubmitting,
+      authError,
+      signUp,
+      signIn,
+      signOut,
+      clearAuthError,
+      updateProfile,
+    ]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

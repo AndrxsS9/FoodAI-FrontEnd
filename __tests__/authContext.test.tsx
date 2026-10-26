@@ -28,6 +28,8 @@ import {
   isValidEmail,
   isValidPassword,
   mapSupabaseAuthError,
+  getUserDisplayName,
+  getAvatarInitials,
 } from '../src/types/auth';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
@@ -54,6 +56,7 @@ function createMockSupabaseClient(overrides?: {
   signUpResult?: { data: { user: AuthUser | null; session: AuthSession | null }; error: any };
   signInResult?: { data: { user: AuthUser | null; session: AuthSession | null }; error: any };
   signOutResult?: { error: any };
+  updateUserResult?: { data: { user: AuthUser | null }; error: any };
 }) {
   let authStateCallback: ((event: string, session: AuthSession | null) => void) | null = null;
   const unsubscribeMock = jest.fn();
@@ -83,6 +86,22 @@ function createMockSupabaseClient(overrides?: {
       ),
       signOut: jest.fn().mockImplementation(() =>
         Promise.resolve(overrides?.signOutResult ?? { error: null })
+      ),
+      updateUser: jest.fn().mockImplementation((params) =>
+        Promise.resolve(
+          overrides?.updateUserResult ?? {
+            data: {
+              user: {
+                ...MOCK_USER,
+                user_metadata: {
+                  ...MOCK_USER.user_metadata,
+                  ...(params?.data ?? {}),
+                },
+              },
+            },
+            error: null,
+          }
+        )
       ),
       onAuthStateChange: jest.fn().mockImplementation((cb) => {
         authStateCallback = cb;
@@ -574,5 +593,142 @@ describe('useAuthSafe helper hook', () => {
   it('retorna null sin lanzar excepción si se ejecuta fuera de AuthProvider', async () => {
     const { result } = await renderHook(() => useAuthSafe());
     expect(result.current).toBeNull();
+  });
+});
+
+describe('AuthContext - Actualización de Perfil (updateProfile - Fase 5B)', () => {
+  it('actualiza exitosamente el nombre para mostrar y sincroniza el contexto', async () => {
+    const mockSupabase = createMockSupabaseClient();
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <AuthProvider initialSession={MOCK_SESSION} supabaseClient={mockSupabase}>
+        {children}
+      </AuthProvider>
+    );
+
+    const { result } = await renderHook(() => useAuth(), { wrapper });
+
+    expect(result.current.user?.user_metadata?.name).toBe('Chef FoodAI');
+
+    let updatedUser: AuthUser | undefined;
+    await act(async () => {
+      updatedUser = await result.current.updateProfile?.({ displayName: 'Chef Carlos' });
+    });
+
+    expect(mockSupabase.auth.updateUser).toHaveBeenCalledWith({
+      data: {
+        display_name: 'Chef Carlos',
+        name: 'Chef Carlos',
+      },
+    });
+
+    expect(updatedUser?.user_metadata?.display_name).toBe('Chef Carlos');
+    expect(result.current.user?.user_metadata?.display_name).toBe('Chef Carlos');
+    expect(result.current.session?.user?.user_metadata?.display_name).toBe('Chef Carlos');
+  });
+
+  it('rechaza nombres vacíos o con solo espacios en blanco con validación local', async () => {
+    const mockSupabase = createMockSupabaseClient();
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <AuthProvider initialSession={MOCK_SESSION} supabaseClient={mockSupabase}>
+        {children}
+      </AuthProvider>
+    );
+
+    const { result } = await renderHook(() => useAuth(), { wrapper });
+
+    let caughtError: any = null;
+    await act(async () => {
+      try {
+        await result.current.updateProfile?.({ displayName: '   ' });
+      } catch (err: any) {
+        caughtError = err;
+      }
+    });
+
+    expect(caughtError?.message).toBe('El nombre no puede estar vacío.');
+    expect(mockSupabase.auth.updateUser).not.toHaveBeenCalled();
+    expect(result.current.authError).toBe('El nombre no puede estar vacío.');
+  });
+
+  it('propaga y traduce los errores técnicos arrojados por Supabase updateUser', async () => {
+    const mockSupabase = createMockSupabaseClient({
+      updateUserResult: {
+        data: { user: null },
+        error: new Error('Network request failed'),
+      },
+    });
+
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <AuthProvider initialSession={MOCK_SESSION} supabaseClient={mockSupabase}>
+        {children}
+      </AuthProvider>
+    );
+
+    const { result } = await renderHook(() => useAuth(), { wrapper });
+
+    let caughtError: any = null;
+    await act(async () => {
+      try {
+        await result.current.updateProfile?.({ displayName: 'Nuevo Nombre' });
+      } catch (err: any) {
+        caughtError = err;
+      }
+    });
+
+    expect(caughtError?.message).toBe(
+      'Error de conexión. Verifica tu acceso a internet e inténtalo de nuevo.'
+    );
+    expect(result.current.authError).toBe(
+      'Error de conexión. Verifica tu acceso a internet e inténtalo de nuevo.'
+    );
+  });
+});
+
+describe('Utilidades de Identidad de Usuario (getUserDisplayName y getAvatarInitials)', () => {
+  it('getUserDisplayName prioriza display_name, luego name, luego full_name', () => {
+    const u1: AuthUser = {
+      ...MOCK_USER,
+      user_metadata: { display_name: 'Ana Sofia', name: 'Ana', full_name: 'Ana S' },
+    };
+    expect(getUserDisplayName(u1)).toBe('Ana Sofia');
+
+    const u2: AuthUser = {
+      ...MOCK_USER,
+      user_metadata: { name: 'Roberto Gómez' },
+    };
+    expect(getUserDisplayName(u2)).toBe('Roberto Gómez');
+
+    const u3: AuthUser = {
+      ...MOCK_USER,
+      user_metadata: { full_name: 'Mariana Silva' },
+    };
+    expect(getUserDisplayName(u3)).toBe('Mariana Silva');
+  });
+
+  it('getUserDisplayName usa el prefijo del correo si no hay metadatos de nombre', () => {
+    const uNoMeta: AuthUser = {
+      ...MOCK_USER,
+      email: 'cocinero@foodai.app',
+      user_metadata: {},
+    };
+    expect(getUserDisplayName(uNoMeta)).toBe('Cocinero');
+  });
+
+  it('getUserDisplayName retorna Usuario para usuario nulo o indefinido', () => {
+    expect(getUserDisplayName(null)).toBe('Usuario');
+    expect(getUserDisplayName(undefined)).toBe('Usuario');
+  });
+
+  it('getAvatarInitials genera iniciales correctas para nombres de múltiples palabras', () => {
+    expect(getAvatarInitials('Carlos Gómez')).toBe('CG');
+    expect(getAvatarInitials('María José Fernández')).toBe('MJ');
+  });
+
+  it('getAvatarInitials genera iniciales para nombres de una palabra o correos', () => {
+    expect(getAvatarInitials('Andrés')).toBe('AN');
+    expect(getAvatarInitials('A')).toBe('A');
+    expect(getAvatarInitials('chef@foodai.app')).toBe('CH');
+    expect(getAvatarInitials('')).toBe('U');
+    expect(getAvatarInitials(null)).toBe('U');
   });
 });

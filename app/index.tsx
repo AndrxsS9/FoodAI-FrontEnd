@@ -11,13 +11,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Button } from '../src/components/common';
-import { useAuthSafe } from '../src/context/AuthContext';
 import { colors, radius, spacing, useTypography } from '../src/theme';
 
 export default function WelcomeScreen() {
   const typography = useTypography();
   const router = useRouter();
-  const auth = useAuthSafe();
 
   const handleNavigateToHome = () => {
     router.replace('/(tabs)');

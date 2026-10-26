@@ -47,6 +47,7 @@ export function AuthProvider({
 
   const isSubmittingRef = useRef<boolean>(false);
   const isMountedRef = useRef<boolean>(true);
+  const authOpSeqRef = useRef<number>(0);
 
   // Inicialización de sesión y suscripción al listener de Supabase Auth
   useEffect(() => {
@@ -57,6 +58,9 @@ export function AuthProvider({
       const { data: authListener } = supabaseClient.auth.onAuthStateChange(
         (_event, currentSession) => {
           if (!isMountedRef.current) return;
+          const eventSeq = ++authOpSeqRef.current;
+          if (eventSeq < authOpSeqRef.current) return;
+
           setSession(currentSession);
           setUser(currentSession?.user ?? null);
           if (currentSession) {
@@ -71,13 +75,15 @@ export function AuthProvider({
 
     // Si ya se proveyó una sesión inicial fija (ej. en pruebas), no inicializamos asíncronamente
     if (initialSession === undefined) {
+      const initSeq = ++authOpSeqRef.current;
+
       supabaseClient.auth
         .getSession()
         .then(({ data, error }) => {
           if (error) {
             console.warn('[FoodAI:Auth] Error al restaurar sesión previa:', error.message);
           }
-          if (isMountedRef.current) {
+          if (isMountedRef.current && initSeq === authOpSeqRef.current) {
             const restoredSession = data?.session ?? null;
             setSession(restoredSession);
             setUser(restoredSession?.user ?? null);
@@ -87,7 +93,7 @@ export function AuthProvider({
           console.warn('[FoodAI:Auth] Excepción al restaurar sesión inicial:', err);
         })
         .finally(() => {
-          if (isMountedRef.current) {
+          if (isMountedRef.current && initSeq >= authOpSeqRef.current) {
             setIsInitializing(false);
           }
         });
@@ -160,6 +166,7 @@ export function AuthProvider({
         const confirmationPending = Boolean(registeredUser && !registeredSession);
 
         if (registeredSession && isMountedRef.current) {
+          authOpSeqRef.current++;
           setSession(registeredSession);
           setUser(registeredUser);
         }
@@ -230,6 +237,7 @@ export function AuthProvider({
         }
 
         if (isMountedRef.current) {
+          authOpSeqRef.current++;
           setSession(data.session);
           setUser(data.user);
           setAuthError(null);
@@ -257,6 +265,7 @@ export function AuthProvider({
    * Cierre de sesión seguro mediante supabase.auth.signOut()
    */
   const signOut = useCallback(async () => {
+    const opSeq = ++authOpSeqRef.current;
     isSubmittingRef.current = true;
     setIsSubmitting(true);
     setAuthError(null);
@@ -269,9 +278,10 @@ export function AuthProvider({
         throw new Error(friendlyMessage);
       }
 
-      if (isMountedRef.current) {
+      if (isMountedRef.current && opSeq >= authOpSeqRef.current) {
         setSession(null);
         setUser(null);
+        setIsInitializing(false);
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : mapSupabaseAuthError(err);

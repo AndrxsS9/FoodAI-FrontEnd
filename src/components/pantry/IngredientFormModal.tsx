@@ -136,7 +136,8 @@ function IngredientFormSheet({
 
         <View
           style={styles.sheetContainer}
-          accessibilityRole="dialog"
+          accessibilityViewIsModal={true}
+          aria-modal={true}
           accessibilityLabel={isEditing ? 'Editar alimento' : 'Agregar nuevo alimento'}
         >
           {/* Barra de agarre decorativa (estilo bottom sheet) */}

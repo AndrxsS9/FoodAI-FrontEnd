@@ -275,7 +275,6 @@ export default function RegisterScreen() {
                   editable={!isSubmitting}
                   accessibilityLabel="Correo electrónico"
                   accessibilityHint="Ingresa una dirección de correo para tu nueva cuenta"
-                  accessibilityRole="textbox"
                 />
               </View>
               {emailError ? (
@@ -316,7 +315,6 @@ export default function RegisterScreen() {
                   editable={!isSubmitting}
                   accessibilityLabel="Contraseña"
                   accessibilityHint={`Ingresa una contraseña segura de al menos ${MIN_PASSWORD_LENGTH} caracteres`}
-                  accessibilityRole="textbox"
                 />
                 <Pressable
                   testID="register-password-toggle"
@@ -371,7 +369,6 @@ export default function RegisterScreen() {
                   editable={!isSubmitting}
                   accessibilityLabel="Confirmar contraseña"
                   accessibilityHint="Vuelve a ingresar la misma contraseña para confirmarla"
-                  accessibilityRole="textbox"
                   onSubmitEditing={handleSubmit}
                   returnKeyType="done"
                 />

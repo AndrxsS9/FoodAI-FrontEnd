@@ -35,19 +35,20 @@ export const Card: React.FC<CardProps> = ({
   testID,
   style,
 }) => {
-  const { colors } = useAppTheme();
+  const { colors, activeColorScheme } = useAppTheme();
+  const isDark = activeColorScheme === 'dark';
 
   const variantStyles = useMemo<Record<CardVariant, ViewStyle>>(
     () => ({
       elevated: {
         backgroundColor: colors.surface,
-        borderWidth: 1,
-        borderColor: colors.border,
+        borderWidth: isDark ? 1 : 0,
+        borderColor: isDark ? colors.border : 'transparent',
         shadowColor: colors.cardShadow,
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.06,
-        shadowRadius: 8,
-        elevation: 2,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.08,
+        shadowRadius: 14,
+        elevation: 3,
       },
       flat: {
         backgroundColor: colors.surfaceContainerLow,
@@ -55,11 +56,11 @@ export const Card: React.FC<CardProps> = ({
       },
       outlined: {
         backgroundColor: colors.surface,
-        borderWidth: 1.5,
-        borderColor: colors.border,
+        borderWidth: 1,
+        borderColor: colors.borderLight,
       },
     }),
-    [colors]
+    [colors, isDark]
   );
 
   const paddingValue = typeof padding === 'number' ? padding : spacing[padding];

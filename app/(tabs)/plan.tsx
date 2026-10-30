@@ -138,6 +138,8 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
       {/* 1. Header institucional */}
       <Header
+        showLogo
+        elevated
         title="Mi plan de comidas"
         subtitle="Organiza tres días según tu despensa y presupuesto"
         rightElement={
@@ -665,7 +667,7 @@ const createStyles = (colors: AppColors) =>
       width: 36,
       height: 36,
       borderRadius: radius.full,
-      backgroundColor: colors.primary,
+      backgroundColor: colors.primaryAction,
       alignItems: 'center',
       justifyContent: 'center',
     },
@@ -676,9 +678,12 @@ const createStyles = (colors: AppColors) =>
       backgroundColor: colors.surface,
       paddingVertical: spacing.sm,
       paddingHorizontal: spacing.md,
-      borderRadius: radius.lg,
-      borderWidth: 1,
-      borderColor: colors.outlineVariant,
+      borderRadius: radius.lg + 4,
+      shadowColor: colors.cardShadow,
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.07,
+      shadowRadius: 12,
+      elevation: 2,
     },
     summaryItem: {
       flexDirection: 'row',
@@ -705,21 +710,19 @@ const createStyles = (colors: AppColors) =>
       flexDirection: 'row',
       alignItems: 'center',
       gap: spacing.sm,
-      backgroundColor: colors.errorContainer,
+      backgroundColor: colors.secondaryFixed,
       padding: spacing.md,
-      borderRadius: radius.md,
-      borderWidth: 1,
-      borderColor: colors.error,
+      borderRadius: radius.lg,
     },
     staleTextWrapper: {
       flex: 1,
     },
     staleTitle: {
-      color: colors.onErrorContainer,
+      color: colors.onSecondaryFixed,
       fontWeight: '700',
     },
     staleDescription: {
-      color: colors.onErrorContainer,
+      color: colors.onSecondaryFixed,
       marginTop: 2,
       lineHeight: 18,
     },
@@ -777,7 +780,7 @@ const createStyles = (colors: AppColors) =>
       width: 72,
       height: 72,
       borderRadius: radius.full,
-      backgroundColor: colors.surfaceContainerLow,
+      backgroundColor: colors.primaryFixed,
       alignItems: 'center',
       justifyContent: 'center',
     },
@@ -803,7 +806,7 @@ const createStyles = (colors: AppColors) =>
       width: 64,
       height: 64,
       borderRadius: radius.full,
-      backgroundColor: colors.primaryContainer,
+      backgroundColor: colors.primaryFixed,
       alignItems: 'center',
       justifyContent: 'center',
     },
@@ -838,9 +841,12 @@ const createStyles = (colors: AppColors) =>
       padding: spacing.md,
       backgroundColor: colors.surface,
       gap: spacing.sm,
-      borderWidth: 1,
-      borderColor: colors.outlineVariant,
-      borderRadius: radius.lg,
+      borderRadius: radius.lg + 4,
+      shadowColor: colors.cardShadow,
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.07,
+      shadowRadius: 12,
+      elevation: 2,
     },
     progressHeaderRow: {
       flexDirection: 'row',
@@ -876,10 +882,10 @@ const createStyles = (colors: AppColors) =>
       flexDirection: 'row',
       alignItems: 'center',
       gap: 6,
-      backgroundColor: colors.surfaceContainerLow,
+      backgroundColor: colors.primaryFixed,
       paddingVertical: 6,
       paddingHorizontal: 10,
-      borderRadius: radius.md,
+      borderRadius: radius.lg,
       marginBottom: 4,
     },
     completedBadgeText: {
@@ -897,13 +903,13 @@ const createStyles = (colors: AppColors) =>
       justifyContent: 'space-between',
     },
     dayBadge: {
-      backgroundColor: colors.primary,
+      backgroundColor: colors.primaryFixed,
       paddingHorizontal: 10,
       paddingVertical: 4,
       borderRadius: radius.full,
     },
     dayBadgeText: {
-      color: colors.onPrimary,
+      color: colors.onPrimaryFixed,
       fontWeight: '700',
       fontSize: 11,
     },
@@ -911,7 +917,7 @@ const createStyles = (colors: AppColors) =>
       flexDirection: 'row',
       alignItems: 'center',
       gap: 4,
-      backgroundColor: colors.tertiaryContainer,
+      backgroundColor: colors.tertiaryFixed,
       paddingHorizontal: 10,
       paddingVertical: 4,
       borderRadius: radius.full,
@@ -935,7 +941,7 @@ const createStyles = (colors: AppColors) =>
       gap: spacing.sm,
       backgroundColor: colors.surfaceContainerLow,
       padding: spacing.xs,
-      borderRadius: radius.sm,
+      borderRadius: radius.md + 4,
     },
     dayMetricItem: {
       flexDirection: 'row',
@@ -961,7 +967,7 @@ const createStyles = (colors: AppColors) =>
     },
     budgetCard: {
       padding: spacing.md,
-      backgroundColor: colors.surface,
+      backgroundColor: colors.surfaceContainerHigh,
       gap: spacing.xs,
     },
     budgetCardHeader: {
@@ -1004,14 +1010,14 @@ const createStyles = (colors: AppColors) =>
       alignItems: 'center',
       gap: 6,
       padding: spacing.sm,
-      borderRadius: radius.md,
+      borderRadius: radius.lg,
       marginTop: spacing.xs,
     },
     withinBudgetSuccess: {
-      backgroundColor: colors.surfaceContainerLow,
+      backgroundColor: colors.primaryFixed,
     },
     withinBudgetWarning: {
-      backgroundColor: colors.errorContainer,
+      backgroundColor: colors.secondaryFixed,
     },
     withinBudgetText: {
       fontWeight: '700',
@@ -1026,9 +1032,12 @@ const createStyles = (colors: AppColors) =>
       backgroundColor: colors.surface,
       padding: spacing.md,
       borderRadius: radius.xl,
-      borderWidth: 1,
-      borderColor: colors.outlineVariant,
       gap: spacing.sm,
+      shadowColor: colors.cardShadow,
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.07,
+      shadowRadius: 12,
+      elevation: 2,
     },
     shoppingHeaderRow: {
       flexDirection: 'row',
@@ -1044,7 +1053,7 @@ const createStyles = (colors: AppColors) =>
       width: 28,
       height: 28,
       borderRadius: radius.full,
-      backgroundColor: colors.errorContainer,
+      backgroundColor: colors.secondaryFixed,
       alignItems: 'center',
       justifyContent: 'center',
     },

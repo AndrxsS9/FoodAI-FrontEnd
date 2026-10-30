@@ -547,6 +547,7 @@ export default function ScannerScreen() {
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
       {/* Header unificado */}
       <Header
+        elevated
         title="Escáner Inteligente"
         subtitle="Detecta ingredientes con tu cámara e IA"
         showBack
@@ -594,6 +595,17 @@ export default function ScannerScreen() {
                   accessibilityLabel="Visor de escáner con ingredientes sobre la mesa"
                 />
                 <View style={styles.viewfinderReticleOverlay}>
+                  <View
+                    style={styles.viewfinderFrame}
+                    pointerEvents="none"
+                    accessible={false}
+                    importantForAccessibility="no-hide-descendants"
+                  >
+                    <View style={[styles.viewfinderCorner, styles.cornerTopLeft]} />
+                    <View style={[styles.viewfinderCorner, styles.cornerTopRight]} />
+                    <View style={[styles.viewfinderCorner, styles.cornerBottomLeft]} />
+                    <View style={[styles.viewfinderCorner, styles.cornerBottomRight]} />
+                  </View>
                   <View style={styles.viewfinderReticle}>
                     <MaterialIcons
                       name="photo-camera"
@@ -650,9 +662,11 @@ export default function ScannerScreen() {
             </Card>
 
             {/* Consejos para una buena captura */}
-            <Card variant="outlined" style={styles.tipsCard}>
+            <Card variant="flat" style={styles.tipsCard}>
               <View style={styles.tipsHeaderRow}>
-                <MaterialIcons name="lightbulb" size={20} color={colors.tertiary} />
+                <View style={styles.tipsIconCircle}>
+                  <MaterialIcons name="lightbulb" size={18} color={colors.primary} />
+                </View>
                 <Text style={[styles.tipsTitle, typography.headlineMd]}>
                   Consejos para una detección óptima
                 </Text>
@@ -1122,11 +1136,11 @@ const createStyles = (colors: AppColors) =>
     },
     viewfinderBox: {
       width: '100%',
-      height: 220,
-      borderRadius: radius.lg,
+      height: 300,
+      borderRadius: radius.lg + 4,
       overflow: 'hidden',
       position: 'relative',
-      backgroundColor: colors.surfaceContainerLow,
+      backgroundColor: '#1C1C19',
     },
     viewfinderImage: {
       width: '100%',
@@ -1135,22 +1149,24 @@ const createStyles = (colors: AppColors) =>
     },
     viewfinderReticleOverlay: {
       ...StyleSheet.absoluteFill,
-      backgroundColor: colors.backdrop,
+      backgroundColor: 'rgba(28, 28, 25, 0.38)',
       alignItems: 'center',
       justifyContent: 'center',
       gap: spacing.xs,
     },
     viewfinderReticle: {
-      width: 64,
-      height: 64,
+      width: 72,
+      height: 72,
       borderRadius: radius.full,
       backgroundColor: colors.surface,
       alignItems: 'center',
       justifyContent: 'center',
       elevation: 4,
+      borderWidth: 6,
+      borderColor: 'rgba(255, 255, 255, 0.4)',
     },
     viewfinderReticleText: {
-      color: colors.textPrimary,
+      color: '#FFFFFF',
       fontWeight: '700',
       textShadowColor: 'rgba(0, 0, 0, 0.75)',
       textShadowOffset: { width: 0, height: 1 },
@@ -1159,8 +1175,57 @@ const createStyles = (colors: AppColors) =>
     captureActions: {
       gap: spacing.xs,
     },
+    viewfinderFrame: {
+      position: 'absolute',
+      top: '12%',
+      bottom: '12%',
+      left: '9%',
+      right: '9%',
+    },
+    viewfinderCorner: {
+      position: 'absolute',
+      width: 30,
+      height: 30,
+      borderColor: 'rgba(252, 249, 244, 0.92)',
+    },
+    cornerTopLeft: {
+      top: 0,
+      left: 0,
+      borderTopWidth: 3,
+      borderLeftWidth: 3,
+      borderTopLeftRadius: 14,
+    },
+    cornerTopRight: {
+      top: 0,
+      right: 0,
+      borderTopWidth: 3,
+      borderRightWidth: 3,
+      borderTopRightRadius: 14,
+    },
+    cornerBottomLeft: {
+      bottom: 0,
+      left: 0,
+      borderBottomWidth: 3,
+      borderLeftWidth: 3,
+      borderBottomLeftRadius: 14,
+    },
+    cornerBottomRight: {
+      bottom: 0,
+      right: 0,
+      borderBottomWidth: 3,
+      borderRightWidth: 3,
+      borderBottomRightRadius: 14,
+    },
+    tipsIconCircle: {
+      width: 32,
+      height: 32,
+      borderRadius: radius.full,
+      backgroundColor: colors.primaryFixed,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
     tipsCard: {
-      backgroundColor: colors.surface,
+      backgroundColor: colors.surfaceContainerLow,
       padding: spacing.md,
       gap: spacing.sm,
     },

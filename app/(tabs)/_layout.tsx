@@ -1,7 +1,7 @@
 import React from 'react';
 import { StyleSheet, Platform } from 'react-native';
 import { Tabs } from 'expo-router';
-import { MaterialIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTypography, useAppTheme } from '../../src/theme';
 
@@ -18,16 +18,16 @@ export default function TabsLayout() {
         tabBarInactiveTintColor: activeColors.outline,
         tabBarStyle: {
           backgroundColor: activeColors.surface,
-          borderTopColor: activeColors.borderLight,
-          borderTopWidth: 1,
+          borderTopColor: 'transparent',
+          borderTopWidth: 0,
           height: 60 + (Platform.OS === 'ios' ? insets.bottom : Math.max(insets.bottom, 6)),
           paddingBottom: Platform.OS === 'ios' ? insets.bottom : Math.max(insets.bottom, 6),
           paddingTop: 6,
-          elevation: 8,
+          elevation: 12,
           shadowColor: activeColors.cardShadow,
           shadowOffset: { width: 0, height: -2 },
-          shadowOpacity: 0.05,
-          shadowRadius: 10,
+          shadowOpacity: 0.07,
+          shadowRadius: 12,
         },
         tabBarLabelStyle: {
           ...typography.labelSm,
@@ -45,8 +45,8 @@ export default function TabsLayout() {
           title: 'Inicio',
           tabBarAccessibilityLabel: 'Pestaña Inicio',
           tabBarIcon: ({ color, focused }) => (
-            <MaterialIcons
-              name="home"
+            <MaterialCommunityIcons
+              name={focused ? 'home-variant' : 'home-variant-outline'}
               size={24}
               color={String(color)}
               style={focused ? styles.activeIcon : undefined}
@@ -60,8 +60,8 @@ export default function TabsLayout() {
           title: 'Despensa',
           tabBarAccessibilityLabel: 'Pestaña Despensa',
           tabBarIcon: ({ color, focused }) => (
-            <MaterialIcons
-              name="kitchen"
+            <MaterialCommunityIcons
+              name={focused ? 'fridge' : 'fridge-outline'}
               size={24}
               color={String(color)}
               style={focused ? styles.activeIcon : undefined}
@@ -75,8 +75,8 @@ export default function TabsLayout() {
           title: 'Plan',
           tabBarAccessibilityLabel: 'Pestaña Plan',
           tabBarIcon: ({ color, focused }) => (
-            <MaterialIcons
-              name="calendar-today"
+            <MaterialCommunityIcons
+              name={focused ? 'calendar-month' : 'calendar-month-outline'}
               size={24}
               color={String(color)}
               style={focused ? styles.activeIcon : undefined}
@@ -90,8 +90,8 @@ export default function TabsLayout() {
           title: 'Perfil',
           tabBarAccessibilityLabel: 'Pestaña Perfil',
           tabBarIcon: ({ color, focused }) => (
-            <MaterialIcons
-              name="account-circle"
+            <MaterialCommunityIcons
+              name={focused ? 'account-circle' : 'account-circle-outline'}
               size={24}
               color={String(color)}
               style={focused ? styles.activeIcon : undefined}

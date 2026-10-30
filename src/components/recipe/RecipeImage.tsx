@@ -59,6 +59,25 @@ export function resolveRecipeImageSource(
     return null;
   }
 
+  // Si es un arreglo de fuentes de imagen (React Native ImageURISource[] o números para multi-resolución)
+  if (Array.isArray(source)) {
+    if (source.length === 0) {
+      return null;
+    }
+    const resolvedItems: ImageSourcePropType[] = [];
+    for (const item of source) {
+      if (Array.isArray(item)) {
+        return null;
+      }
+      const resolvedItem = resolveRecipeImageSource(item);
+      if (!resolvedItem || Array.isArray(resolvedItem)) {
+        return null;
+      }
+      resolvedItems.push(resolvedItem);
+    }
+    return resolvedItems as any;
+  }
+
   // Si es un objeto ImageURISource o un asset mock de Jest/bundler ({ testUri: '...' }, { default: ... })
   if (typeof source === 'object') {
     if (
@@ -77,10 +96,6 @@ export function resolveRecipeImageSource(
         return { ...(source as object), uri };
       }
       return null;
-    }
-    // Soporte para arreglos de fuentes
-    if (Array.isArray(source) && source.length > 0) {
-      return source as any;
     }
   }
 

@@ -3,20 +3,25 @@
  *
  * Valida:
  * 1. Resolución determinista de fuentes (resolveRecipeImageSource): locales, URLs seguras, inválidas y nulas.
- * 2. Política de seguridad HTTPS: aceptación de HTTPS, rechazo de HTTP inseguro y soporte de loopback en dev.
- * 3. Renderizado de recetas con imagen empaquetada (require local) y recetas demo de fixture.
- * 4. Renderizado de recetas con URL remota válida (https://).
- * 5. Respaldo neutral de FoodAI ante recetas sin imagen (undefined o null).
- * 6. Respaldo neutral ante URLs HTTP inseguras, vacías o malformadas.
- * 7. Conmutación a fallback en caso de error de red o carga (onError).
- * 8. Identificación y badges para recetas en modo demostración (isDemo).
- * 9. Accesibilidad avanzada de overlays:
+ * 2. Política de seguridad HTTPS estricta: aceptación de HTTPS con host válido, rechazo de HTTP inseguro y loopback en dev.
+ * 3. Validación estricta de arreglos de fuentes (ImageURISource[]):
+ *    - Aceptación de arreglos con fuentes HTTPS o assets válidos.
+ *    - Rechazo de arreglos vacíos ([]).
+ *    - Rechazo de arreglos que contengan al menos una fuente HTTP insegura o malformada.
+ *    - Rechazo de arreglos anidados.
+ * 4. Renderizado de recetas con imagen empaquetada (require local) y recetas demo de fixture.
+ * 5. Renderizado de recetas con URL remota válida (https://) y arreglos multi-resolución.
+ * 6. Respaldo neutral de FoodAI ante recetas sin imagen (undefined o null).
+ * 7. Respaldo neutral ante URLs HTTP inseguras, vacías, malformadas o arreglos inválidos.
+ * 8. Conmutación a fallback en caso de error de red o carga (onError).
+ * 9. Identificación y badges para recetas en modo demostración (isDemo).
+ * 10. Accesibilidad avanzada de overlays:
  *    - La imagen / fallback conserva su etiqueta descriptiva e independencia.
  *    - El contenedor exterior no colapsa ni oculta elementos superpuestos (children).
  *    - Los títulos superpuestos retienen accessibilityRole="header".
  *    - Las métricas de conveniencia y comensales son legibles individualmente.
  *    - Los degradados y elementos puramente decorativos no producen lecturas vacías.
- * 10. Dimensiones, radios de borde y relaciones de aspecto personalizadas.
+ * 11. Dimensiones, radios de borde y relaciones de aspecto personalizadas.
  */
 
 import React from 'react';
@@ -38,6 +43,7 @@ describe('RecipeImage — Validación de Seguridad de URLs Remotas (isSecureRemo
   it('acepta URLs remotas HTTPS seguras', () => {
     expect(isSecureRemoteImageUrl('https://images.unsplash.com/photo-123.jpg')).toBe(true);
     expect(isSecureRemoteImageUrl('https://cdn.foodai.app/recipes/pollo.png')).toBe(true);
+    expect(isSecureRemoteImageUrl('https://foodai.co/a/b?c=1#d')).toBe(true);
   });
 
   it('rechaza URLs remotas HTTP inseguras en producción', () => {
@@ -51,16 +57,33 @@ describe('RecipeImage — Validación de Seguridad de URLs Remotas (isSecureRemo
     expect(isSecureRemoteImageUrl('http://10.0.2.2:8081/assets/demo.jpg')).toBe(true);
   });
 
-  it('rechaza URLs malformadas, sin host o con protocolos no soportados', () => {
+  it('rechaza dominios .local arbitrarios en desarrollo (no son loopback)', () => {
+    expect(isSecureRemoteImageUrl('http://mycomputer.local/asset.jpg')).toBe(false);
+    expect(isSecureRemoteImageUrl('http://server.local:8080/dish.png')).toBe(false);
+  });
+
+  it('rechaza URLs HTTPS malformadas sin hostname válido o con caracteres ilegales', () => {
     expect(isSecureRemoteImageUrl('https://')).toBe(false);
     expect(isSecureRemoteImageUrl('https:// ')).toBe(false);
+    expect(isSecureRemoteImageUrl('https:///path')).toBe(false);
+    expect(isSecureRemoteImageUrl('https://?query')).toBe(false);
+    expect(isSecureRemoteImageUrl('https://#hash')).toBe(false);
+    expect(isSecureRemoteImageUrl('https://:8080')).toBe(false);
+    expect(isSecureRemoteImageUrl('https://nodot')).toBe(false);
+    expect(isSecureRemoteImageUrl('https://invalid host.com/pic.jpg')).toBe(false);
+    expect(isSecureRemoteImageUrl('https://foo..bar.com')).toBe(false);
+  });
+
+  it('rechaza protocolos no soportados o entradas no string', () => {
     expect(isSecureRemoteImageUrl('ftp://server/food.png')).toBe(false);
     expect(isSecureRemoteImageUrl('file:///storage/photo.jpg')).toBe(false);
     expect(isSecureRemoteImageUrl('javascript:alert(1)')).toBe(false);
     expect(isSecureRemoteImageUrl('')).toBe(false);
+    expect(isSecureRemoteImageUrl('   ')).toBe(false);
     expect(isSecureRemoteImageUrl(null)).toBe(false);
     expect(isSecureRemoteImageUrl(undefined)).toBe(false);
     expect(isSecureRemoteImageUrl(12345)).toBe(false);
+    expect(isSecureRemoteImageUrl({})).toBe(false);
   });
 });
 
@@ -110,6 +133,51 @@ describe('RecipeImage — Resolución de Fuentes (resolveRecipeImageSource)', ()
   it('resuelve recursivamente objetos envueltos en default export', () => {
     const wrapped = { default: 99 };
     expect(resolveRecipeImageSource(wrapped)).toBe(99);
+  });
+
+  describe('Validación de arreglos de fuentes (ImageURISource[])', () => {
+    it('acepta arreglos con fuentes HTTPS válidas y preserva metadatos legítimos', () => {
+      const validArray = [
+        { uri: 'https://cdn.foodai.app/dish-300.jpg', width: 300, height: 200 },
+        { uri: 'https://cdn.foodai.app/dish-600.jpg', width: 600, height: 400 },
+      ];
+      expect(resolveRecipeImageSource(validArray)).toEqual(validArray);
+    });
+
+    it('acepta arreglos con recursos empaquetados locales válidos', () => {
+      const localArray = [42, 43];
+      expect(resolveRecipeImageSource(localArray)).toEqual(localArray);
+    });
+
+    it('acepta arreglos de strings con URLs HTTPS válidas', () => {
+      const stringArray = ['https://cdn.foodai.app/img1.jpg'];
+      expect(resolveRecipeImageSource(stringArray)).toEqual([
+        { uri: 'https://cdn.foodai.app/img1.jpg' },
+      ]);
+    });
+
+    it('rechaza arreglos vacíos retornando null', () => {
+      expect(resolveRecipeImageSource([])).toBeNull();
+    });
+
+    it('rechaza arreglos que contengan al menos una fuente HTTP insegura', () => {
+      const mixedArray = [
+        { uri: 'https://cdn.foodai.app/safe.jpg' },
+        { uri: 'http://insecure.com/bad.jpg' },
+      ];
+      expect(resolveRecipeImageSource(mixedArray)).toBeNull();
+    });
+
+    it('rechaza arreglos que contengan objetos vacíos o malformados', () => {
+      expect(resolveRecipeImageSource([{ uri: '' }])).toBeNull();
+      expect(resolveRecipeImageSource([{}])).toBeNull();
+      expect(resolveRecipeImageSource([null])).toBeNull();
+      expect(resolveRecipeImageSource([undefined])).toBeNull();
+    });
+
+    it('rechaza arreglos anidados (matrices no permitidas)', () => {
+      expect(resolveRecipeImageSource([[42]])).toBeNull();
+    });
   });
 
   it('retorna null para valores nulos o indefinidos', () => {
@@ -171,7 +239,26 @@ describe('RecipeImage — Componente Visual y Accesibilidad de Overlays', () => 
     expect(getByLabelText('Foto del plato: Sancocho de Gallina')).toBeTruthy();
   });
 
-  it('3. Renderiza el respaldo neutral FoodAI ante una receta sin imagen (undefined o null)', async () => {
+  it('3. Acepta y renderiza un arreglo de fuentes HTTPS multi-resolución', async () => {
+    const sources = [
+      { uri: 'https://images.foodai.app/sancocho-sm.jpg', width: 300 },
+      { uri: 'https://images.foodai.app/sancocho-lg.jpg', width: 600 },
+    ];
+    const { getByTestId, queryByTestId, getByLabelText } = await renderWithTheme(
+      <RecipeImage
+        source={sources}
+        recipeName="Sancocho Trifásico"
+        testID="recipe-image-container"
+        fallbackTestID="recipe-fallback-container"
+      />
+    );
+
+    expect(getByTestId('recipe-image-container')).toBeTruthy();
+    expect(queryByTestId('recipe-fallback-container')).toBeNull();
+    expect(getByLabelText('Foto del plato: Sancocho Trifásico')).toBeTruthy();
+  });
+
+  it('4. Renderiza el respaldo neutral FoodAI ante una receta sin imagen (undefined o null)', async () => {
     const { getByTestId, queryByTestId, getByText, getByLabelText } = await renderWithTheme(
       <RecipeImage
         source={null}
@@ -192,22 +279,42 @@ describe('RecipeImage — Componente Visual y Accesibilidad de Overlays', () => 
     expect(getByLabelText('Ilustración de Bandeja Paisa')).toBeTruthy();
   });
 
-  it('4. Activa el fallback neutral ante URLs HTTP inseguras o vacías', async () => {
-    const { getByTestId, queryByTestId, getByText } = await renderWithTheme(
+  it('5. Activa el fallback neutral ante URLs HTTP inseguras, vacías o arreglos con fuentes inseguras', async () => {
+    // Caso A: String HTTP inseguro
+    const screenA = await renderWithTheme(
       <RecipeImage
         source="http://insecure-domain.com/dish.png"
         recipeName="Arepas con Queso"
-        testID="recipe-image-container"
-        fallbackTestID="recipe-fallback-container"
+        fallbackTestID="fallback-insecure-string"
       />
     );
+    expect(screenA.getByTestId('fallback-insecure-string')).toBeTruthy();
 
-    expect(getByTestId('recipe-fallback-container')).toBeTruthy();
-    expect(queryByTestId('recipe-image-container')).toBeNull();
-    expect(getByText('FoodAI Receta')).toBeTruthy();
+    // Caso B: Arreglo mixto con HTTP inseguro
+    const screenB = await renderWithTheme(
+      <RecipeImage
+        source={[
+          { uri: 'https://valid.com/1.jpg' },
+          { uri: 'http://insecure.com/2.jpg' },
+        ]}
+        recipeName="Arepas con Huevo"
+        fallbackTestID="fallback-mixed-array"
+      />
+    );
+    expect(screenB.getByTestId('fallback-mixed-array')).toBeTruthy();
+
+    // Caso C: Arreglo vacío
+    const screenC = await renderWithTheme(
+      <RecipeImage
+        source={[]}
+        recipeName="Arepas de Choclo"
+        fallbackTestID="fallback-empty-array"
+      />
+    );
+    expect(screenC.getByTestId('fallback-empty-array')).toBeTruthy();
   });
 
-  it('5. Conmuta suavemente al fallback ante fallo de carga remota (onError) sin romper la UI', async () => {
+  it('6. Conmuta suavemente al fallback ante fallo de carga remota (onError) sin romper la UI', async () => {
     const failingUrl = 'https://images.foodai.app/broken-image.jpg';
     const { getByTestId, queryByTestId, getByText } = await renderWithTheme(
       <RecipeImage
@@ -235,7 +342,7 @@ describe('RecipeImage — Componente Visual y Accesibilidad de Overlays', () => 
     expect(getByText('FoodAI Receta')).toBeTruthy();
   });
 
-  it('6. Muestra indicación de demo en accesibilidad cuando la imagen existe y badge "Ejemplo" en fallback', async () => {
+  it('7. Muestra indicación de demo en accesibilidad cuando la imagen existe y badge "Ejemplo" en fallback', async () => {
     // Caso A: Demo con imagen
     const screenA = await renderWithTheme(
       <RecipeImage
@@ -260,7 +367,7 @@ describe('RecipeImage — Componente Visual y Accesibilidad de Overlays', () => 
     expect(screenB.getByText('Ejemplo')).toBeTruthy();
   });
 
-  it('7. Preserva la accesibilidad individual de títulos con accessibilityRole="header" y badges superpuestos', async () => {
+  it('8. Preserva la accesibilidad individual de títulos con accessibilityRole="header" y badges superpuestos', async () => {
     const { getByRole, getByLabelText, getByText } = await renderWithTheme(
       <RecipeImage
         source={106}
@@ -301,7 +408,7 @@ describe('RecipeImage — Componente Visual y Accesibilidad de Overlays', () => 
     expect(getByLabelText('Afinidad estimada: 95% conveniente')).toBeTruthy();
   });
 
-  it('8. Preserva la accesibilidad de overlays y títulos cuando se muestra el fallback', async () => {
+  it('9. Preserva la accesibilidad de overlays y títulos cuando se muestra el fallback', async () => {
     const { getByRole, getByLabelText, getByText } = await renderWithTheme(
       <RecipeImage
         source={null}
@@ -332,7 +439,7 @@ describe('RecipeImage — Componente Visual y Accesibilidad de Overlays', () => 
     expect(getByLabelText('Afinidad estimada: 88% conveniente')).toBeTruthy();
   });
 
-  it('9. Permite sobrescribir accessibilityLabel y personalizar dimensiones / borderRadius', async () => {
+  it('10. Permite sobrescribir accessibilityLabel y personalizar dimensiones / borderRadius', async () => {
     const customLabel = 'Fotografía artística de Lechona Tolimense recién horneada';
     const { getByLabelText, getByTestId } = await renderWithTheme(
       <RecipeImage

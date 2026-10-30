@@ -33,8 +33,14 @@ import {
   reconcileDeductionIntent,
   getConsumedRecipeRecords,
   ConsumedIngredientDeduction,
+  RecipeConsumptionLedgerError,
 } from '../src/services/storage/recipeConsumptionStorage';
-import { PantryProvider, usePantry, rollbackPantryDeductions } from '../src/context/PantryContext';
+import {
+  PantryProvider,
+  usePantry,
+  rollbackPantryDeductions,
+  RollbackInconsistencyError,
+} from '../src/context/PantryContext';
 import { PantryStorageAdapter } from '../src/services/storage/pantryStorage';
 import { Ingredient } from '../src/types/pantry';
 
@@ -707,5 +713,227 @@ describe('FoodAI Fase 6A — Auditoría de Consistencia y Reconciliación Segura
 
     // Huevos debe conservar intacta la modificación concurrente (sigue en 10, no se sobreescribe con 12)
     expect(storage.data.find((i) => i.id === 'p-3')?.quantity).toBe(10);
+  });
+
+  it('10. Ledger ilegible por fallo temporal de almacenamiento: fail-closed y aborto seguro sin mutar despensa', async () => {
+    const userId = 'user-unreadable-ledger';
+    const storage = createMockPantryStorage(samplePantryIngredients);
+
+    const baseGetItem = (AsyncStorage.getItem as jest.Mock).getMockImplementation()!;
+    (AsyncStorage.getItem as jest.Mock).mockImplementation(async (key: string) => {
+      if (typeof key === 'string' && key.includes(userId)) {
+        throw new Error('AsyncStorage I/O failure: SQLite disk unreadable');
+      }
+      return baseGetItem(key);
+    });
+
+    try {
+      // 1. getConsumedRecipeRecords debe lanzar RecipeConsumptionLedgerError
+      await expect(getConsumedRecipeRecords(userId)).rejects.toThrow(RecipeConsumptionLedgerError);
+
+      // 2. isRecipeDeducted aplica FAIL-CLOSED devolviendo true para no permitir deducciones a ciegas
+      expect(await isRecipeDeducted('receta-x', userId)).toBe(true);
+
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        <PantryProvider
+          storageAdapter={storage}
+          initialIngredients={samplePantryIngredients}
+          userId={userId}
+        >
+          {children}
+        </PantryProvider>
+      );
+
+      const { result } = await renderHook(() => usePantry(), { wrapper });
+
+      const recipe: ClientRecipe = {
+        id: 'receta-x',
+        instanceId: 'receta-x::inst_1',
+        name: 'Receta Test Falla',
+        description: '',
+        totalMinutes: 20,
+        servings: 2,
+        convenience: 80,
+        estimatedMissingCost: 0,
+        budgetRemaining: 10000,
+        withinBudget: true,
+        reason: '',
+        isDemoFixture: false,
+        steps: ['Cocinar'],
+        ingredients: [{ name: 'Arroz blanco', quantity: 300, unit: 'g' }],
+        availableIngredients: [],
+        missingIngredients: [],
+      };
+
+      // 3. checkIfRecipeDeducted debe reportar true (fail-closed)
+      expect(await result.current.checkIfRecipeDeducted(recipe)).toBe(true);
+
+      // 4. consumeRecipeIngredients debe abortar de forma segura SIN mutar la despensa
+      let res: any;
+      await act(async () => {
+        res = await result.current.consumeRecipeIngredients(recipe);
+      });
+
+      expect(res.success).toBe(false);
+      expect(res.error).toBeDefined();
+      expect(storage.saveCount).toBe(0); // activeStorage.saveIngredients NUNCA fue llamado
+      expect(storage.data.find((i) => i.id === 'p-1')?.quantity).toBe(1000); // 1000g intactos
+    } finally {
+      (AsyncStorage.getItem as jest.Mock).mockImplementation(baseGetItem);
+    }
+  });
+
+  it('11. Ledger con JSON corrupto o estructura malformada no se sobreescribe y aplica fail-closed', async () => {
+    const userId = 'user-corrupted-ledger';
+    const key = `@foodai:${userId}:consumed_recipes_v1`;
+    const corruptPayload = '{"version": 1, "records": { malformed json syntax here';
+
+    await AsyncStorage.setItem(key, corruptPayload);
+
+    // 1. Lectura directa detecta corrupción y lanza RecipeConsumptionLedgerError
+    await expect(getConsumedRecipeRecords(userId)).rejects.toThrow(RecipeConsumptionLedgerError);
+
+    // 2. isRecipeDeducted aplica fail-closed (true)
+    expect(await isRecipeDeducted('receta-corrupt', userId)).toBe(true);
+
+    // 3. Registrar una nueva intención NO debe sobreescribir el ledger con un set vacío
+    await expect(
+      recordDeductionIntent('receta-corrupt', userId, {
+        recipeName: 'Receta Corrupta',
+      })
+    ).rejects.toThrow(RecipeConsumptionLedgerError);
+
+    // 4. El contenido en almacenamiento sigue siendo exactamente el original (no fue sobreescrito con {})
+    const storedAfter = await AsyncStorage.getItem(key);
+    expect(storedAfter).toBe(corruptPayload);
+  });
+
+  it('12. Estructuras de ledger inválidas lanzan RecipeConsumptionLedgerError', async () => {
+    const userIdNullRecords = 'user-invalid-null';
+    await AsyncStorage.setItem(
+      `@foodai:${userIdNullRecords}:consumed_recipes_v1`,
+      JSON.stringify({ version: 1, records: null })
+    );
+    await expect(getConsumedRecipeRecords(userIdNullRecords)).rejects.toThrow(RecipeConsumptionLedgerError);
+
+    const userIdArrayRecords = 'user-invalid-array';
+    await AsyncStorage.setItem(
+      `@foodai:${userIdArrayRecords}:consumed_recipes_v1`,
+      JSON.stringify({ version: 1, records: ['array', 'no-es-objeto'] })
+    );
+    await expect(getConsumedRecipeRecords(userIdArrayRecords)).rejects.toThrow(RecipeConsumptionLedgerError);
+  });
+
+  it('13. Distinción de almacenamiento genuinamente ausente (usuario nuevo o clave vacía)', async () => {
+    const freshUserId = 'user-brand-new-999';
+    // Clave nunca escrita en AsyncStorage
+    const records = await getConsumedRecipeRecords(freshUserId);
+    expect(records).toEqual({});
+    expect(await isRecipeDeducted('receta-nueva', freshUserId)).toBe(false);
+  });
+
+  it('14. Rollback detecta inconsistencias en despensa (RollbackInconsistencyError) y requiere revisión manual', async () => {
+    const storage = createMockPantryStorage(samplePantryIngredients);
+    const userId = 'user-inconsistent-rollback';
+
+    const deductions: ConsumedIngredientDeduction[] = [
+      {
+        ingredientId: 'p-1',
+        ingredientName: 'Arroz blanco',
+        deductedQuantity: 300,
+        unit: 'g',
+        stockBefore: 1000,
+        stockAfter: 700,
+      },
+    ];
+
+    // Simular que la despensa actual contiene 850g en lugar del stockAfter esperado (700g)
+    storage.data = storage.data.map((item) =>
+      item.id === 'p-1' ? { ...item, quantity: 850 } : item
+    );
+
+    // 1. rollbackPantryDeductions debe lanzar RollbackInconsistencyError directamente
+    await expect(rollbackPantryDeductions(storage, deductions)).rejects.toThrow(
+      RollbackInconsistencyError
+    );
+
+    // 2. La despensa NO debe ser modificada con adición ciega (permanece en 850g, no 1150g)
+    expect(storage.data.find((i) => i.id === 'p-1')?.quantity).toBe(850);
+
+    // 3. Probar el flujo integrado en consumeRecipeIngredients:
+    // Si la confirmación del ledger falla y el rollback detecta inconsistencia en despensa
+    const baseSetItem = (AsyncStorage.setItem as jest.Mock).getMockImplementation()!;
+    (AsyncStorage.setItem as jest.Mock).mockImplementation(async (key: string, value: string) => {
+      if (typeof value === 'string' && value.includes('"status":"completed"')) {
+        throw new Error('AsyncStorage ledger confirmation failed');
+      }
+      return baseSetItem(key, value);
+    });
+
+    try {
+      // Resetear despensa a 1000g para el flujo normal
+      storage.data = samplePantryIngredients.map((i) => ({ ...i }));
+      storage.saveCount = 0;
+
+      // Mockeamos que antes del rollback, la despensa sufra una modificación inesperada
+      const originalSave = storage.saveIngredients.bind(storage);
+      storage.saveIngredients = async (items: Ingredient[]) => {
+        const saved = await originalSave(items);
+        if (storage.saveCount === 1) {
+          // Alterar arbitrariamente la cantidad para generar inconsistencia antes del rollback
+          storage.data = storage.data.map((i) => (i.id === 'p-1' ? { ...i, quantity: 999 } : i));
+        }
+        return saved;
+      };
+
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        <PantryProvider
+          storageAdapter={storage}
+          initialIngredients={samplePantryIngredients}
+          userId={userId}
+        >
+          {children}
+        </PantryProvider>
+      );
+
+      const { result } = await renderHook(() => usePantry(), { wrapper });
+
+      const recipe: ClientRecipe = {
+        id: 'receta-inconsistent',
+        instanceId: 'receta-inconsistent::inst',
+        name: 'Receta Inconsistente',
+        description: '',
+        totalMinutes: 30,
+        servings: 2,
+        convenience: 80,
+        estimatedMissingCost: 0,
+        budgetRemaining: 10000,
+        withinBudget: true,
+        reason: '',
+        isDemoFixture: false,
+        steps: ['Cocinar'],
+        ingredients: [{ name: 'Arroz blanco', quantity: 300, unit: 'g' }],
+        availableIngredients: [],
+        missingIngredients: [],
+      };
+
+      let callResult: any;
+      await act(async () => {
+        callResult = await result.current.consumeRecipeIngredients(recipe);
+      });
+
+      expect(callResult.success).toBe(false);
+      expect(callResult.error).toContain('revisión manual');
+
+      // Se registró status 'requires_review'
+      const records = await getConsumedRecipeRecords(userId);
+      expect(records['receta-inconsistent::inst']?.status).toBe('requires_review');
+      expect(records['receta-inconsistent::inst']?.reviewReason).toContain('Inconsistencia en despensa durante rollback');
+
+      // Un chequeo posterior bloquea la receta
+      expect(await result.current.checkIfRecipeDeducted(recipe)).toBe(true);
+    } finally {
+      (AsyncStorage.setItem as jest.Mock).mockImplementation(baseSetItem);
+    }
   });
 });

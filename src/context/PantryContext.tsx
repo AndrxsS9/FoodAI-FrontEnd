@@ -38,11 +38,39 @@ import {
   reconcileDeductionIntent,
   getConsumedRecipeRecords,
   ConsumedIngredientDeduction,
+  RecipeConsumptionLedgerError,
 } from '../services/storage/recipeConsumptionStorage';
+
+export { RecipeConsumptionLedgerError };
+
+export class RollbackInconsistencyError extends Error {
+  public readonly ingredientId: string;
+  public readonly expectedStockAfter: number;
+  public readonly actualStock: number;
+
+  constructor(
+    ingredientId: string,
+    expectedStockAfter: number,
+    actualStock: number,
+    message?: string
+  ) {
+    super(
+      message ||
+        `Inconsistencia detectada durante rollback para el ingrediente '${ingredientId}': se esperaba stockAfter ${expectedStockAfter} pero se encontró ${actualStock}.`
+    );
+    this.name = 'RollbackInconsistencyError';
+    this.ingredientId = ingredientId;
+    this.expectedStockAfter = expectedStockAfter;
+    this.actualStock = actualStock;
+    Object.setPrototypeOf(this, RollbackInconsistencyError.prototype);
+  }
+}
 
 /**
  * Revierte selectivamente las cantidades descontadas de los ingredientes afectados por una receta,
- * evitando sobreescribir modificaciones concurrentes en otros alimentos de la despensa.
+ * verificando primero que el estado actual de cada ingrediente coincida con el estado post-descuento
+ * esperado (stockAfter). Si se detecta cualquier discrepancia o modificación divergente, aborta
+ * el rollback para evitar corromper la despensa y requiere revisión manual.
  */
 export async function rollbackPantryDeductions(
   storage: PantryStorageAdapter,
@@ -51,6 +79,23 @@ export async function rollbackPantryDeductions(
   const currentItems = await storage.getIngredients();
   const currentMap = new Map(currentItems.map((i) => [i.id, i]));
 
+  // 1. Verificación de consistencia previa: ningún ingrediente afectado debe haber divergido de stockAfter
+  for (const d of deductions) {
+    const existing = currentMap.get(d.ingredientId);
+    const actualQuantity = existing ? existing.quantity : 0;
+
+    const matchesStockAfter = Math.abs(actualQuantity - d.stockAfter) < 0.001;
+    if (!matchesStockAfter) {
+      throw new RollbackInconsistencyError(
+        d.ingredientId,
+        d.stockAfter,
+        actualQuantity,
+        `El ingrediente '${d.ingredientName}' tiene cantidad actual ${actualQuantity} que no coincide con el estado esperado post-descuento (${d.stockAfter}).`
+      );
+    }
+  }
+
+  // 2. Si todos los ingredientes son consistentes, aplicar la restauración de las cantidades deducidas
   for (const d of deductions) {
     const existing = currentMap.get(d.ingredientId);
     if (existing) {
@@ -411,18 +456,24 @@ export function PantryProvider({
           ? recipeOrKey
           : getRecipeDeductionKey(recipeOrKey);
 
-      const records = await getConsumedRecipeRecords(effectiveUserId);
-      const rec = records[targetKey];
-      if (rec && rec.status === 'pending') {
-        const currentPantry = await activeStorage.getIngredients();
-        const reconciliation = await reconcileDeductionIntent(targetKey, currentPantry, effectiveUserId);
-        if (reconciliation.status === 'aborted') {
-          return false;
+      try {
+        const records = await getConsumedRecipeRecords(effectiveUserId);
+        const rec = records[targetKey];
+        if (rec && rec.status === 'pending') {
+          const currentPantry = await activeStorage.getIngredients();
+          const reconciliation = await reconcileDeductionIntent(targetKey, currentPantry, effectiveUserId);
+          if (reconciliation.status === 'aborted') {
+            return false;
+          }
+          return true;
         }
+
+        return await isRecipeDeducted(targetKey, effectiveUserId);
+      } catch (err) {
+        console.warn('[PantryContext] Error en checkIfRecipeDeducted; aplicando fail-closed (true):', err);
+        // Fail-closed: si el ledger no está disponible o está corrupto, se asume deducida para prevenir duplicados
         return true;
       }
-
-      return isRecipeDeducted(targetKey, effectiveUserId);
     },
     [effectiveUserId, activeStorage]
   );
@@ -577,8 +628,14 @@ export function PantryProvider({
               }
             } catch (rollbackErr) {
               console.error('[PantryContext] Fallo crítico al ejecutar rollback de despensa:', rollbackErr);
-              await markRequiresReview(targetKey, effectiveUserId, 'Fallo durante rollback de despensa');
-              throw new Error('Fallo crítico al confirmar consumo y no se pudo revertir la despensa. Se marcó para revisión manual.');
+              const reason =
+                rollbackErr instanceof RollbackInconsistencyError
+                  ? `Inconsistencia en despensa durante rollback: ${rollbackErr.message}`
+                  : 'Fallo durante rollback de despensa';
+              await markRequiresReview(targetKey, effectiveUserId, reason).catch(() => {});
+              throw new Error(
+                `Fallo crítico al confirmar consumo y no se pudo revertir la despensa (${reason}). Se marcó para revisión manual.`
+              );
             }
             throw new Error('Fallo al registrar confirmación en ledger. Despensa revertida para evitar inconsistencias.');
           }

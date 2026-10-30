@@ -50,22 +50,62 @@ export interface ReconciliationResult {
   message?: string;
 }
 
+export class RecipeConsumptionLedgerError extends Error {
+  public readonly cause?: unknown;
+  constructor(message: string, cause?: unknown) {
+    super(message);
+    this.name = 'RecipeConsumptionLedgerError';
+    this.cause = cause;
+    Object.setPrototypeOf(this, RecipeConsumptionLedgerError.prototype);
+  }
+}
+
 export async function getConsumedRecipeRecords(
   userId?: string | null
 ): Promise<Record<string, ConsumedRecipeRecord>> {
   const key = getConsumedRecipesStorageKey(userId);
+  let raw: string | null;
   try {
-    const raw = await AsyncStorage.getItem(key);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    if (parsed && typeof parsed.records === 'object' && parsed.records !== null) {
-      return parsed.records;
-    }
-    return {};
+    raw = await AsyncStorage.getItem(key);
   } catch (err) {
-    console.warn('[recipeConsumptionStorage] Error al leer recetas consumidas:', err);
+    console.error('[recipeConsumptionStorage] Error al leer el registro de consumo:', err);
+    throw new RecipeConsumptionLedgerError(
+      'No se pudo acceder al registro de recetas consumidas por un fallo en el almacenamiento.',
+      err
+    );
+  }
+
+  // Almacenamiento genuinamente ausente (clave nunca creada o vacía)
+  if (raw === null || raw === undefined || raw.trim() === '') {
     return {};
   }
+
+  let parsed: any;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    console.error('[recipeConsumptionStorage] Error al deserializar el registro de consumo corrupto:', err);
+    throw new RecipeConsumptionLedgerError(
+      'El registro de recetas consumidas contiene datos corruptos o no analizables.',
+      err
+    );
+  }
+
+  if (
+    !parsed ||
+    typeof parsed !== 'object' ||
+    Array.isArray(parsed) ||
+    typeof parsed.records !== 'object' ||
+    parsed.records === null ||
+    Array.isArray(parsed.records)
+  ) {
+    console.error('[recipeConsumptionStorage] Estructura de registro de consumo inválida en almacenamiento:', parsed);
+    throw new RecipeConsumptionLedgerError(
+      'La estructura del registro de recetas consumidas es inválida o incompatible.'
+    );
+  }
+
+  return parsed.records;
 }
 
 /**
@@ -74,28 +114,36 @@ export async function getConsumedRecipeRecords(
  * - Registros 'requires_review': BLOQUEAN deducción automática y requieren atención manual.
  * - Registros 'pending': NUNCA expiran automáticamente de forma silenciosa. Se consideran
  *   bloqueados hasta que una reconciliación conservadora determine su estado real contra la despensa.
+ * - En caso de error de lectura o corrupción del ledger, aplica FAIL-CLOSED (retorna true)
+ *   para garantizar que no se produzca una doble deducción accidental.
  */
 export async function isRecipeDeducted(
   recipeKey: string,
   userId?: string | null
 ): Promise<boolean> {
   if (!recipeKey) return false;
-  const records = await getConsumedRecipeRecords(userId);
-  const cleanId = recipeKey.trim().toLowerCase();
-  const record = records[cleanId];
-  if (!record) return false;
+  try {
+    const records = await getConsumedRecipeRecords(userId);
+    const cleanId = recipeKey.trim().toLowerCase();
+    const record = records[cleanId];
+    if (!record) return false;
 
-  // Si no tiene status o está completed, requires_review o pending -> bloquea deducción
-  if (
-    !record.status ||
-    record.status === 'completed' ||
-    record.status === 'requires_review' ||
-    record.status === 'pending'
-  ) {
+    // Si no tiene status o está completed, requires_review o pending -> bloquea deducción
+    if (
+      !record.status ||
+      record.status === 'completed' ||
+      record.status === 'requires_review' ||
+      record.status === 'pending'
+    ) {
+      return true;
+    }
+
+    return false;
+  } catch (err) {
+    console.warn('[recipeConsumptionStorage] Error al leer registro en isRecipeDeducted; aplicando fail-closed (true):', err);
+    // FAIL-CLOSED: Ante fallo de lectura o corrupción, se asume deducida para proteger el inventario
     return true;
   }
-
-  return false;
 }
 
 /**

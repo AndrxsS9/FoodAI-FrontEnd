@@ -167,7 +167,6 @@ export default function LoginScreen() {
                   editable={!isSubmitting}
                   accessibilityLabel="Correo electrónico"
                   accessibilityHint="Ingresa la dirección de correo registrada en FoodAI"
-                  accessibilityRole="textbox"
                 />
               </View>
               {emailError ? (
@@ -202,7 +201,6 @@ export default function LoginScreen() {
                   editable={!isSubmitting}
                   accessibilityLabel="Contraseña"
                   accessibilityHint="Ingresa tu contraseña de acceso"
-                  accessibilityRole="textbox"
                   onSubmitEditing={handleSubmit}
                   returnKeyType="done"
                 />

@@ -23,6 +23,7 @@ import {
   BackendRecipeIngredient,
   BackendRecipeUnit,
   RecommendRecipesRequest,
+  StepDuration,
 } from '../../types/recipe';
 
 export class RecipeApiError extends Error {
@@ -260,6 +261,101 @@ export function validateBackendRecipe(raw: unknown, index: number): BackendRecip
     );
   }
 
+  let prepMinutes: number | undefined;
+  if (r.prepMinutes !== undefined && r.prepMinutes !== null) {
+    if (
+      typeof r.prepMinutes !== 'number' ||
+      !Number.isFinite(r.prepMinutes) ||
+      r.prepMinutes < 0
+    ) {
+      throw new RecipeApiError(
+        `El tiempo de preparación (prepMinutes) de la receta "${r.name}" debe ser un número finito no negativo.`,
+        'INVALID_RESPONSE_SHAPE',
+        200,
+        raw
+      );
+    }
+    prepMinutes = Math.round(r.prepMinutes);
+  }
+
+  let cookMinutes: number | undefined;
+  if (r.cookMinutes !== undefined && r.cookMinutes !== null) {
+    if (
+      typeof r.cookMinutes !== 'number' ||
+      !Number.isFinite(r.cookMinutes) ||
+      r.cookMinutes < 0
+    ) {
+      throw new RecipeApiError(
+        `El tiempo de cocción (cookMinutes) de la receta "${r.name}" debe ser un número finito no negativo.`,
+        'INVALID_RESPONSE_SHAPE',
+        200,
+        raw
+      );
+    }
+    cookMinutes = Math.round(r.cookMinutes);
+  }
+
+  let stepDurations: StepDuration[] | undefined;
+  if (r.stepDurations !== undefined && r.stepDurations !== null) {
+    if (!Array.isArray(r.stepDurations)) {
+      throw new RecipeApiError(
+        `La propiedad stepDurations de la receta "${r.name}" debe ser un arreglo.`,
+        'INVALID_RESPONSE_SHAPE',
+        200,
+        raw
+      );
+    }
+    stepDurations = r.stepDurations.map((sd, sIdx) => {
+      if (!sd || typeof sd !== 'object') {
+        throw new RecipeApiError(
+          `El elemento #${sIdx + 1} de stepDurations en la receta "${r.name}" es inválido.`,
+          'INVALID_RESPONSE_SHAPE',
+          200,
+          raw
+        );
+      }
+      const sdObj = sd as Record<string, unknown>;
+      if (
+        typeof sdObj.stepIndex !== 'number' ||
+        !Number.isInteger(sdObj.stepIndex) ||
+        sdObj.stepIndex < 0
+      ) {
+        throw new RecipeApiError(
+          `stepIndex en stepDurations de la receta "${r.name}" debe ser un entero no negativo.`,
+          'INVALID_RESPONSE_SHAPE',
+          200,
+          raw
+        );
+      }
+      let minutes: number | undefined;
+      if (sdObj.minutes !== undefined && sdObj.minutes !== null) {
+        if (
+          typeof sdObj.minutes !== 'number' ||
+          !Number.isFinite(sdObj.minutes) ||
+          sdObj.minutes < 0
+        ) {
+          throw new RecipeApiError(
+            `minutes en stepDurations de la receta "${r.name}" debe ser un número finito no negativo.`,
+            'INVALID_RESPONSE_SHAPE',
+            200,
+            raw
+          );
+        }
+        minutes = Math.round(sdObj.minutes);
+      }
+      const action =
+        typeof sdObj.action === 'string' && sdObj.action.trim()
+          ? sdObj.action.trim()
+          : undefined;
+
+      return {
+        stepIndex: sdObj.stepIndex,
+        ...(minutes !== undefined ? { minutes } : {}),
+        ...(action !== undefined ? { action } : {}),
+      };
+    });
+  }
+
   if (!Array.isArray(r.ingredients) || r.ingredients.length === 0) {
     throw new RecipeApiError(
       `La receta "${r.name}" debe contener al menos un ingrediente.`,
@@ -368,6 +464,9 @@ export function validateBackendRecipe(raw: unknown, index: number): BackendRecip
     name: r.name.trim(),
     description: r.description.trim(),
     totalMinutes: r.totalMinutes,
+    ...(prepMinutes !== undefined ? { prepMinutes } : {}),
+    ...(cookMinutes !== undefined ? { cookMinutes } : {}),
+    ...(stepDurations !== undefined ? { stepDurations } : {}),
     ingredients,
     steps: r.steps.map((s) => (s as string).trim()),
     availableIngredients,

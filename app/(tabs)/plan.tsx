@@ -58,6 +58,8 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
     generateMealPlan,
     cancelGeneration,
     clearError,
+    toggleDayCompleted,
+    completedDaysCount,
   } = useMealPlan();
 
   // Secuencia monótona estricta e identificador de la petición activa (nunca se resetea la secuencia)
@@ -342,6 +344,36 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
               />
             </View>
 
+            {/* Progreso del plan de 3 días (Fase 6A) */}
+            <Card variant="elevated" style={styles.progressCard} testID="plan-progress-card">
+              <View style={styles.progressHeaderRow}>
+                <View style={styles.progressHeaderLeft}>
+                  <MaterialIcons name="task-alt" size={20} color={colors.primary} />
+                  <Text style={[styles.progressCardTitle, typography.headlineMd]}>
+                    Progreso del plan
+                  </Text>
+                </View>
+                <Text style={[styles.progressCountText, typography.labelMd]} testID="plan-progress-text">
+                  {completedDaysCount}/3 días completados
+                </Text>
+              </View>
+
+              <View
+                style={styles.progressBarTrack}
+                accessibilityRole="progressbar"
+                accessibilityValue={{ min: 0, max: 3, now: completedDaysCount }}
+                testID="plan-progress-bar"
+              >
+                <View
+                  style={[
+                    styles.progressBarFill,
+                    { width: `${Math.round((completedDaysCount / 3) * 100)}%` },
+                  ]}
+                  testID="plan-progress-bar-fill"
+                />
+              </View>
+            </Card>
+
             {/* Tarjetas de los 3 días */}
             {plan.days.map((dayItem) => {
               const recipe = dayItem.recipe;
@@ -422,8 +454,32 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
                       </Text>
                     </View>
                   )}
+                  {/* Estado de completado del día (Fase 6A) */}
+                  {dayItem.isCompleted && (
+                    <View style={styles.completedBadge} testID={`plan-day-completed-badge-${dayItem.day}`}>
+                      <MaterialIcons name="check-circle" size={16} color={colors.primary} />
+                      <Text style={[styles.completedBadgeText, typography.labelSm]}>
+                        ¡Día completado!
+                      </Text>
+                    </View>
+                  )}
 
-                  {/* CTA Ver receta completa */}
+                  <Button
+                    testID={`plan-day-complete-button-${dayItem.day}`}
+                    title={dayItem.isCompleted ? 'Marcar como pendiente' : 'Marcar día como completado'}
+                    variant={dayItem.isCompleted ? 'ghost' : 'secondary'}
+                    size="md"
+                    fullWidth
+                    onPress={() => toggleDayCompleted(dayItem.day)}
+                    leftIcon={
+                      <MaterialIcons
+                        name={dayItem.isCompleted ? 'undo' : 'check'}
+                        size={18}
+                        color={dayItem.isCompleted ? colors.textPrimary : colors.onPrimary}
+                      />
+                    }
+                  />
+
                   <Button
                     testID={`plan-view-recipe-button-${dayItem.day}`}
                     title="Ver receta y preparación"
@@ -774,6 +830,58 @@ const styles = StyleSheet.create({
   },
   resultsHeaderSubtitle: {
     color: colors.textSecondary,
+  },
+  progressCard: {
+    padding: spacing.md,
+    backgroundColor: colors.surface,
+    gap: spacing.sm,
+    borderWidth: 1,
+    borderColor: '#E8E2D8',
+    borderRadius: radius.lg,
+  },
+  progressHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  progressHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  progressCardTitle: {
+    color: colors.textPrimary,
+    fontWeight: '700',
+  },
+  progressCountText: {
+    color: colors.primary,
+    fontWeight: '700',
+  },
+  progressBarTrack: {
+    width: '100%',
+    height: 8,
+    backgroundColor: colors.surfaceContainer,
+    borderRadius: radius.full,
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: '100%',
+    backgroundColor: colors.primary,
+    borderRadius: radius.full,
+  },
+  completedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#EAF6ED',
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: radius.md,
+    marginBottom: 4,
+  },
+  completedBadgeText: {
+    color: colors.primary,
+    fontWeight: '600',
   },
   dayCard: {
     padding: spacing.md,

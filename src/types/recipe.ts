@@ -60,6 +60,12 @@ export const BACKEND_RECIPE_UNITS = [
 
 export type BackendRecipeUnit = (typeof BACKEND_RECIPE_UNITS)[number];
 
+export interface StepDuration {
+  stepIndex: number;
+  minutes?: number;
+  action?: string;
+}
+
 export interface BackendRecipeIngredient {
   name: string;
   quantity: number | null;
@@ -76,6 +82,9 @@ export interface BackendRecipe {
   name: string;
   description: string;
   totalMinutes: number;
+  prepMinutes?: number;
+  cookMinutes?: number;
+  stepDurations?: StepDuration[];
   ingredients: BackendRecipeIngredient[];
   steps: string[];
   availableIngredients: BackendRecipeIngredient[];
@@ -134,6 +143,9 @@ export interface ClientRecipe {
   name: string;
   description: string;
   totalMinutes: number;
+  prepMinutes?: number;
+  cookMinutes?: number;
+  stepDurations?: StepDuration[];
   servings: number;
   ingredients: RecipeIngredient[];
   steps: string[];
@@ -147,6 +159,9 @@ export interface ClientRecipe {
   reason: string;
   /** Bandera explícita que distingue datos demostrativos de recomendaciones reales de IA */
   isDemoFixture: boolean;
+  /** Identificador de preparación/instancia para distinguir preparaciones legítimas entre generaciones */
+  instanceId?: string;
+  generationId?: string;
   /** Imagen opcional de UI */
   imageUrl?: any;
 }
@@ -268,7 +283,8 @@ export function normalizeRecipeMissingIngredient(
 export function normalizeBackendRecipe(
   raw: BackendRecipe,
   index: number = 0,
-  defaultServings: number = 2
+  defaultServings: number = 2,
+  generationId?: string
 ): ClientRecipe {
   const safeName = raw.name ? String(raw.name).trim() : `Receta ${index + 1}`;
   const slug = generateRecipeSlug(safeName, index);
@@ -290,6 +306,28 @@ export function normalizeBackendRecipe(
     typeof raw.totalMinutes === 'number' && raw.totalMinutes > 0
       ? Math.round(raw.totalMinutes)
       : 30;
+
+  const prepMinutes =
+    typeof raw.prepMinutes === 'number' && Number.isFinite(raw.prepMinutes) && raw.prepMinutes >= 0
+      ? Math.round(raw.prepMinutes)
+      : undefined;
+
+  const cookMinutes =
+    typeof raw.cookMinutes === 'number' && Number.isFinite(raw.cookMinutes) && raw.cookMinutes >= 0
+      ? Math.round(raw.cookMinutes)
+      : undefined;
+
+  const stepDurations: StepDuration[] | undefined = Array.isArray(raw.stepDurations)
+    ? raw.stepDurations
+        .filter((sd) => sd && typeof sd === 'object' && typeof (sd as any).stepIndex === 'number')
+        .map((sd) => ({
+          stepIndex: sd.stepIndex,
+          ...(typeof sd.minutes === 'number' && Number.isFinite(sd.minutes) && sd.minutes >= 0
+            ? { minutes: Math.round(sd.minutes) }
+            : {}),
+          ...(typeof sd.action === 'string' && sd.action.trim() ? { action: sd.action.trim() } : {}),
+        }))
+    : undefined;
 
   const estimatedMissingCost =
     typeof raw.estimatedMissingCost === 'number' && raw.estimatedMissingCost >= 0
@@ -316,9 +354,14 @@ export function normalizeBackendRecipe(
 
   return {
     id: slug,
+    instanceId: generationId ? `${slug}::${generationId}` : slug,
+    generationId,
     name: safeName,
     description: raw.description ? String(raw.description).trim() : '',
     totalMinutes,
+    prepMinutes,
+    cookMinutes,
+    stepDurations,
     servings: defaultServings,
     ingredients,
     steps,
@@ -333,6 +376,13 @@ export function normalizeBackendRecipe(
   };
 }
 
+/**
+ * Extrae la clave autoritativa para el control de deducciones e idempotencia.
+ * Prioriza instanceId (ligado a la generación/instancia) sobre el id estático (slug).
+ */
+export function getRecipeDeductionKey(recipe: { id: string; instanceId?: string }): string {
+  return (recipe.instanceId || recipe.id).trim().toLowerCase();
+}
 // ==========================================
 // 4. MAPEO EXPLICITO Y SEGURO DE DESPENSA A BACKEND
 // ==========================================

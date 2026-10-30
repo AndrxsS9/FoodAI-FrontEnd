@@ -1,14 +1,15 @@
 /**
- * FoodAI - Pantalla de Modo Cocina Guiado Paso a Paso (Fase 2C).
+ * FoodAI - Pantalla de Modo Cocina Guiado Paso a Paso (Fase 2C & Fase 6A).
  * Inspirada en la pantalla Stitch «10. Modo Cocina».
  *
  * Ofrece una interfaz de alta legibilidad optimizada para cocinar en la cocina:
  * - Visualización de un solo paso a la vez con tipografía amplia y de alto contraste.
  * - Contador de progreso y barra interactiva de avance.
  * - Controles táctiles amplios (Anterior y Siguiente) con bloqueo en bordes.
- * - Temporizador culinario activo integrado.
+ * - Cronómetro de tiempo transcurrido (stopwatch) en header independiente.
+ * - Temporizador culinario activo de cuenta regresiva por paso (Fase 6A).
  * - Ingredientes requeridos para el paso activo.
- * - Estado explícito de finalización («¡Buen provecho!») y confirmación de salida.
+ * - Estado explícito de finalización («¡Buen provecho!») con deducción confirmada de despensa (Fase 6A).
  * - Protección robusta contra recetas inexistentes o listas vacías de pasos.
  */
 import React, { useEffect, useMemo, useState } from 'react';
@@ -25,8 +26,127 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Button, Card } from '../../../src/components/common';
 import { useRecipes } from '../../../src/context/RecipeContext';
 import { useMealPlanSafe } from '../../../src/context/MealPlanContext';
+import { usePantrySafe } from '../../../src/context/PantryContext';
+import { calculatePantryDeduction } from '../../../src/utils/pantryConsumption';
 import { formatCopCurrency } from '../../../src/types/recipe';
 import { colors, radius, spacing, useTypography } from '../../../src/theme';
+
+interface StepCountdownCardProps {
+  stepDuration: { stepIndex: number; minutes?: number; action?: string };
+}
+
+function StepCountdownCard({ stepDuration }: StepCountdownCardProps) {
+  const typography = useTypography();
+  const initialSeconds = Math.round((stepDuration.minutes || 0) * 60);
+  const [countdownSeconds, setCountdownSeconds] = useState(initialSeconds);
+  const [isRunning, setIsRunning] = useState(false);
+  const [isCompleted, setIsCompleted] = useState(false);
+
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval> | null = null;
+    if (isRunning && countdownSeconds > 0) {
+      interval = setInterval(() => {
+        setCountdownSeconds((prev) => {
+          if (prev <= 1) {
+            setIsRunning(false);
+            setIsCompleted(true);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isRunning, countdownSeconds]);
+
+  const handleToggle = () => {
+    if (countdownSeconds <= 0) {
+      setCountdownSeconds(initialSeconds);
+      setIsCompleted(false);
+    }
+    setIsRunning((prev) => !prev);
+  };
+
+  const handleReset = () => {
+    setIsRunning(false);
+    setIsCompleted(false);
+    setCountdownSeconds(initialSeconds);
+  };
+
+  const formatTimer = (totalSec: number) => {
+    const mins = Math.floor(totalSec / 60);
+    const secs = totalSec % 60;
+    const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+    return `${pad(mins)}:${pad(secs)}`;
+  };
+
+  return (
+    <Card variant="outlined" style={styles.stepTimerCard} testID="cooking-step-countdown-card">
+      <View style={styles.stepTimerHeaderRow}>
+        <View style={styles.stepTimerTitleBox}>
+          <MaterialIcons name="hourglass-top" size={20} color={colors.primary} />
+          <View>
+            <Text style={[styles.stepTimerTitle, typography.labelMd]}>
+              Temporizador del paso
+            </Text>
+            {Boolean(stepDuration.action) && (
+              <Text style={[styles.stepTimerSubtitle, typography.bodySm]}>
+                {stepDuration.action}
+              </Text>
+            )}
+          </View>
+        </View>
+
+        <Text
+          style={[
+            styles.stepTimerCountdown,
+            typography.headlineLg,
+            isCompleted && styles.stepTimerCountdownCompleted,
+          ]}
+          testID="cooking-step-countdown-display"
+        >
+          {formatTimer(countdownSeconds)}
+        </Text>
+      </View>
+
+      {isCompleted && (
+        <View style={styles.stepTimerCompletedBadge} testID="cooking-countdown-completed">
+          <MaterialIcons name="check-circle" size={16} color={colors.primary} />
+          <Text style={[styles.stepTimerCompletedText, typography.labelSm]}>
+            ¡Tiempo del paso completado!
+          </Text>
+        </View>
+      )}
+
+      <View style={styles.stepTimerActionsRow}>
+        <Button
+          testID="cooking-step-countdown-toggle"
+          title={isRunning ? 'Pausar' : isCompleted ? 'Reiniciar' : 'Iniciar'}
+          variant="primary"
+          size="sm"
+          onPress={handleToggle}
+          leftIcon={
+            <MaterialIcons
+              name={isRunning ? 'pause' : 'play-arrow'}
+              size={18}
+              color={colors.onPrimary}
+            />
+          }
+        />
+        <Button
+          testID="cooking-step-countdown-reset"
+          title="Restablecer"
+          variant="outline"
+          size="sm"
+          onPress={handleReset}
+          leftIcon={<MaterialIcons name="replay" size={18} color={colors.primary} />}
+        />
+      </View>
+    </Card>
+  );
+}
 
 export default function GuidedCookingScreen() {
   const typography = useTypography();
@@ -36,6 +156,7 @@ export default function GuidedCookingScreen() {
 
   const { getRecipeById, selectedRecipe } = useRecipes();
   const mealPlan = useMealPlanSafe();
+  const pantry = usePantrySafe();
 
   const plannedRecipe = useMemo(() => {
     return mealPlan?.getRecipeById(recipeId);
@@ -70,7 +191,7 @@ export default function GuidedCookingScreen() {
   // Estado del modal de finalización
   const [isFinished, setIsFinished] = useState(false);
 
-  // Temporizador culinario integrado
+  // Cronómetro general de cocina (stopwatch de tiempo transcurrido)
   const [timerSeconds, setTimerSeconds] = useState(0);
   const [isTimerRunning, setIsTimerRunning] = useState(false);
 
@@ -100,6 +221,65 @@ export default function GuidedCookingScreen() {
   const handleResetTimer = () => {
     setIsTimerRunning(false);
     setTimerSeconds(0);
+  };
+
+  // Metadatos de duración para el paso activo (soporta indexación 0-based o 1-based)
+  const currentStepDuration = useMemo(() => {
+    if (!recipe?.stepDurations || !Array.isArray(recipe.stepDurations)) return undefined;
+    const zeroBasedExists = recipe.stepDurations.some((sd) => sd.stepIndex === 0);
+    const targetIndex = zeroBasedExists ? currentStepIndex : currentStepIndex + 1;
+    const match = recipe.stepDurations.find((sd) => sd.stepIndex === targetIndex);
+    if (match && typeof match.minutes === 'number' && match.minutes > 0) {
+      return match;
+    }
+    return undefined;
+  }, [recipe, currentStepIndex]);
+
+  // Estado y consumo confirmado de despensa
+  const [isDeducted, setIsDeducted] = useState(false);
+  const [isDeducting, setIsDeducting] = useState(false);
+  const [deductionFeedback, setDeductionFeedback] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    if (recipe && pantry?.checkIfRecipeDeducted) {
+      pantry.checkIfRecipeDeducted(recipe).then((deducted) => {
+        if (isMounted) setIsDeducted(deducted);
+      });
+    }
+    return () => {
+      isMounted = false;
+    };
+  }, [recipe, pantry]);
+
+  const deductionPlan = useMemo(() => {
+    if (!recipe?.ingredients || !pantry?.ingredients) return null;
+    return calculatePantryDeduction(pantry.ingredients, recipe.ingredients);
+  }, [pantry, recipe]);
+
+  const handleConfirmDeduction = async () => {
+    if (!recipe || isDeducted || isDeducting || !pantry) return;
+    setIsDeducting(true);
+    setDeductionFeedback(null);
+    try {
+      const result = await pantry.consumeRecipeIngredients(recipe);
+      if (result.success) {
+        setIsDeducted(true);
+        setDeductionFeedback(`¡Descuento exitoso! Se descontaron ${result.deductedCount} ingredientes.`);
+        if (mealPlan && recipe.id) {
+          await mealPlan.markRecipeCompleted(recipe.id);
+        }
+      } else {
+        if (result.alreadyDeducted) {
+          setIsDeducted(true);
+        }
+        setDeductionFeedback(result.error || 'No se pudo aplicar el descuento.');
+      }
+    } catch {
+      setDeductionFeedback('Ocurrió un error al descontar ingredientes de la despensa.');
+    } finally {
+      setIsDeducting(false);
+    }
   };
 
   const handleBack = () => {
@@ -361,6 +541,14 @@ export default function GuidedCookingScreen() {
           </View>
         </Card>
 
+        {/* 3b. Temporizador de cuenta regresiva del paso activo (Fase 6A) */}
+        {Boolean(currentStepDuration) && currentStepDuration && (
+          <StepCountdownCard
+            key={`step-timer-${currentStepIndex}`}
+            stepDuration={currentStepDuration}
+          />
+        )}
+
         {/* 4. Ingredientes necesarios para este paso */}
         <View style={styles.stepIngredientsSection}>
           <View style={styles.stepIngredientsHeader}>
@@ -445,62 +633,140 @@ export default function GuidedCookingScreen() {
         </View>
       </View>
 
-      {/* 7. Modal de Felicitación / Buen Provecho */}
+      {/* 7. Modal de Felicitación / Buen Provecho con Deducción Confirmada de Despensa */}
       {isFinished && (
         <View style={[StyleSheet.absoluteFill, styles.modalBackdrop]} testID="cooking-finish-modal">
           <View style={styles.finishCard}>
-            <View style={styles.finishIconCircle}>
-              <MaterialIcons name="dinner-dining" size={40} color={colors.primary} />
-            </View>
-
-            <Text style={[styles.finishTitle, typography.headlineXl]}>
-              ¡Buen provecho!
-            </Text>
-
-            <Text style={[styles.finishDesc, typography.bodyMd]}>
-              Completaste tu plato de «{recipe.name}» aprovechando al máximo cada ingrediente de tu despensa sin desperdicios.
-            </Text>
-
-            <View style={styles.finishMetricsBox}>
-              <View style={styles.finishMetricItem}>
-                <Text style={[styles.finishMetricLabel, typography.labelSm]}>
-                  Tiempo de cocina
-                </Text>
-                <Text style={[styles.finishMetricValue, typography.headlineMd]}>
-                  {timerSeconds > 0 ? formatTimer(timerSeconds) : `${recipe.totalMinutes} min`}
-                </Text>
+            <ScrollView
+              style={styles.finishScrollBox}
+              contentContainerStyle={styles.finishScrollContent}
+              showsVerticalScrollIndicator={false}
+            >
+              <View style={styles.finishIconCircle}>
+                <MaterialIcons name="dinner-dining" size={40} color={colors.primary} />
               </View>
 
-              <View style={styles.finishMetricDivider} />
+              <Text style={[styles.finishTitle, typography.headlineXl]}>
+                ¡Buen provecho!
+              </Text>
 
-              <View style={styles.finishMetricItem}>
-                <Text style={[styles.finishMetricLabel, typography.labelSm]}>
-                  Compra adicional
-                </Text>
-                <Text style={[styles.finishMetricValue, typography.headlineMd, { color: colors.secondary }]}>
-                  {formatCopCurrency(recipe.estimatedMissingCost)}
-                </Text>
+              <Text style={[styles.finishDesc, typography.bodyMd]}>
+                Completaste tu plato de «{recipe.name}» aprovechando al máximo cada ingrediente de tu despensa sin desperdicios.
+              </Text>
+
+              <View style={styles.finishMetricsBox}>
+                <View style={styles.finishMetricItem}>
+                  <Text style={[styles.finishMetricLabel, typography.labelSm]}>
+                    Tiempo de cocina
+                  </Text>
+                  <Text style={[styles.finishMetricValue, typography.headlineMd]}>
+                    {timerSeconds > 0 ? formatTimer(timerSeconds) : `${recipe.totalMinutes} min`}
+                  </Text>
+                </View>
+
+                <View style={styles.finishMetricDivider} />
+
+                <View style={styles.finishMetricItem}>
+                  <Text style={[styles.finishMetricLabel, typography.labelSm]}>
+                    Compra adicional
+                  </Text>
+                  <Text style={[styles.finishMetricValue, typography.headlineMd, { color: colors.secondary }]}>
+                    {formatCopCurrency(recipe.estimatedMissingCost)}
+                  </Text>
+                </View>
               </View>
-            </View>
 
-            <View style={styles.finishActions}>
-              <Button
-                testID="cooking-finish-confirm-button"
-                title="Volver a la despensa"
-                variant="primary"
-                size="md"
-                fullWidth
-                onPress={() => router.replace('/(tabs)/despensa')}
-              />
-              <Button
-                testID="cooking-finish-review-button"
-                title="Revisar los pasos"
-                variant="outline"
-                size="md"
-                fullWidth
-                onPress={() => setIsFinished(false)}
-              />
-            </View>
+              {/* Deducción en Despensa (Fase 6A) */}
+              {isDeducted ? (
+                <View style={styles.deductedBadge} testID="cooking-already-deducted-badge">
+                  <MaterialIcons name="check-circle" size={18} color={colors.primary} />
+                  <Text style={[styles.deductedBadgeText, typography.labelSm]}>
+                    Ingredientes ya descontados de tu despensa
+                  </Text>
+                </View>
+              ) : pantry ? (
+                <View style={styles.deductionSection} testID="cooking-deduction-section">
+                  <View style={styles.deductionHeaderRow}>
+                    <MaterialIcons name="inventory" size={18} color={colors.primary} />
+                    <Text style={[styles.deductionTitle, typography.labelMd]}>
+                      Descuento en despensa
+                    </Text>
+                  </View>
+
+                  {deductionPlan && deductionPlan.deductibleItems.length > 0 ? (
+                    <View style={styles.deductibleList} testID="cooking-deductible-list">
+                      {deductionPlan.deductibleItems.map((item, idx) => (
+                        <View key={`deduct-${idx}`} style={styles.deductibleRow} testID={`cooking-deduct-item-${idx}`}>
+                          <MaterialIcons name="remove-circle-outline" size={16} color={colors.primary} />
+                          <Text style={[styles.deductibleText, typography.bodySm]}>
+                            {item.recipeIngredientName}: -{item.deductQuantity} {item.pantryUnit || item.recipeUnit} (quedan {item.stockAfter} {item.pantryUnit || item.recipeUnit})
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  ) : (
+                    <Text style={[styles.deductionEmptyText, typography.bodySm]}>
+                      No hay ingredientes coincidentes para descontar de tu despensa.
+                    </Text>
+                  )}
+
+                  {deductionPlan && deductionPlan.reviewItems.length > 0 && (
+                    <View style={styles.reviewList} testID="cooking-review-list">
+                      <Text style={[styles.reviewHeader, typography.labelSm]}>
+                        Requieren revisión manual ({deductionPlan.reviewItems.length})
+                      </Text>
+                      {deductionPlan.reviewItems.map((item, idx) => (
+                        <View key={`review-${idx}`} style={styles.reviewRow} testID={`cooking-review-item-${idx}`}>
+                          <MaterialIcons name="info-outline" size={14} color={colors.secondary} />
+                          <Text style={[styles.reviewText, typography.bodySm]}>
+                            {item.recipeIngredientName} ({item.message})
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+
+                  <Button
+                    testID="cooking-confirm-deduction-button"
+                    title={isDeducting ? 'Descontando...' : 'Confirmar descuento en despensa'}
+                    variant="secondary"
+                    size="sm"
+                    fullWidth
+                    disabled={isDeducting || isDeducted || !deductionPlan || deductionPlan.deductibleItems.length === 0}
+                    onPress={handleConfirmDeduction}
+                    leftIcon={<MaterialIcons name="done" size={18} color={colors.onPrimary} />}
+                  />
+                </View>
+              ) : null}
+
+              {Boolean(deductionFeedback) && (
+                <View style={styles.deductionSuccessBadge} testID="cooking-deduction-success">
+                  <MaterialIcons name="task-alt" size={16} color={colors.primary} />
+                  <Text style={[styles.deductionSuccessText, typography.labelSm]}>
+                    {deductionFeedback}
+                  </Text>
+                </View>
+              )}
+
+              <View style={styles.finishActions}>
+                <Button
+                  testID="cooking-finish-confirm-button"
+                  title="Volver a la despensa"
+                  variant="primary"
+                  size="md"
+                  fullWidth
+                  onPress={() => router.replace('/(tabs)/despensa')}
+                />
+                <Button
+                  testID="cooking-finish-review-button"
+                  title="Revisar los pasos"
+                  variant="outline"
+                  size="md"
+                  fullWidth
+                  onPress={() => setIsFinished(false)}
+                />
+              </View>
+            </ScrollView>
           </View>
         </View>
       )}
@@ -682,6 +948,59 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     fontWeight: '700',
   },
+  stepTimerCard: {
+    backgroundColor: '#FAF7F2',
+    borderColor: colors.outlineVariant,
+    padding: spacing.md,
+    marginTop: spacing.md,
+    borderRadius: radius.lg,
+    gap: spacing.sm,
+  },
+  stepTimerHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  stepTimerTitleBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    flex: 1,
+  },
+  stepTimerTitle: {
+    color: colors.textPrimary,
+    fontWeight: '700',
+  },
+  stepTimerSubtitle: {
+    color: colors.textSecondary,
+    fontSize: 12,
+  },
+  stepTimerCountdown: {
+    color: colors.primary,
+    fontWeight: '700',
+    fontSize: 22,
+  },
+  stepTimerCountdownCompleted: {
+    color: colors.secondary,
+  },
+  stepTimerCompletedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#EAF6ED',
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: radius.md,
+  },
+  stepTimerCompletedText: {
+    color: colors.primary,
+    fontWeight: '600',
+  },
+  stepTimerActionsRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: 4,
+  },
   stepIngredientsSection: {
     marginTop: spacing.lg,
     gap: spacing.xs,
@@ -767,16 +1086,23 @@ const styles = StyleSheet.create({
   },
   finishCard: {
     width: '100%',
-    maxWidth: 400,
+    maxWidth: 420,
+    maxHeight: '90%',
     backgroundColor: colors.surface,
     borderRadius: radius.xl,
-    padding: spacing.xl,
-    alignItems: 'center',
-    gap: spacing.sm,
+    padding: spacing.lg,
     elevation: 8,
     shadowColor: '#000',
     shadowOpacity: 0.15,
     shadowRadius: 12,
+  },
+  finishScrollBox: {
+    width: '100%',
+  },
+  finishScrollContent: {
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingBottom: spacing.sm,
   },
   finishIconCircle: {
     width: 68,
@@ -823,6 +1149,97 @@ const styles = StyleSheet.create({
   finishMetricValue: {
     color: colors.primary,
     fontWeight: '700',
+  },
+  deductedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#EAF6ED',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: radius.md,
+    width: '100%',
+    marginVertical: spacing.xs,
+  },
+  deductedBadgeText: {
+    color: colors.primary,
+    fontWeight: '600',
+    flex: 1,
+  },
+  deductionSection: {
+    width: '100%',
+    backgroundColor: '#FAF7F2',
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    gap: spacing.xs,
+    marginVertical: spacing.xs,
+    borderWidth: 1,
+    borderColor: colors.outlineVariant,
+  },
+  deductionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
+  },
+  deductionTitle: {
+    color: colors.textPrimary,
+    fontWeight: '700',
+  },
+  deductibleList: {
+    gap: 4,
+    marginBottom: spacing.xs,
+  },
+  deductibleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  deductibleText: {
+    color: colors.textPrimary,
+    flex: 1,
+  },
+  deductionEmptyText: {
+    color: colors.textSecondary,
+    fontStyle: 'italic',
+    marginBottom: spacing.xs,
+  },
+  reviewList: {
+    gap: 4,
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: colors.outlineVariant,
+    marginBottom: spacing.xs,
+  },
+  reviewHeader: {
+    color: colors.outline,
+    fontWeight: '600',
+  },
+  reviewRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  reviewText: {
+    color: colors.textSecondary,
+    flex: 1,
+    fontSize: 12,
+  },
+  deductionSuccessBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#EAF6ED',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: radius.md,
+    width: '100%',
+    marginBottom: spacing.xs,
+  },
+  deductionSuccessText: {
+    color: colors.primary,
+    fontWeight: '600',
+    flex: 1,
   },
   finishActions: {
     width: '100%',

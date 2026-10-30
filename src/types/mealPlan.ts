@@ -61,15 +61,19 @@ export interface BackendMealPlanResponseData {
 export interface ClientMealPlanDay {
   day: number; // 1, 2 o 3
   recipe: ClientRecipe;
+  isCompleted?: boolean;
+  completedAt?: string | null;
 }
 
 export interface ClientMealPlan {
+  id?: string;
   days: ClientMealPlanDay[];
   totalEstimatedMissingCost: number;
   budgetRemaining: number;
   withinBudget: boolean;
   uniqueMissingIngredients: RecipeMissingIngredient[];
   generatedAt?: string;
+  completedDaysCount?: number;
 }
 
 export interface MealPlanGenerationSnapshot {
@@ -266,37 +270,48 @@ export function deduplicateMissingIngredients(
  */
 export function normalizeBackendMealPlan(
   raw: BackendMealPlanResponseData,
-  servings: number = 2
+  servings: number = 2,
+  options?: { planId?: string; generatedAt?: string }
 ): ClientMealPlan {
+  const generatedAt = options?.generatedAt || new Date().toISOString();
+  const planId = options?.planId || `plan_${Date.now()}`;
+
   const clientDays: ClientMealPlanDay[] = raw.days.map((dayItem, index) => {
     const rawRecipe = dayItem.recipe;
-    const baseNormalized = normalizeBackendRecipe(rawRecipe, index, servings);
+    const baseNormalized = normalizeBackendRecipe(rawRecipe, index, servings, planId);
     const baseSlug = generateRecipeSlug(baseNormalized.name, index) || `receta-dia-${dayItem.day}`;
 
     // ID explícito y único para la receta dentro del plan
     const uniquePlanRecipeId = `plan-dia-${dayItem.day}-${baseSlug}`;
+    const instanceId = `${uniquePlanRecipeId}::${planId}`;
 
     const clientRecipe: ClientRecipe = {
       ...baseNormalized,
       id: uniquePlanRecipeId,
+      instanceId,
+      generationId: planId,
       servings,
     };
 
     return {
       day: dayItem.day,
       recipe: clientRecipe,
+      isCompleted: false,
+      completedAt: null,
     };
   });
 
   const uniqueMissing = deduplicateMissingIngredients(clientDays.map((d) => d.recipe));
 
   return {
+    id: planId,
     days: clientDays,
     totalEstimatedMissingCost: Math.round(raw.totalEstimatedMissingCost),
     budgetRemaining: Math.round(raw.budgetRemaining),
     withinBudget: raw.withinBudget,
     uniqueMissingIngredients: uniqueMissing,
-    generatedAt: new Date().toISOString(),
+    completedDaysCount: 0,
+    generatedAt,
   };
 }
 

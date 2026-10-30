@@ -275,6 +275,28 @@ export default function RecipeDetailScreen() {
           </View>
         </View>
 
+        {/* 4b. Estimaciones de Tiempo de Preparación y Cocción */}
+        {(recipe.prepMinutes !== undefined || recipe.cookMinutes !== undefined) && (
+          <View style={styles.timingBreakdownRow} testID="recipe-timing-breakdown">
+            {recipe.prepMinutes !== undefined && (
+              <View style={styles.timingItem} testID="recipe-prep-minutes">
+                <MaterialIcons name="hourglass-empty" size={16} color={colors.primary} />
+                <Text style={[styles.timingText, typography.labelSm]}>
+                  Preparación: <Text style={styles.timingValue}>{recipe.prepMinutes} min</Text>
+                </Text>
+              </View>
+            )}
+            {recipe.cookMinutes !== undefined && (
+              <View style={styles.timingItem} testID="recipe-cook-minutes">
+                <MaterialIcons name="local-fire-department" size={16} color={colors.secondary} />
+                <Text style={[styles.timingText, typography.labelSm]}>
+                  Cocción: <Text style={styles.timingValue}>{recipe.cookMinutes} min</Text>
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
+
         {/* 5. Análisis de Presupuesto y Razón de Conveniencia */}
         <Card variant="elevated" style={styles.budgetStatusCard}>
           <View style={styles.budgetStatusRow}>
@@ -718,6 +740,32 @@ const styles = StyleSheet.create({
   metricMain: {
     color: colors.textPrimary,
     fontWeight: '600',
+  },
+  timingBreakdownRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: spacing.md,
+    marginHorizontal: spacing.margin,
+    marginTop: spacing.xs,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.md,
+    backgroundColor: '#F6F3EE',
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: '#E8E2D8',
+  },
+  timingItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  timingText: {
+    color: colors.textSecondary,
+  },
+  timingValue: {
+    color: colors.textPrimary,
+    fontWeight: '700',
   },
   budgetStatusCard: {
     marginHorizontal: spacing.margin,

@@ -56,7 +56,7 @@ export interface RecipeContextValue {
   getRecipeById: (idOrSlug: string) => ClientRecipe | undefined;
   selectRecipe: (idOrRecipe: string | ClientRecipe) => ClientRecipe | undefined;
   clearSelectedRecipe: () => void;
-  setRealRecipes: (backendRecipes: BackendRecipe[], customServings?: number) => void;
+  setRealRecipes: (backendRecipes: BackendRecipe[], customServings?: number, generationId?: string) => void;
   setDemoMode: (enable: boolean) => void;
   refreshRecipes: () => Promise<void>;
   generateRecipes: (options?: { maxMinutes?: number }) => Promise<ClientRecipe[]>;
@@ -289,12 +289,13 @@ export function RecipeProvider({
    * únicos sin colisiones mediante un Set de slugs reservados.
    */
   const setRealRecipes = useCallback(
-    (backendRecipes: BackendRecipe[], customServings?: number) => {
+    (backendRecipes: BackendRecipe[], customServings?: number, generationId?: string) => {
       const activeServings = customServings ?? servings;
+      const activeGenId = generationId || `gen_${Date.now()}`;
       const reservedIds = new Set<string>();
 
       const normalized: ClientRecipe[] = backendRecipes.map((raw, idx) => {
-        const baseNorm = normalizeBackendRecipe(raw, idx, activeServings);
+        const baseNorm = normalizeBackendRecipe(raw, idx, activeServings, activeGenId);
         const baseSlug = generateRecipeSlug(baseNorm.name) || `receta-${idx + 1}`;
 
         let uniqueId = baseSlug;
@@ -313,6 +314,8 @@ export function RecipeProvider({
         return {
           ...baseNorm,
           id: uniqueId,
+          instanceId: `${uniqueId}::${activeGenId}`,
+          generationId: activeGenId,
         };
       });
 
@@ -422,8 +425,9 @@ export function RecipeProvider({
           return [];
         }
 
-        // 7. Normalizar y registrar recetas reales
-        setRealRecipes(backendRecipes, servings);
+        // 7. Normalizar y registrar recetas reales con ID de generación
+        const generationId = `gen_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+        setRealRecipes(backendRecipes, servings, generationId);
 
         // 8. Actualizar snapshot de la generación para cálculo de obsolescencia
         setLastSnapshot({
@@ -435,10 +439,10 @@ export function RecipeProvider({
 
         setLastGeneratedAt(new Date().toISOString());
 
-        // Derivar y retornar el nuevo listado
+        // Derivar y retornar el nuevo listado con identidades de instancia
         const reservedIds = new Set<string>();
         const finalNormalized = backendRecipes.map((raw, idx) => {
-          const baseNorm = normalizeBackendRecipe(raw, idx, servings);
+          const baseNorm = normalizeBackendRecipe(raw, idx, servings, generationId);
           const baseSlug = generateRecipeSlug(baseNorm.name) || `receta-${idx + 1}`;
           let uniqueId = baseSlug;
           if (reservedIds.has(uniqueId)) {
@@ -451,7 +455,12 @@ export function RecipeProvider({
             uniqueId = candidate;
           }
           reservedIds.add(uniqueId);
-          return { ...baseNorm, id: uniqueId };
+          return {
+            ...baseNorm,
+            id: uniqueId,
+            instanceId: `${uniqueId}::${generationId}`,
+            generationId,
+          };
         });
 
         return finalNormalized;

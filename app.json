@@ -4,6 +4,7 @@
     "slug": "foodai",
     "version": "1.0.0",
     "orientation": "portrait",
+    "icon": "./assets/images/logo.png",
     "scheme": "foodai",
     "userInterfaceStyle": "automatic",
     "ios": {
@@ -12,16 +13,31 @@
     },
     "android": {
       "adaptiveIcon": {
+        "foregroundImage": "./assets/images/logo.png",
         "backgroundColor": "#FAF7F2"
       },
-      "package": "com.foodai.app"
+      "package": "com.foodai.app",
+      "permissions": [
+        "android.permission.CAMERA"
+      ],
+      "blockedPermissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "bundler": "metro"
     },
     "plugins": [
       "expo-router",
-      "expo-status-bar"
+      "expo-status-bar",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Permite a FoodAI acceder a tus fotos para seleccionar ingredientes.",
+          "cameraPermission": "Permite a FoodAI usar la cámara para fotografiar ingredientes.",
+          "microphonePermission": false
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

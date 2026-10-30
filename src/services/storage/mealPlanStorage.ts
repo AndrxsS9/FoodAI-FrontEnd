@@ -157,7 +157,18 @@ export function parseStoredMealPlanEnvelope(rawJson: string | null): ParseMealPl
   return {
     status: 'valid',
     version: envelope.version,
-    plan: envelope.plan,
+    plan: {
+      ...envelope.plan,
+      days: envelope.plan.days.map((d) => ({
+        ...d,
+        isCompleted: Boolean(d.isCompleted),
+        completedAt: d.completedAt ?? null,
+      })),
+      completedDaysCount:
+        typeof envelope.plan.completedDaysCount === 'number'
+          ? envelope.plan.completedDaysCount
+          : envelope.plan.days.filter((d) => Boolean(d.isCompleted)).length,
+    },
     snapshot: envelope.snapshot,
   };
 }

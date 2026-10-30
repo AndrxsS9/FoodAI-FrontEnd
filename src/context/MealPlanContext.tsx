@@ -55,6 +55,9 @@ export interface MealPlanContextValue {
   clearMealPlan: () => Promise<void>;
   clearError: () => void;
   getRecipeById: (idOrSlug: string) => ClientRecipe | undefined;
+  toggleDayCompleted: (dayNumber: number, forceCompleted?: boolean) => Promise<void>;
+  markRecipeCompleted: (recipeId: string) => Promise<void>;
+  completedDaysCount: number;
 }
 
 const defaultMealPlanContextValue: MealPlanContextValue = {
@@ -71,6 +74,9 @@ const defaultMealPlanContextValue: MealPlanContextValue = {
   clearMealPlan: async () => {},
   clearError: () => {},
   getRecipeById: () => undefined,
+  toggleDayCompleted: async () => {},
+  markRecipeCompleted: async () => {},
+  completedDaysCount: 0,
 };
 
 const MealPlanContext = createContext<MealPlanContextValue | undefined>(undefined);
@@ -268,6 +274,74 @@ export function MealPlanProvider({
     [plan]
   );
 
+  const completedDaysCount = useMemo(() => {
+    if (!plan?.days) return 0;
+    return plan.days.filter((d) => Boolean(d.isCompleted)).length;
+  }, [plan]);
+
+  const toggleDayCompleted = useCallback(
+    async (dayNumber: number, forceCompleted?: boolean): Promise<void> => {
+      if (!plan || !plan.days) return;
+      const dayIndex = plan.days.findIndex((d) => d.day === dayNumber);
+      if (dayIndex === -1) return;
+
+      const currentDay = plan.days[dayIndex];
+      const newCompleted = forceCompleted !== undefined ? forceCompleted : !currentDay.isCompleted;
+      const completedAt = newCompleted ? new Date().toISOString() : null;
+
+      const updatedDays = plan.days.map((d) => {
+        if (d.day === dayNumber) {
+          return {
+            ...d,
+            isCompleted: newCompleted,
+            completedAt,
+          };
+        }
+        return d;
+      });
+
+      const newCompletedCount = updatedDays.filter((d) => Boolean(d.isCompleted)).length;
+      const updatedPlan: ClientMealPlan = {
+        ...plan,
+        days: updatedDays,
+        completedDaysCount: newCompletedCount,
+      };
+
+      setPlan(updatedPlan);
+
+      if (lastSnapshot) {
+        try {
+          await activeStorage.saveMealPlan(updatedPlan, lastSnapshot);
+        } catch (err) {
+          console.warn('[MealPlanContext] Error al guardar estado de completado:', err);
+        }
+      }
+    },
+    [plan, lastSnapshot, activeStorage]
+  );
+
+  const markRecipeCompleted = useCallback(
+    async (recipeId: string): Promise<void> => {
+      if (!plan || !plan.days || !recipeId) return;
+      const clean = recipeId.trim().toLowerCase();
+
+      const foundDay = plan.days.find((d) => {
+        const recipeIdLower = d.recipe.id.toLowerCase();
+        if (recipeIdLower === clean) return true;
+        if (d.recipe.instanceId?.toLowerCase() === clean) return true;
+        if (clean.startsWith(`${recipeIdLower}::`)) return true;
+        const slug = generateRecipeSlug(d.recipe.name).toLowerCase();
+        if (slug === clean || recipeIdLower.endsWith(`-${clean}`)) return true;
+        return false;
+      });
+
+      if (foundDay) {
+        await toggleDayCompleted(foundDay.day, true);
+      }
+    },
+    [plan, toggleDayCompleted]
+  );
+
   const clearError = useCallback(() => {
     setError(null);
     setErrorCode(null);
@@ -355,15 +429,20 @@ export function MealPlanProvider({
           return null;
         }
 
-        // 7. Normalizar el plan al modelo de cliente
-        const normalizedPlan = normalizeBackendMealPlan(backendResponse, servings);
+        // 7. Normalizar el plan al modelo de cliente con planId estable
+        const generatedAt = new Date().toISOString();
+        const planId = `plan_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+        const normalizedPlan = normalizeBackendMealPlan(backendResponse, servings, {
+          planId,
+          generatedAt,
+        });
 
         const snapshot: MealPlanGenerationSnapshot = {
           pantryFingerprint: currentPantryFingerprint,
           budget,
           servings,
           maxMinutes: targetMaxMinutes,
-          generatedAt: new Date().toISOString(),
+          generatedAt,
         };
 
         setPlan(normalizedPlan);
@@ -473,6 +552,9 @@ export function MealPlanProvider({
       clearMealPlan,
       clearError,
       getRecipeById,
+      toggleDayCompleted,
+      markRecipeCompleted,
+      completedDaysCount,
     }),
     [
       plan,
@@ -488,6 +570,9 @@ export function MealPlanProvider({
       clearMealPlan,
       clearError,
       getRecipeById,
+      toggleDayCompleted,
+      markRecipeCompleted,
+      completedDaysCount,
     ]
   );
 

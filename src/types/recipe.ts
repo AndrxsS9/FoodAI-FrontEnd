@@ -1,3 +1,5 @@
+import type { ImageSourcePropType } from 'react-native';
+
 /**
  * FoodAI - Modelos, contratos de API y tipos del dominio de recetas (Fase 2C).
  * Alineado estrictamente con el esquema del backend: POST /api/recipes/recommend
@@ -94,6 +96,7 @@ export interface BackendRecipe {
   withinBudget: boolean;
   convenience: number; // 0 a 100
   reason: string;
+  imageUrl?: string;
 }
 
 export interface BackendSuccessEnvelope<T> {
@@ -163,7 +166,7 @@ export interface ClientRecipe {
   instanceId?: string;
   generationId?: string;
   /** Imagen opcional de UI */
-  imageUrl?: any;
+  imageUrl?: ImageSourcePropType | string | null;
 }
 
 // ==========================================
@@ -352,6 +355,13 @@ export function normalizeBackendRecipe(
     convenienceDisplay = String(raw.convenience);
   }
 
+  const rawImageUrl = (raw as any).imageUrl;
+  const safeImageUrl: string | undefined =
+    typeof rawImageUrl === 'string' &&
+    (rawImageUrl.trim().startsWith('https://') || rawImageUrl.trim().startsWith('http://'))
+      ? rawImageUrl.trim()
+      : undefined;
+
   return {
     id: slug,
     instanceId: generationId ? `${slug}::${generationId}` : slug,
@@ -372,6 +382,7 @@ export function normalizeBackendRecipe(
     withinBudget,
     convenience: convenienceDisplay,
     reason: raw.reason ? String(raw.reason).trim() : '',
+    imageUrl: safeImageUrl,
     isDemoFixture: false,
   };
 }

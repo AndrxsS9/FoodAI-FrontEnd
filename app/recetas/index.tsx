@@ -20,6 +20,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Button, Card, Chip, Input, Stepper } from '../../src/components/common';
+import { RecipeImage } from '../../src/components/recipe/RecipeImage';
 import { usePantry } from '../../src/context/PantryContext';
 import { useBudget } from '../../src/context/BudgetContext';
 import { useRecipes } from '../../src/context/RecipeContext';
@@ -576,25 +577,19 @@ function RecipeCardItem({ recipe, isDominant, onPress }: RecipeCardItemProps) {
       style={[styles.recipeCard, isDominant && styles.dominantCard]}
       testID={`recipe-card-${recipe.id}`}
     >
-      {/* Imagen o cabecera visual de respaldo */}
-      <View style={styles.imageWrapper}>
-        {recipe.imageUrl ? (
-          <Image
-            source={recipe.imageUrl}
-            style={styles.recipeImage}
-            resizeMode="cover"
-            accessibilityLabel={`Foto de ${recipe.name}`}
-          />
-        ) : (
-          <View style={styles.imageFallback} testID={`recipe-fallback-image-${recipe.id}`}>
-            <MaterialIcons name="restaurant" size={48} color={colors.outlineVariant} />
-            <Text style={[styles.imageFallbackText, typography.labelSm]}>FoodAI Receta</Text>
-          </View>
-        )}
-
+      {/* Imagen o cabecera visual de respaldo con RecipeImage */}
+      <RecipeImage
+        source={recipe.imageUrl}
+        recipeName={recipe.name}
+        isDemo={recipe.isDemoFixture}
+        containerStyle={styles.imageWrapper}
+        fallbackTestID={`recipe-fallback-image-${recipe.id}`}
+        testID={`recipe-image-${recipe.id}`}
+        borderRadius={0}
+      >
         {/* Badge de afinidad / conveniencia */}
         <View style={styles.convenienceBadge}>
-          <MaterialIcons name="verified" size={14} color="#503B00" />
+          <MaterialIcons name="verified" size={14} color="#503B00" importantForAccessibility="no" accessibilityElementsHidden={true} />
           <Text style={[styles.convenienceBadgeText, typography.labelSm]}>
             {String(recipe.convenience)}
           </Text>
@@ -603,12 +598,12 @@ function RecipeCardItem({ recipe, isDominant, onPress }: RecipeCardItemProps) {
         {/* Título en tarjeta dominante o normal */}
         {isDominant && (
           <View style={styles.dominantTitleOverlay}>
-            <Text style={[styles.dominantTitle, typography.headlineLg]} numberOfLines={2}>
+            <Text style={[styles.dominantTitle, typography.headlineLg]} numberOfLines={2} accessibilityRole="header">
               {recipe.name}
             </Text>
           </View>
         )}
-      </View>
+      </RecipeImage>
 
       <View style={styles.cardBody}>
         {!isDominant && (

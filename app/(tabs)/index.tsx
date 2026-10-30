@@ -11,6 +11,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Button, Card, Chip, Input } from '../../src/components/common';
+import { RecipeImage } from '../../src/components/recipe/RecipeImage';
 import { usePantry } from '../../src/context/PantryContext';
 import { useBudget } from '../../src/context/BudgetContext';
 import { useRecipes } from '../../src/context/RecipeContext';
@@ -369,34 +370,22 @@ export default function HomeScreen() {
               style={styles.recipeCard}
               testID="home-recommended-recipe-card"
             >
-              <View style={styles.recipeImageWrapper}>
-                {recommendedRecipe.imageUrl ? (
-                  <Image
-                    source={recommendedRecipe.imageUrl}
-                    style={styles.recipeImage}
-                    resizeMode="cover"
-                    accessibilityLabel={`Foto del plato${recommendedRecipe.isDemoFixture ? ' de ejemplo' : ''}: ${recommendedRecipe.name}`}
-                  />
-                ) : (
-                  <View
-                    style={styles.recipeImageFallback}
-                    testID="home-recipe-fallback-image"
-                    accessibilityRole="image"
-                    accessibilityLabel={`Ilustración de ${recommendedRecipe.name}`}
-                  >
-                    <MaterialIcons name="restaurant" size={48} color={colors.outlineVariant} />
-                    <Text style={[styles.recipeFallbackText, typography.labelSm]}>
-                      FoodAI Receta
-                    </Text>
-                  </View>
-                )}
+              <RecipeImage
+                source={recommendedRecipe.imageUrl}
+                recipeName={recommendedRecipe.name}
+                isDemo={recommendedRecipe.isDemoFixture}
+                containerStyle={styles.recipeImageWrapper}
+                fallbackTestID="home-recipe-fallback-image"
+                testID="home-recipe-image"
+                borderRadius={0}
+              >
                 {/* Score pill */}
                 <View
                   style={styles.convenienceBadge}
                   accessibilityRole="text"
                   accessibilityLabel={`Afinidad estimada${recommendedRecipe.isDemoFixture ? ' de ejemplo' : ''}: ${recommendedRecipe.convenience}`}
                 >
-                  <MaterialIcons name="verified" size={16} color={colors.tertiaryContainer} />
+                  <MaterialIcons name="verified" size={16} color={colors.tertiaryContainer} importantForAccessibility="no" accessibilityElementsHidden={true} />
                   <Text style={[styles.convenienceText, typography.labelSm]}>
                     {typeof recommendedRecipe.convenience === 'number'
                       ? `${recommendedRecipe.convenience}% conveniente`
@@ -419,7 +408,7 @@ export default function HomeScreen() {
                     </Text>
                   </View>
                 </View>
-              </View>
+              </RecipeImage>
 
               {/* Recipe Content */}
               <View style={styles.recipeBody}>

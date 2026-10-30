@@ -11,7 +11,6 @@
  */
 import React, { useMemo, useState } from 'react';
 import {
-  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -22,6 +21,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Button, Card } from '../../src/components/common';
+import { RecipeImage } from '../../src/components/recipe/RecipeImage';
 import { usePantry } from '../../src/context/PantryContext';
 import { useRecipes } from '../../src/context/RecipeContext';
 import { useMealPlanSafe } from '../../src/context/MealPlanContext';
@@ -194,26 +194,20 @@ export default function RecipeDetailScreen() {
 
         {/* 3. Hero Visual & Título */}
         <View style={styles.heroWrapper}>
-          <View style={styles.heroImageContainer}>
-            {recipe.imageUrl ? (
-              <Image
-                source={recipe.imageUrl}
-                style={styles.heroImage}
-                resizeMode="cover"
-                accessibilityLabel={`Foto del plato: ${recipe.name}`}
-              />
-            ) : (
-              <View style={styles.heroFallback} testID="recipe-detail-fallback-image">
-                <MaterialIcons name="restaurant" size={56} color={colors.outlineVariant} />
-                <Text style={[styles.heroFallbackText, typography.labelMd]}>FoodAI Receta</Text>
-              </View>
-            )}
-
-            <View style={styles.heroGradientOverlay} />
+          <RecipeImage
+            source={recipe.imageUrl}
+            recipeName={recipe.name}
+            isDemo={recipe.isDemoFixture}
+            containerStyle={styles.heroImageContainer}
+            fallbackTestID="recipe-detail-fallback-image"
+            testID="recipe-detail-image"
+            borderRadius={radius.xl}
+          >
+            <View style={styles.heroGradientOverlay} accessible={false} importantForAccessibility="no" accessibilityElementsHidden={true} />
 
             {/* Badge de afinidad / conveniencia */}
             <View style={styles.conveniencePill}>
-              <MaterialIcons name="stars" size={16} color="#503B00" />
+              <MaterialIcons name="stars" size={16} color="#503B00" importantForAccessibility="no" accessibilityElementsHidden={true} />
               <Text style={[styles.conveniencePillText, typography.labelMd]}>
                 {String(recipe.convenience)}
               </Text>
@@ -233,7 +227,7 @@ export default function RecipeDetailScreen() {
                 {recipe.name}
               </Text>
             </View>
-          </View>
+          </RecipeImage>
         </View>
 
         {/* 4. Quick Meta Metrics (Stitch Screen 9) */}

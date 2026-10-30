@@ -1,3 +1,5 @@
+import type { ImageSourcePropType } from 'react-native';
+
 /**
  * FoodAI - Modelos, contratos de API y tipos del dominio de recetas (Fase 2C).
  * Alineado estrictamente con el esquema del backend: POST /api/recipes/recommend
@@ -94,6 +96,7 @@ export interface BackendRecipe {
   withinBudget: boolean;
   convenience: number; // 0 a 100
   reason: string;
+  imageUrl?: string;
 }
 
 export interface BackendSuccessEnvelope<T> {
@@ -163,7 +166,7 @@ export interface ClientRecipe {
   instanceId?: string;
   generationId?: string;
   /** Imagen opcional de UI */
-  imageUrl?: any;
+  imageUrl?: ImageSourcePropType | string | null;
 }
 
 // ==========================================
@@ -232,6 +235,72 @@ export function formatIngredientQuantity(quantity: number | null | undefined, un
   }
 
   return `${displayQty} ${safeUnit}`;
+}
+
+/**
+ * Valida si una URL remota de imagen es segura.
+ *
+ * POLÍTICA DE SEGURIDAD ESTRICTA (Producción):
+ * - Enforce HTTPS (https://): todas las imágenes remotas deben provenir de orígenes cifrados TLS
+ *   con un hostname válido y estructura de URL correcta según el estándar WHATWG.
+ * - Rechaza URLs malformadas, sin host, con triple barra o sin dominio válido.
+ * - Rechaza HTTP inseguro (http://) para mitigar riesgos de Cleartext Traffic y MitM.
+ * - Excepción de desarrollo: en entorno local de pruebas (__DEV__), se permite loopback local estricto
+ *   (localhost / 127.0.0.1 / 10.0.2.2 en emulador Android / ::1), sin admitir hosts .local arbitrarios.
+ */
+export function isSecureRemoteImageUrl(url: unknown): boolean {
+  if (typeof url !== 'string') {
+    return false;
+  }
+  const trimmed = url.trim();
+  if (!trimmed) {
+    return false;
+  }
+
+  // Rechazar esquemas malformados con triple barra o caracteres de control
+  if (trimmed.startsWith('https:///') || trimmed.startsWith('http:///')) {
+    return false;
+  }
+
+  try {
+    const parsed = new URL(trimmed);
+    const protocol = parsed.protocol.toLowerCase();
+    const hostname = parsed.hostname.toLowerCase();
+
+    if (!hostname || hostname.length === 0) {
+      return false;
+    }
+
+    // 1. HTTPS estricto para producción
+    if (protocol === 'https:') {
+      // El host debe tener estructura válida (dominio con punto o localhost en TLS),
+      // sin puntos dobles o caracteres ilegales
+      const isValidRemoteHost =
+        (hostname.includes('.') || hostname === 'localhost') &&
+        !hostname.startsWith('.') &&
+        !hostname.endsWith('.') &&
+        !hostname.includes('..') &&
+        /^[a-z0-9.-]+$/.test(hostname);
+
+      return isValidRemoteHost;
+    }
+
+    // 2. HTTP inseguro en desarrollo únicamente para loopback local estricto
+    if (typeof __DEV__ !== 'undefined' && __DEV__ && protocol === 'http:') {
+      const isLoopback =
+        hostname === 'localhost' ||
+        hostname === '127.0.0.1' ||
+        hostname === '10.0.2.2' ||
+        hostname === '::1' ||
+        hostname === '[::1]';
+
+      return isLoopback;
+    }
+
+    return false;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -352,6 +421,12 @@ export function normalizeBackendRecipe(
     convenienceDisplay = String(raw.convenience);
   }
 
+  const rawImageUrl = (raw as any).imageUrl;
+  const safeImageUrl: string | undefined =
+    typeof rawImageUrl === 'string' && isSecureRemoteImageUrl(rawImageUrl)
+      ? rawImageUrl.trim()
+      : undefined;
+
   return {
     id: slug,
     instanceId: generationId ? `${slug}::${generationId}` : slug,
@@ -372,6 +447,7 @@ export function normalizeBackendRecipe(
     withinBudget,
     convenience: convenienceDisplay,
     reason: raw.reason ? String(raw.reason).trim() : '',
+    imageUrl: safeImageUrl,
     isDemoFixture: false,
   };
 }

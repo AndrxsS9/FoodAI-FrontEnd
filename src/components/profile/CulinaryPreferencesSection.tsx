@@ -225,8 +225,6 @@ const createStyles = (colors: AppColors) =>
     padding: spacing.md,
     borderRadius: radius.xl,
     gap: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.borderLight,
     shadowColor: colors.primary,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.04,
@@ -309,8 +307,6 @@ const createStyles = (colors: AppColors) =>
     paddingHorizontal: spacing.sm,
     paddingVertical: 5,
     borderRadius: radius.full,
-    borderWidth: 1,
-    borderColor: colors.borderLight,
   },
   preferenceValueText: {
     color: colors.textPrimary,

@@ -369,8 +369,6 @@ const createStyles = (colors: AppColors) =>
       backgroundColor: colors.surface,
       borderRadius: radius.xl,
       overflow: 'hidden',
-      borderWidth: 1,
-      borderColor: colors.borderLight,
       shadowColor: colors.cardShadow,
       shadowOffset: { width: 0, height: 2 },
       shadowOpacity: 0.04,

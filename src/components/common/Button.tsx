@@ -137,27 +137,32 @@ const createStyles = (colors: AppColors) =>
 
     // Sizes
     sm: {
-      height: 36,
+      height: 38,
       paddingHorizontal: spacing.md,
-      borderRadius: radius.md,
+      borderRadius: radius.full,
     },
     md: {
       height: 48,
       paddingHorizontal: spacing.lg,
-      borderRadius: radius.lg,
+      borderRadius: radius.md + 4,
     },
     lg: {
-      height: 52,
+      height: 54,
       paddingHorizontal: spacing.lg,
-      borderRadius: radius.xl,
+      borderRadius: radius.lg,
     },
 
     // Variants
     primary: {
-      backgroundColor: colors.primary,
+      backgroundColor: colors.primaryAction,
+      shadowColor: colors.primaryAction,
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.22,
+      shadowRadius: 10,
+      elevation: 3,
     },
     primaryPressed: {
-      backgroundColor: colors.primaryContainer,
+      backgroundColor: colors.primary,
     },
     secondary: {
       backgroundColor: colors.secondary,
@@ -172,13 +177,11 @@ const createStyles = (colors: AppColors) =>
       backgroundColor: colors.tertiaryContainer,
     },
     outline: {
-      backgroundColor: 'transparent',
-      borderWidth: 1.5,
-      borderColor: colors.border,
+      backgroundColor: colors.surfaceContainer,
+      borderWidth: 0,
     },
     outlinePressed: {
-      backgroundColor: colors.surfaceContainerLow,
-      borderColor: colors.outlineVariant,
+      backgroundColor: colors.surfaceContainerHigh,
     },
     ghost: {
       backgroundColor: 'transparent',
@@ -191,6 +194,8 @@ const createStyles = (colors: AppColors) =>
     disabled: {
       backgroundColor: colors.surfaceContainerHigh,
       borderColor: 'transparent',
+      shadowOpacity: 0,
+      elevation: 0,
       opacity: 0.65,
     },
 

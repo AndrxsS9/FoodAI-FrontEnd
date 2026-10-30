@@ -79,6 +79,7 @@ describe('Validación de Preparación para Build Android APK (Fase 6C.1)', () =>
       const preview = easConfig.build?.preview;
       expect(preview).toBeDefined();
       expect(preview.distribution).toBe('internal');
+      expect((preview as { environment?: string }).environment).toBe('preview');
       expect(preview.android).toBeDefined();
       expect(preview.android.buildType).toBe('apk');
     });

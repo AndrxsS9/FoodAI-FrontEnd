@@ -81,6 +81,37 @@ describe('themeStorage (AsyncStorageThemeStorageAdapter)', () => {
 
       AsyncStorage.getItem = originalGetItem;
     });
+
+    it('debe rechazar versiones de sobre desconocidas o no soportadas y retornar "system"', async () => {
+      await AsyncStorage.setItem(
+        APPEARANCE_STORAGE_KEY,
+        JSON.stringify({ version: 99, themeMode: 'dark', updatedAt: new Date().toISOString() })
+      );
+      const mode = await adapter.getThemeMode();
+      expect(mode).toBe('system');
+    });
+
+    it('debe rechazar estructuras inválidas como arrays o primitivos serializados', async () => {
+      await AsyncStorage.setItem(APPEARANCE_STORAGE_KEY, JSON.stringify(['dark']));
+      expect(await adapter.getThemeMode()).toBe('system');
+
+      await AsyncStorage.setItem(APPEARANCE_STORAGE_KEY, JSON.stringify(12345));
+      expect(await adapter.getThemeMode()).toBe('system');
+
+      await AsyncStorage.setItem(APPEARANCE_STORAGE_KEY, JSON.stringify(null));
+      expect(await adapter.getThemeMode()).toBe('system');
+    });
+
+    it('debe soportar y recuperar valores de formato legacy directo sin sobre JSON', async () => {
+      await AsyncStorage.setItem(APPEARANCE_STORAGE_KEY, 'dark');
+      expect(await adapter.getThemeMode()).toBe('dark');
+
+      await AsyncStorage.setItem(APPEARANCE_STORAGE_KEY, 'light');
+      expect(await adapter.getThemeMode()).toBe('light');
+
+      await AsyncStorage.setItem(APPEARANCE_STORAGE_KEY, 'system');
+      expect(await adapter.getThemeMode()).toBe('system');
+    });
   });
 
   describe('saveThemeMode', () => {
@@ -119,6 +150,18 @@ describe('themeStorage (AsyncStorageThemeStorageAdapter)', () => {
       );
 
       AsyncStorage.setItem = originalSetItem;
+    });
+
+    it('debe serializar escrituras concurrentes preservando siempre la última preferencia seleccionada', async () => {
+      const p1 = adapter.saveThemeMode('dark');
+      const p2 = adapter.saveThemeMode('light');
+
+      await Promise.all([p1, p2]);
+
+      const raw = await AsyncStorage.getItem(APPEARANCE_STORAGE_KEY);
+      const parsed = JSON.parse(raw!);
+      expect(parsed.themeMode).toBe('light');
+      expect(await adapter.getThemeMode()).toBe('light');
     });
   });
 

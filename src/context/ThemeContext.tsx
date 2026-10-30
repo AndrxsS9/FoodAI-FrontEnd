@@ -71,12 +71,22 @@ function resolveSystemScheme(nativeScheme?: ColorSchemeName | null): ColorScheme
   return nativeScheme === 'dark' ? 'dark' : 'light';
 }
 
-function syncNativeAppearance(mode: ThemeMode) {
+/**
+ * Sincroniza la apariencia nativa de la aplicación con React Native.
+ * Según la documentación oficial de React Native 0.88+:
+ * - 'light' fuerza el estilo claro.
+ * - 'dark' fuerza el estilo oscuro.
+ * - 'auto' elimina el override a nivel de app y restaura la preferencia del sistema operativo.
+ */
+export function syncNativeAppearance(mode: ThemeMode) {
   if (typeof Appearance.setColorScheme === 'function') {
     try {
-      Appearance.setColorScheme((mode === 'system' ? undefined : mode) as any);
-    } catch {
-      // Ignorar de forma segura en entornos o plataformas que no soporten la API
+      const targetScheme = mode === 'system' ? 'auto' : mode;
+      Appearance.setColorScheme(targetScheme as any);
+    } catch (err) {
+      if (__DEV__) {
+        console.warn('[FoodAI:ThemeContext] Appearance.setColorScheme failed:', err);
+      }
     }
   }
 }
@@ -96,10 +106,12 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({
   const [isLoaded, setIsLoaded] = useState<boolean>(() => initialMode !== undefined);
   const [storageError, setStorageError] = useState<string | null>(null);
 
-  // Referencias para control de condiciones de carrera en operaciones asíncronas
+  // Referencias para control de condiciones de carrera y serialización FIFO
   const nextOperationVersionRef = useRef(0);
   const lastAppliedVersionRef = useRef(0);
+  const lastPersistedVersionRef = useRef(0);
   const isMountedRef = useRef(true);
+  const writeQueueRef = useRef<Promise<void>>(Promise.resolve());
 
   // 3. Suscripción a cambios del sistema operativo
   useEffect(() => {
@@ -117,7 +129,7 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({
     };
   }, []);
 
-  // 4. Hidratación inicial desde almacenamiento persistente
+  // 4. Hidratación inicial desde almacenamiento persistente con timeout de seguridad
   useEffect(() => {
     if (initialMode !== undefined) {
       syncNativeAppearance(initialMode);
@@ -127,9 +139,14 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({
     let isMounted = true;
     const version = ++nextOperationVersionRef.current;
 
+    // Timeout de seguridad de 2500ms para evitar bloqueo indefinido en arranque
+    const timeoutPromise = new Promise<ThemeMode>((resolve) => {
+      setTimeout(() => resolve('system'), 2500);
+    });
+
     void (async () => {
       try {
-        const stored = await storageAdapter.getThemeMode();
+        const stored = await Promise.race([storageAdapter.getThemeMode(), timeoutPromise]);
         if (!isMounted) return;
 
         // Validar versión monótona para no pisar selecciones de usuario posteriores
@@ -158,36 +175,55 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({
     };
   }, [initialMode, storageAdapter]);
 
-  // 5. Cambio reactivo y persistencia segura de la preferencia
+  // 5. Cambio reactivo y persistencia segura de la preferencia (FIFO / Last-Write-Wins)
   const setThemeMode = useCallback(
     async (mode: ThemeMode) => {
       if (!isValidThemeMode(mode)) {
         throw new Error(`Modo de tema inválido: "${mode}". Se esperaba 'light', 'dark' o 'system'.`);
       }
 
-      // 1. Asignar versión monótona para proteger contra race conditions de I/O asíncrono
+      // 1. Asignar versión monótona para proteger contra race conditions de I/O
       const operationVersion = ++nextOperationVersionRef.current;
       lastAppliedVersionRef.current = operationVersion;
 
       // 2. Aplicar inmediatamente en memoria para retroalimentación instantánea (optimistic update)
       setThemeModeState(mode);
-      setStorageError(null);
+      if (isMountedRef.current) {
+        setStorageError(null);
+      }
       syncNativeAppearance(mode);
 
-      // 3. Persistir en AsyncStorage
-      try {
-        await storageAdapter.saveThemeMode(mode);
-      } catch (err) {
-        // Solo registrar si esta operación sigue siendo la autoritativa
-        if (operationVersion === lastAppliedVersionRef.current && isMountedRef.current) {
-          setStorageError(
-            err instanceof Error
-              ? err.message
-              : 'No se pudo guardar la preferencia de apariencia en el dispositivo.'
-          );
+      // 3. Serializar la persistencia en cola de escritura FIFO / last-write-wins
+      const writeTask = async () => {
+        // Si el componente se desmontó o una selección más reciente ya fue encolada
+        if (!isMountedRef.current || operationVersion < lastAppliedVersionRef.current) {
+          return;
         }
-        throw err;
-      }
+
+        try {
+          await storageAdapter.saveThemeMode(mode);
+          if (operationVersion >= lastPersistedVersionRef.current) {
+            lastPersistedVersionRef.current = operationVersion;
+          }
+        } catch (err) {
+          // Solo reportar error en el estado si esta operación sigue siendo la última seleccionada
+          if (operationVersion === lastAppliedVersionRef.current && isMountedRef.current) {
+            setStorageError(
+              err instanceof Error
+                ? err.message
+                : 'No se pudo guardar la preferencia de apariencia en el dispositivo.'
+            );
+          }
+          // Propagar el error si esta sigue siendo la última operación
+          if (operationVersion === lastAppliedVersionRef.current) {
+            throw err;
+          }
+        }
+      };
+
+      const queued = writeQueueRef.current.then(writeTask, writeTask);
+      writeQueueRef.current = queued.catch(() => {});
+      return queued;
     },
     [storageAdapter]
   );

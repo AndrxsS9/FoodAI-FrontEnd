@@ -30,7 +30,7 @@ import GuidedCookingScreen from '../app/recetas/[id]/cocinar';
 import HomeScreen from '../app/(tabs)/index';
 import DespensaScreen from '../app/(tabs)/despensa';
 
-import { TypographyProvider } from '../src/theme';
+import { TypographyProvider, ThemeProvider } from '../src/theme';
 import { PantryProvider } from '../src/context/PantryContext';
 import { BudgetProvider } from '../src/context/BudgetContext';
 import { RecipeProvider } from '../src/context/RecipeContext';
@@ -108,6 +108,7 @@ const renderWithProviders = async (
     initialIsDemoMode?: boolean;
     storageAdapter?: BudgetStorageAdapter;
     recipeApiClient?: any;
+    initialThemeMode?: 'light' | 'dark' | 'system';
   }
 ) => {
   return await render(
@@ -118,6 +119,7 @@ const renderWithProviders = async (
       }}
     >
       <TypographyProvider usingFallback={true}>
+        <ThemeProvider initialMode={options?.initialThemeMode ?? 'light'}>
         <PantryProvider
           initialIngredients={options?.initialIngredients ?? SAMPLE_PANTRY_INGREDIENTS}
         >
@@ -136,6 +138,7 @@ const renderWithProviders = async (
             </RecipeProvider>
           </BudgetProvider>
         </PantryProvider>
+        </ThemeProvider>
       </TypographyProvider>
     </SafeAreaProvider>
   );
@@ -1074,6 +1077,43 @@ describe('FoodAI Phase 2C - Recipe Discovery, Details & Cooking Mode Tests', () 
 
       // Receta demo tiene imagen, por lo que el fallback no debe renderizarse
       expect(queryByTestId('recipe-detail-fallback-image')).toBeNull();
+    });
+  });
+  describe('Modo Cocina Guiada y Adaptación de Tema Oscuro (Fase 6B.2)', () => {
+    it('renderiza Modo Cocina en modo oscuro con adaptación semántica completa', async () => {
+      mockSearchParams = { id: 'demo-rec-1' };
+      const { getByTestId, getByText } = await renderWithProviders(
+        <GuidedCookingScreen />,
+        { initialThemeMode: 'dark' }
+      );
+
+      expect(getByText('Modo Cocina')).toBeTruthy();
+      expect(getByTestId('cooking-step-counter')).toBeTruthy();
+      expect(getByText('Paso 1 de 4')).toBeTruthy();
+      expect(getByTestId('cooking-next-step-button')).toBeTruthy();
+    });
+
+    it('renderiza modal de finalización en modo oscuro adaptando contenedores y superficies', async () => {
+      mockSearchParams = { id: 'demo-rec-1' };
+      const { getByTestId, getByText } = await renderWithProviders(
+        <GuidedCookingScreen />,
+        { initialThemeMode: 'dark' }
+      );
+
+      const jumpBtn = getByTestId('cooking-jump-final-button');
+      fireEvent.press(jumpBtn);
+
+      await waitFor(() => {
+        expect(getByText('Finalizar preparación')).toBeTruthy();
+      });
+
+      const finishBtn = getByTestId('cooking-next-step-button');
+      fireEvent.press(finishBtn);
+
+      await waitFor(() => {
+        expect(getByTestId('cooking-finish-modal')).toBeTruthy();
+        expect(getByText('¡Buen provecho!')).toBeTruthy();
+      });
     });
   });
 });

@@ -758,7 +758,7 @@ const createStyles = (colors: AppColors) =>
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: 'rgba(255, 218, 211, 0.6)',
+    backgroundColor: colors.errorContainer,
     paddingHorizontal: spacing.sm,
     paddingVertical: 7,
     borderRadius: radius.md,
@@ -770,7 +770,7 @@ const createStyles = (colors: AppColors) =>
     gap: spacing.xs,
   },
   urgentBannerTitle: {
-    color: '#802916',
+    color: colors.onErrorContainer,
     fontWeight: '700',
   },
   urgentBannerTag: {
@@ -893,7 +893,7 @@ const createStyles = (colors: AppColors) =>
     height: '100%',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#F0EDE9',
+    backgroundColor: colors.surfaceContainer,
     gap: spacing.xs,
   },
   recipeFallbackText: {
@@ -907,7 +907,7 @@ const createStyles = (colors: AppColors) =>
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: '#FFDF9B',
+    backgroundColor: colors.tertiaryContainer,
     paddingHorizontal: spacing.sm + 2,
     paddingVertical: 5,
     borderRadius: radius.full,
@@ -918,7 +918,7 @@ const createStyles = (colors: AppColors) =>
     elevation: 2,
   },
   convenienceText: {
-    color: colors.tertiaryContainer,
+    color: colors.onTertiaryContainer,
     fontWeight: '700',
   },
   recipeMetaRow: {

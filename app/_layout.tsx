@@ -47,9 +47,9 @@ function AuthenticatedProviders({ children }: { children: React.ReactNode }) {
  */
 function RootNavigation() {
   const { isAuthenticated, isInitializing } = useAuth();
-  const { colors: activeColors, activeColorScheme } = useAppTheme();
+  const { colors: activeColors, activeColorScheme, isLoaded: isThemeLoaded } = useAppTheme();
 
-  if (isInitializing) {
+  if (isInitializing || !isThemeLoaded) {
     return (
       <View
         style={[styles.loadingContainer, { backgroundColor: activeColors.canvas }]}

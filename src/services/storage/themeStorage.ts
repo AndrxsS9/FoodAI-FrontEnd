@@ -39,43 +39,69 @@ export interface ThemeStorageAdapter {
 
 export class AsyncStorageThemeStorageAdapter implements ThemeStorageAdapter {
   private readonly key: string;
+  private writeQueue: Promise<void> = Promise.resolve();
+  private scheduledCount = 0;
 
   constructor(key: string = APPEARANCE_STORAGE_KEY) {
     this.key = key;
   }
 
   async getThemeMode(): Promise<ThemeMode> {
+    let raw: string | null = null;
     try {
-      const raw = await AsyncStorage.getItem(this.key);
-      if (!raw) {
+      raw = await AsyncStorage.getItem(this.key);
+    } catch (readError) {
+      console.warn(
+        '[FoodAI:themeStorage] Fallo de I/O al leer la preferencia de apariencia de AsyncStorage. Usando "system":',
+        readError
+      );
+      return 'system';
+    }
+
+    if (!raw) {
+      return 'system';
+    }
+
+    const trimmed = raw.trim();
+
+    // Compatibilidad con almacenamiento de valor de cadena directa (formato legacy)
+    if (isValidThemeMode(trimmed)) {
+      return trimmed;
+    }
+
+    // Deserialización y validación estricta de sobre JSON versionado
+    try {
+      const parsed = JSON.parse(trimmed);
+
+      // Debe ser un objeto plano válido (no null, no array, typeof === 'object')
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        console.warn(
+          `[FoodAI:themeStorage] Estructura de sobre de apariencia inválida: "${raw}". Usando 'system' como valor predeterminado.`
+        );
         return 'system';
       }
 
-      const trimmed = raw.trim();
-
-      // Compatibilidad con almacenamiento de valor de cadena directa
-      if (isValidThemeMode(trimmed)) {
-        return trimmed;
+      // Validar versión exacta soportada (versión 1)
+      if (parsed.version !== APPEARANCE_STORAGE_VERSION) {
+        console.warn(
+          `[FoodAI:themeStorage] Versión de sobre no soportada: ${parsed.version}. Versión esperada: ${APPEARANCE_STORAGE_VERSION}. Usando 'system' como valor predeterminado.`
+        );
+        return 'system';
       }
 
-      // Deserialización de sobre JSON versionado
-      const parsed = JSON.parse(trimmed);
-      if (
-        parsed &&
-        typeof parsed === 'object' &&
-        isValidThemeMode(parsed.themeMode)
-      ) {
+      // Validar themeMode
+      if (isValidThemeMode(parsed.themeMode)) {
         return parsed.themeMode;
       }
 
       console.warn(
-        `[FoodAI:themeStorage] Valor de tema inválido o no reconocido: "${raw}". Usando 'system' como valor predeterminado.`
+        `[FoodAI:themeStorage] themeMode inválido en sobre versionado: "${parsed.themeMode}". Usando 'system' como valor predeterminado.`
       );
       return 'system';
-    } catch (error) {
+    } catch (parseError) {
       console.warn(
-        '[FoodAI:themeStorage] Error al leer la preferencia de apariencia de AsyncStorage. Usando "system":',
-        error
+        `[FoodAI:themeStorage] Contenido corrupto no interpretable como JSON: "${raw}". Usando 'system' como valor predeterminado:`,
+        parseError
       );
       return 'system';
     }
@@ -88,21 +114,34 @@ export class AsyncStorageThemeStorageAdapter implements ThemeStorageAdapter {
       );
     }
 
-    const envelope: AppearanceStorageEnvelope = {
-      version: APPEARANCE_STORAGE_VERSION,
-      updatedAt: new Date().toISOString(),
-      themeMode: mode,
+    const version = ++this.scheduledCount;
+
+    const performWrite = async () => {
+      // Si una escritura más reciente fue encolada mientras esta esperaba en cola, saltarla
+      if (version < this.scheduledCount) {
+        return;
+      }
+
+      const envelope: AppearanceStorageEnvelope = {
+        version: APPEARANCE_STORAGE_VERSION,
+        updatedAt: new Date().toISOString(),
+        themeMode: mode,
+      };
+
+      try {
+        await AsyncStorage.setItem(this.key, JSON.stringify(envelope));
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : 'Error al persistir la preferencia de apariencia en el dispositivo.';
+        throw new ThemeStorageError(message, error);
+      }
     };
 
-    try {
-      await AsyncStorage.setItem(this.key, JSON.stringify(envelope));
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : 'Error al persistir la preferencia de apariencia en el dispositivo.';
-      throw new ThemeStorageError(message, error);
-    }
+    const queued = this.writeQueue.then(performWrite, performWrite);
+    this.writeQueue = queued.catch(() => {});
+    return queued;
   }
 
   async clearThemeMode(): Promise<void> {

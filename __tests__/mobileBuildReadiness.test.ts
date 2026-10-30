@@ -2,9 +2,9 @@
  * FoodAI - Mobile Build Readiness & Android APK Configuration Tests (Fase 6C.1).
  *
  * Valida de forma determinista:
- * 1. Configuración de app.json para Android (package, iconos adaptativos, esquema y permisos).
- * 2. Inclusión de permisos nativos críticos para el escáner de ingredientes (cámara y almacenamiento).
- * 3. Plugins de Expo requeridos (expo-image-picker con descripciones en español, expo-router, expo-status-bar).
+ * 1. Configuración de app.json para Android (package, iconos adaptativos, esquema y permisos mínimos).
+ * 2. Principio de mínimo privilegio: CAMERA habilitado, RECORD_AUDIO bloqueado y sin declaraciones innecesarias de almacenamiento.
+ * 3. Plugins de Expo requeridos (expo-image-picker con descripciones en español y microphonePermission: false).
  * 4. Configuración de eas.json para generación de APK de vista previa (buildType: 'apk', distribution: 'internal').
  * 5. Protección de credenciales y ausencia de IDs ficticios o secretos quemados en código.
  */
@@ -40,16 +40,18 @@ describe('Validación de Preparación para Build Android APK (Fase 6C.1)', () =>
       expect(adaptiveIcon.backgroundColor).toMatch(/^#[0-9A-Fa-f]{6}$/);
     });
 
-    it('declara explícitamente los permisos nativos requeridos en Android (incluyendo CAMERA para el escáner)', () => {
+    it('aplica el principio de mínimo privilegio en permisos de Android: incluye CAMERA y bloquea RECORD_AUDIO', () => {
       const permissions: string[] = appConfig.expo.android.permissions;
       expect(Array.isArray(permissions)).toBe(true);
       expect(permissions).toContain('android.permission.CAMERA');
-      expect(permissions).toContain('android.permission.INTERNET');
-      expect(permissions).toContain('android.permission.READ_EXTERNAL_STORAGE');
-      expect(permissions).toContain('android.permission.WRITE_EXTERNAL_STORAGE');
+      expect(permissions).not.toContain('android.permission.RECORD_AUDIO');
+
+      const blockedPermissions: string[] = (appConfig.expo.android as { blockedPermissions?: string[] }).blockedPermissions ?? [];
+      expect(Array.isArray(blockedPermissions)).toBe(true);
+      expect(blockedPermissions).toContain('android.permission.RECORD_AUDIO');
     });
 
-    it('configura el plugin expo-image-picker con descripciones de permisos legibles para el usuario', () => {
+    it('configura el plugin expo-image-picker con descripciones en español y desactiva el permiso de micrófono', () => {
       const plugins = appConfig.expo.plugins;
       expect(Array.isArray(plugins)).toBe(true);
       expect(plugins).toContain('expo-router');
@@ -57,12 +59,13 @@ describe('Validación de Preparación para Build Android APK (Fase 6C.1)', () =>
 
       const imagePickerPlugin = plugins.find(
         (p: unknown) => Array.isArray(p) && p[0] === 'expo-image-picker'
-      ) as [string, { cameraPermission?: string; photosPermission?: string }] | undefined;
+      ) as [string, { cameraPermission?: string; photosPermission?: string; microphonePermission?: boolean }] | undefined;
 
       expect(imagePickerPlugin).toBeDefined();
       const options = imagePickerPlugin?.[1];
       expect(options?.cameraPermission).toMatch(/cámara/i);
       expect(options?.photosPermission).toMatch(/fotos/i);
+      expect(options?.microphonePermission).toBe(false);
     });
   });
 

@@ -18,11 +18,10 @@
       },
       "package": "com.foodai.app",
       "permissions": [
-        "android.permission.CAMERA",
-        "android.permission.RECORD_AUDIO",
-        "android.permission.READ_EXTERNAL_STORAGE",
-        "android.permission.WRITE_EXTERNAL_STORAGE",
-        "android.permission.INTERNET"
+        "android.permission.CAMERA"
+      ],
+      "blockedPermissions": [
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "web": {
@@ -35,7 +34,8 @@
         "expo-image-picker",
         {
           "photosPermission": "Permite a FoodAI acceder a tus fotos para seleccionar ingredientes.",
-          "cameraPermission": "Permite a FoodAI usar la cámara para fotografiar ingredientes."
+          "cameraPermission": "Permite a FoodAI usar la cámara para fotografiar ingredientes.",
+          "microphonePermission": false
         }
       ]
     ],

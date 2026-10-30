@@ -4,7 +4,7 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useAppFonts } from '../src/hooks/useAppFonts';
-import { TypographyProvider, colors } from '../src/theme';
+import { TypographyProvider, ThemeProvider, useAppTheme, colors } from '../src/theme';
 import { AuthProvider, useAuth } from '../src/context/AuthContext';
 import { PantryProvider } from '../src/context/PantryContext';
 import { BudgetProvider } from '../src/context/BudgetContext';
@@ -47,27 +47,28 @@ function AuthenticatedProviders({ children }: { children: React.ReactNode }) {
  */
 function RootNavigation() {
   const { isAuthenticated, isInitializing } = useAuth();
+  const { colors: activeColors, activeColorScheme, isLoaded: isThemeLoaded } = useAppTheme();
 
-  if (isInitializing) {
+  if (isInitializing || !isThemeLoaded) {
     return (
       <View
-        style={styles.loadingContainer}
+        style={[styles.loadingContainer, { backgroundColor: activeColors.canvas }]}
         testID="auth-loading-screen"
         accessibilityRole="progressbar"
         accessibilityLabel="Restaurando sesión..."
       >
-        <ActivityIndicator size="large" color={colors.primary} />
+        <ActivityIndicator size="large" color={activeColors.primary} />
       </View>
     );
   }
 
   return (
     <>
-      <StatusBar style="dark" />
+      <StatusBar style={activeColorScheme === 'dark' ? 'light' : 'dark'} />
       <Stack
         screenOptions={{
           headerShown: false,
-          contentStyle: { backgroundColor: colors.canvas },
+          contentStyle: { backgroundColor: activeColors.canvas },
         }}
       >
         {/* Rutas públicas siempre accesibles */}
@@ -122,11 +123,13 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <TypographyProvider usingFallback={usingFallback}>
-        <AuthProvider>
-          <AuthenticatedProviders>
-            <RootNavigation />
-          </AuthenticatedProviders>
-        </AuthProvider>
+        <ThemeProvider>
+          <AuthProvider>
+            <AuthenticatedProviders>
+              <RootNavigation />
+            </AuthenticatedProviders>
+          </AuthProvider>
+        </ThemeProvider>
       </TypographyProvider>
     </SafeAreaProvider>
   );
@@ -140,4 +143,3 @@ const styles = StyleSheet.create({
     backgroundColor: colors.canvas,
   },
 });
-

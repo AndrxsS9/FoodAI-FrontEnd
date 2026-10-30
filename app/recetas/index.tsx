@@ -25,13 +25,15 @@ import { usePantry } from '../../src/context/PantryContext';
 import { useBudget } from '../../src/context/BudgetContext';
 import { useRecipes } from '../../src/context/RecipeContext';
 import { ClientRecipe, formatCopCurrency } from '../../src/types/recipe';
-import { colors, radius, spacing, useTypography } from '../../src/theme';
+import { AppColors, radius, spacing, useAppTheme, useThemeStyles, useTypography } from '../../src/theme';
 
 type FilterType = 'all' | 'low-cost' | 'quick' | 'urgent';
 
 export default function RecipeDiscoveryScreen() {
   const typography = useTypography();
   const router = useRouter();
+  const { colors } = useAppTheme();
+  const styles = useThemeStyles(createStyles);
 
   const { summary } = usePantry();
   const {
@@ -251,14 +253,14 @@ export default function RecipeDiscoveryScreen() {
         {/* 3. Hero y contexto Stitch 8 */}
         <View style={styles.heroSection}>
           <View style={styles.pantryBadge}>
-            <MaterialIcons name="eco" size={14} color="#5B4300" />
+            <MaterialIcons name="eco" size={14} color={colors.onTertiaryContainer} />
             <Text style={[styles.pantryBadgeText, typography.labelSm]}>
               Aprovecha tu despensa ({summary.totalCount} alimentos disponibles)
             </Text>
           </View>
           {!isDemoMode && recipes.length > 0 && (
             <View style={styles.realAiBadge} testID="recipes-count-badge">
-              <MaterialIcons name="auto-awesome" size={14} color="#5B4300" />
+              <MaterialIcons name="auto-awesome" size={14} color={colors.onTertiaryContainer} />
               <Text style={[styles.realAiBadgeText, typography.labelSm]}>
                 {recipes.length} receta{recipes.length === 1 ? '' : 's'} generada{recipes.length === 1 ? '' : 's'} con IA
               </Text>
@@ -365,7 +367,7 @@ export default function RecipeDiscoveryScreen() {
         {isStale && !isGenerating && (
           <View style={styles.staleNoticeCard} testID="recipes-stale-banner">
             <View style={styles.staleNoticeContent}>
-              <MaterialIcons name="update" size={22} color="#8A5E00" />
+              <MaterialIcons name="update" size={22} color={colors.onTertiaryContainer} />
               <View style={styles.staleNoticeTextCol}>
                 <Text style={[styles.staleNoticeTitle, typography.labelMd]}>
                   Tu despensa o presupuesto cambiaron
@@ -568,6 +570,8 @@ interface RecipeCardItemProps {
 
 function RecipeCardItem({ recipe, isDominant, onPress }: RecipeCardItemProps) {
   const typography = useTypography();
+  const { colors } = useAppTheme();
+  const styles = useThemeStyles(createStyles);
   const availableCount = recipe.availableIngredients.length;
   const totalIngredientsCount = recipe.ingredients.length;
 
@@ -589,7 +593,7 @@ function RecipeCardItem({ recipe, isDominant, onPress }: RecipeCardItemProps) {
       >
         {/* Badge de afinidad / conveniencia */}
         <View style={styles.convenienceBadge}>
-          <MaterialIcons name="verified" size={14} color="#503B00" importantForAccessibility="no" accessibilityElementsHidden={true} />
+          <MaterialIcons name="verified" size={14} color={colors.onTertiaryContainer} importantForAccessibility="no" accessibilityElementsHidden={true} />
           <Text style={[styles.convenienceBadgeText, typography.labelSm]}>
             {String(recipe.convenience)}
           </Text>
@@ -631,7 +635,7 @@ function RecipeCardItem({ recipe, isDominant, onPress }: RecipeCardItemProps) {
           </View>
 
           <View style={styles.metricItem}>
-            <View style={[styles.metricIconCircle, { backgroundColor: '#FFDAD3' }]}>
+            <View style={[styles.metricIconCircle, { backgroundColor: colors.errorContainer }]}>
               <MaterialIcons name="shopping-cart" size={18} color={colors.secondary} />
             </View>
             <View style={styles.metricTextCol}>
@@ -683,486 +687,487 @@ function RecipeCardItem({ recipe, isDominant, onPress }: RecipeCardItemProps) {
   );
 }
 
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: colors.canvas,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.margin,
-    paddingVertical: spacing.sm,
-    backgroundColor: colors.surface,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.outlineVariant,
-  },
-  headerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    flex: 1,
-    minWidth: 0,
-  },
-  backButton: {
-    width: 36,
-    height: 36,
-    borderRadius: radius.full,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.surfaceContainer,
-  },
-  backButtonPressed: {
-    opacity: 0.7,
-    transform: [{ scale: 0.95 }],
-  },
-  logoImage: {
-    width: 28,
-    height: 28,
-  },
-  headerTitle: {
-    color: colors.textPrimary,
-    fontWeight: '700',
-    flex: 1,
-  },
-  avatarButton: {
-    width: 36,
-    height: 36,
-    borderRadius: radius.full,
-    backgroundColor: colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarPressed: {
-    opacity: 0.8,
-  },
-  scrollContent: {
-    paddingBottom: spacing.xl * 2,
-  },
-  demoBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    marginHorizontal: spacing.margin,
-    marginTop: spacing.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    backgroundColor: '#F6F3EE',
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: '#E8E2D8',
-  },
-  demoBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    backgroundColor: '#E8DDFF',
-    borderRadius: radius.full,
-  },
-  demoBadgeText: {
-    color: colors.primary,
-    fontWeight: '700',
-    fontSize: 10,
-  },
-  demoNoticeText: {
-    color: colors.textSecondary,
-    flex: 1,
-    fontSize: 11,
-    lineHeight: 15,
-  },
-  heroSection: {
-    paddingHorizontal: spacing.margin,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.xs,
-  },
-  pantryBadge: {
-    alignSelf: 'flex-start',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    backgroundColor: '#FFDF9B',
-    borderRadius: radius.full,
-    marginBottom: spacing.xs,
-  },
-  pantryBadgeText: {
-    color: '#503B00',
-    fontWeight: '700',
-    fontSize: 11,
-    textTransform: 'uppercase',
-  },
-  heroHeadline: {
-    color: colors.textPrimary,
-    fontWeight: '700',
-    letterSpacing: -0.5,
-  },
-  heroSubtitle: {
-    color: colors.textSecondary,
-    marginTop: 4,
-  },
-  budgetBarCard: {
-    marginHorizontal: spacing.margin,
-    marginTop: spacing.sm,
-    padding: spacing.md,
-    backgroundColor: colors.surface,
-  },
-  budgetBarRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.md,
-  },
-  budgetCol: {
-    flex: 1,
-  },
-  budgetLabelRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginBottom: 2,
-  },
-  budgetLabel: {
-    color: colors.outline,
-    letterSpacing: 0.5,
-  },
-  budgetAmount: {
-    color: colors.textPrimary,
-    fontWeight: '700',
-  },
-  servingsCol: {
-    alignItems: 'flex-end',
-  },
-  servingsLabel: {
-    color: colors.outline,
-    letterSpacing: 0.5,
-    marginBottom: 4,
-  },
-  filterSection: {
-    paddingHorizontal: spacing.margin,
-    marginTop: spacing.md,
-    gap: spacing.sm,
-  },
-  filterChipsRow: {
-    flexDirection: 'row',
-    gap: spacing.xs,
-    paddingVertical: 4,
-  },
-  recipeList: {
-    paddingHorizontal: spacing.margin,
-    marginTop: spacing.md,
-    gap: spacing.md,
-  },
-  recipeCard: {
-    padding: 0,
-    overflow: 'hidden',
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: '#E8E2D8',
-  },
-  dominantCard: {
-    borderColor: colors.primary,
-    borderWidth: 1.5,
-  },
-  imageWrapper: {
-    position: 'relative',
-    width: '100%',
-    height: 180,
-    backgroundColor: colors.surfaceContainer,
-  },
-  recipeImage: {
-    width: '100%',
-    height: '100%',
-  },
-  imageFallback: {
-    width: '100%',
-    height: '100%',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#F0EDE9',
-    gap: spacing.xs,
-  },
-  imageFallbackText: {
-    color: colors.outline,
-    fontWeight: '600',
-  },
-  convenienceBadge: {
-    position: 'absolute',
-    top: spacing.sm,
-    right: spacing.sm,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#FFDF9B',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: radius.full,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-  },
-  convenienceBadgeText: {
-    color: '#503B00',
-    fontWeight: '700',
-    fontSize: 11,
-  },
-  dominantTitleOverlay: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: 'rgba(28, 28, 25, 0.75)',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  dominantTitle: {
-    color: colors.surface,
-    fontWeight: '700',
-  },
-  cardBody: {
-    padding: spacing.md,
-    gap: spacing.sm,
-  },
-  recipeTitle: {
-    color: colors.textPrimary,
-    fontWeight: '700',
-  },
-  recipeDesc: {
-    color: colors.textSecondary,
-    lineHeight: 18,
-  },
-  metricsGrid: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    backgroundColor: '#F6F3EE',
-    padding: spacing.sm,
-    borderRadius: radius.md,
-  },
-  metricItem: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-  },
-  metricIconCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: radius.full,
-    backgroundColor: '#E8DDFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  metricTextCol: {
-    flex: 1,
-    minWidth: 0,
-  },
-  metricLabel: {
-    color: colors.outline,
-    fontSize: 10,
-  },
-  metricValue: {
-    color: colors.textPrimary,
-    fontWeight: '600',
-  },
-  metaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    paddingVertical: 2,
-  },
-  metaPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  metaDivider: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: colors.outlineVariant,
-  },
-  metaText: {
-    color: colors.textSecondary,
-  },
-  reasonBox: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.xs,
-    backgroundColor: '#FFDAD3',
-    padding: spacing.sm,
-    borderRadius: radius.md,
-  },
-  reasonIcon: {
-    marginTop: 1,
-  },
-  reasonText: {
-    color: '#73200E',
-    flex: 1,
-    lineHeight: 18,
-  },
-  centerContainer: {
-    paddingVertical: spacing.xl * 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.md,
-  },
-  loadingText: {
-    color: colors.textSecondary,
-  },
-  errorCard: {
-    marginHorizontal: spacing.margin,
-    marginTop: spacing.xl,
-    padding: spacing.lg,
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  errorTitle: {
-    color: colors.error,
-    fontWeight: '700',
-  },
-  errorDesc: {
-    color: colors.textSecondary,
-    textAlign: 'center',
-  },
-  emptyCard: {
-    marginHorizontal: spacing.margin,
-    marginTop: spacing.xl,
-    padding: spacing.lg,
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  emptyTitle: {
-    color: colors.textPrimary,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  emptyDesc: {
-    color: colors.textSecondary,
-    textAlign: 'center',
-  },
-  emptyPantryNoticeCard: {
-    padding: spacing.md,
-    gap: spacing.xs,
-    borderColor: colors.primary,
-    borderWidth: 1,
-    backgroundColor: '#FAF5FF',
-  },
-  emptyPantryNoticeHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-  },
-  emptyPantryNoticeTitle: {
-    color: colors.primary,
-    fontWeight: '700',
-  },
-  emptyPantryNoticeText: {
-    color: colors.textSecondary,
-    lineHeight: 18,
-  },
-  storageErrorCard: {
-    marginHorizontal: spacing.margin,
-    marginTop: spacing.sm,
-    padding: spacing.md,
-    borderColor: colors.error,
-    borderWidth: 1,
-    backgroundColor: '#FFF8F6',
-  },
-  storageErrorRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  storageErrorTextCol: {
-    flex: 1,
-  },
-  storageErrorTitle: {
-    color: colors.error,
-    fontWeight: '700',
-  },
-  storageErrorDesc: {
-    color: colors.textSecondary,
-    lineHeight: 18,
-  },
-  realAiBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    alignSelf: 'flex-start',
-    backgroundColor: '#FFDF9B',
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 4,
-    borderRadius: radius.full,
-    marginBottom: spacing.xs,
-  },
-  realAiBadgeText: {
-    color: '#5B4300',
-    fontWeight: '700',
-  },
-  aiActionSection: {
-    marginHorizontal: spacing.margin,
-    marginTop: spacing.sm,
-    marginBottom: spacing.xs,
-  },
-  staleNoticeCard: {
-    marginHorizontal: spacing.margin,
-    marginTop: spacing.sm,
-    padding: spacing.md,
-    backgroundColor: '#FFF8E1',
-    borderColor: '#FFE082',
-    borderWidth: 1,
-    borderRadius: radius.md,
-    gap: spacing.sm,
-  },
-  staleNoticeContent: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.sm,
-  },
-  staleNoticeTextCol: {
-    flex: 1,
-  },
-  staleNoticeTitle: {
-    color: '#8A5E00',
-    fontWeight: '700',
-  },
-  staleNoticeDesc: {
-    color: '#5D4037',
-    lineHeight: 18,
-  },
-  apiErrorCard: {
-    marginHorizontal: spacing.margin,
-    marginTop: spacing.sm,
-    padding: spacing.md,
-    borderColor: colors.error,
-    borderWidth: 1,
-    backgroundColor: '#FFF8F6',
-    gap: spacing.sm,
-  },
-  apiErrorRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.sm,
-  },
-  apiErrorTextCol: {
-    flex: 1,
-  },
-  apiErrorTitle: {
-    color: colors.error,
-    fontWeight: '700',
-  },
-  apiErrorDesc: {
-    color: colors.textSecondary,
-    lineHeight: 18,
-  },
-  apiErrorActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    gap: spacing.sm,
-  },
-});
+const createStyles = (colors: AppColors) =>
+  StyleSheet.create({
+    safeArea: {
+      flex: 1,
+      backgroundColor: colors.canvas,
+    },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: spacing.margin,
+      paddingVertical: spacing.sm,
+      backgroundColor: colors.surface,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.outlineVariant,
+    },
+    headerLeft: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      flex: 1,
+      minWidth: 0,
+    },
+    backButton: {
+      width: 36,
+      height: 36,
+      borderRadius: radius.full,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.surfaceContainer,
+    },
+    backButtonPressed: {
+      opacity: 0.7,
+      transform: [{ scale: 0.95 }],
+    },
+    logoImage: {
+      width: 28,
+      height: 28,
+    },
+    headerTitle: {
+      color: colors.textPrimary,
+      fontWeight: '700',
+      flex: 1,
+    },
+    avatarButton: {
+      width: 36,
+      height: 36,
+      borderRadius: radius.full,
+      backgroundColor: colors.primary,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    avatarPressed: {
+      opacity: 0.8,
+    },
+    scrollContent: {
+      paddingBottom: spacing.xl * 2,
+    },
+    demoBanner: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      marginHorizontal: spacing.margin,
+      marginTop: spacing.md,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
+      backgroundColor: colors.surfaceContainerLow,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      borderColor: colors.outlineVariant,
+    },
+    demoBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+      backgroundColor: colors.primaryContainer,
+      borderRadius: radius.full,
+    },
+    demoBadgeText: {
+      color: colors.primary,
+      fontWeight: '700',
+      fontSize: 10,
+    },
+    demoNoticeText: {
+      color: colors.textSecondary,
+      flex: 1,
+      fontSize: 11,
+      lineHeight: 15,
+    },
+    heroSection: {
+      paddingHorizontal: spacing.margin,
+      paddingTop: spacing.md,
+      paddingBottom: spacing.xs,
+    },
+    pantryBadge: {
+      alignSelf: 'flex-start',
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+      backgroundColor: colors.tertiaryContainer,
+      borderRadius: radius.full,
+      marginBottom: spacing.xs,
+    },
+    pantryBadgeText: {
+      color: colors.onTertiaryContainer,
+      fontWeight: '700',
+      fontSize: 11,
+      textTransform: 'uppercase',
+    },
+    heroHeadline: {
+      color: colors.textPrimary,
+      fontWeight: '700',
+      letterSpacing: -0.5,
+    },
+    heroSubtitle: {
+      color: colors.textSecondary,
+      marginTop: 4,
+    },
+    budgetBarCard: {
+      marginHorizontal: spacing.margin,
+      marginTop: spacing.sm,
+      padding: spacing.md,
+      backgroundColor: colors.surface,
+    },
+    budgetBarRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: spacing.md,
+    },
+    budgetCol: {
+      flex: 1,
+    },
+    budgetLabelRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      marginBottom: 2,
+    },
+    budgetLabel: {
+      color: colors.outline,
+      letterSpacing: 0.5,
+    },
+    budgetAmount: {
+      color: colors.textPrimary,
+      fontWeight: '700',
+    },
+    servingsCol: {
+      alignItems: 'flex-end',
+    },
+    servingsLabel: {
+      color: colors.outline,
+      letterSpacing: 0.5,
+      marginBottom: 4,
+    },
+    filterSection: {
+      paddingHorizontal: spacing.margin,
+      marginTop: spacing.md,
+      gap: spacing.sm,
+    },
+    filterChipsRow: {
+      flexDirection: 'row',
+      gap: spacing.xs,
+      paddingVertical: 4,
+    },
+    recipeList: {
+      paddingHorizontal: spacing.margin,
+      marginTop: spacing.md,
+      gap: spacing.md,
+    },
+    recipeCard: {
+      padding: 0,
+      overflow: 'hidden',
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.outlineVariant,
+    },
+    dominantCard: {
+      borderColor: colors.primary,
+      borderWidth: 1.5,
+    },
+    imageWrapper: {
+      position: 'relative',
+      width: '100%',
+      height: 180,
+      backgroundColor: colors.surfaceContainer,
+    },
+    recipeImage: {
+      width: '100%',
+      height: '100%',
+    },
+    imageFallback: {
+      width: '100%',
+      height: '100%',
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.surfaceContainerLow,
+      gap: spacing.xs,
+    },
+    imageFallbackText: {
+      color: colors.outline,
+      fontWeight: '600',
+    },
+    convenienceBadge: {
+      position: 'absolute',
+      top: spacing.sm,
+      right: spacing.sm,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      backgroundColor: colors.tertiaryContainer,
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+      borderRadius: radius.full,
+      elevation: 2,
+      shadowColor: '#000',
+      shadowOpacity: 0.1,
+      shadowRadius: 4,
+    },
+    convenienceBadgeText: {
+      color: colors.onTertiaryContainer,
+      fontWeight: '700',
+      fontSize: 11,
+    },
+    dominantTitleOverlay: {
+      position: 'absolute',
+      bottom: 0,
+      left: 0,
+      right: 0,
+      backgroundColor: 'rgba(0, 0, 0, 0.75)',
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
+    },
+    dominantTitle: {
+      color: '#FFFFFF',
+      fontWeight: '700',
+    },
+    cardBody: {
+      padding: spacing.md,
+      gap: spacing.sm,
+    },
+    recipeTitle: {
+      color: colors.textPrimary,
+      fontWeight: '700',
+    },
+    recipeDesc: {
+      color: colors.textSecondary,
+      lineHeight: 18,
+    },
+    metricsGrid: {
+      flexDirection: 'row',
+      gap: spacing.sm,
+      backgroundColor: colors.surfaceContainerLow,
+      padding: spacing.sm,
+      borderRadius: radius.md,
+    },
+    metricItem: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.xs,
+    },
+    metricIconCircle: {
+      width: 32,
+      height: 32,
+      borderRadius: radius.full,
+      backgroundColor: colors.primaryContainer,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    metricTextCol: {
+      flex: 1,
+      minWidth: 0,
+    },
+    metricLabel: {
+      color: colors.outline,
+      fontSize: 10,
+    },
+    metricValue: {
+      color: colors.textPrimary,
+      fontWeight: '600',
+    },
+    metaRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      paddingVertical: 2,
+    },
+    metaPill: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+    },
+    metaDivider: {
+      width: 4,
+      height: 4,
+      borderRadius: 2,
+      backgroundColor: colors.outlineVariant,
+    },
+    metaText: {
+      color: colors.textSecondary,
+    },
+    reasonBox: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: spacing.xs,
+      backgroundColor: colors.errorContainer,
+      padding: spacing.sm,
+      borderRadius: radius.md,
+    },
+    reasonIcon: {
+      marginTop: 1,
+    },
+    reasonText: {
+      color: colors.onErrorContainer,
+      flex: 1,
+      lineHeight: 18,
+    },
+    centerContainer: {
+      paddingVertical: spacing.xl * 2,
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: spacing.md,
+    },
+    loadingText: {
+      color: colors.textSecondary,
+    },
+    errorCard: {
+      marginHorizontal: spacing.margin,
+      marginTop: spacing.xl,
+      padding: spacing.lg,
+      alignItems: 'center',
+      gap: spacing.sm,
+    },
+    errorTitle: {
+      color: colors.error,
+      fontWeight: '700',
+    },
+    errorDesc: {
+      color: colors.textSecondary,
+      textAlign: 'center',
+    },
+    emptyCard: {
+      marginHorizontal: spacing.margin,
+      marginTop: spacing.xl,
+      padding: spacing.lg,
+      alignItems: 'center',
+      gap: spacing.sm,
+    },
+    emptyTitle: {
+      color: colors.textPrimary,
+      fontWeight: '700',
+      textAlign: 'center',
+    },
+    emptyDesc: {
+      color: colors.textSecondary,
+      textAlign: 'center',
+    },
+    emptyPantryNoticeCard: {
+      padding: spacing.md,
+      gap: spacing.xs,
+      borderColor: colors.primary,
+      borderWidth: 1,
+      backgroundColor: colors.surfaceContainerLow,
+    },
+    emptyPantryNoticeHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.xs,
+    },
+    emptyPantryNoticeTitle: {
+      color: colors.primary,
+      fontWeight: '700',
+    },
+    emptyPantryNoticeText: {
+      color: colors.textSecondary,
+      lineHeight: 18,
+    },
+    storageErrorCard: {
+      marginHorizontal: spacing.margin,
+      marginTop: spacing.sm,
+      padding: spacing.md,
+      borderColor: colors.error,
+      borderWidth: 1,
+      backgroundColor: colors.errorContainer,
+    },
+    storageErrorRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+    },
+    storageErrorTextCol: {
+      flex: 1,
+    },
+    storageErrorTitle: {
+      color: colors.error,
+      fontWeight: '700',
+    },
+    storageErrorDesc: {
+      color: colors.textSecondary,
+      lineHeight: 18,
+    },
+    realAiBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      alignSelf: 'flex-start',
+      backgroundColor: colors.tertiaryContainer,
+      paddingHorizontal: spacing.sm,
+      paddingVertical: 4,
+      borderRadius: radius.full,
+      marginBottom: spacing.xs,
+    },
+    realAiBadgeText: {
+      color: colors.onTertiaryContainer,
+      fontWeight: '700',
+    },
+    aiActionSection: {
+      marginHorizontal: spacing.margin,
+      marginTop: spacing.sm,
+      marginBottom: spacing.xs,
+    },
+    staleNoticeCard: {
+      marginHorizontal: spacing.margin,
+      marginTop: spacing.sm,
+      padding: spacing.md,
+      backgroundColor: colors.tertiaryContainer,
+      borderColor: colors.tertiary,
+      borderWidth: 1,
+      borderRadius: radius.md,
+      gap: spacing.sm,
+    },
+    staleNoticeContent: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: spacing.sm,
+    },
+    staleNoticeTextCol: {
+      flex: 1,
+    },
+    staleNoticeTitle: {
+      color: colors.onTertiaryContainer,
+      fontWeight: '700',
+    },
+    staleNoticeDesc: {
+      color: colors.onTertiaryContainer,
+      lineHeight: 18,
+    },
+    apiErrorCard: {
+      marginHorizontal: spacing.margin,
+      marginTop: spacing.sm,
+      padding: spacing.md,
+      borderColor: colors.error,
+      borderWidth: 1,
+      backgroundColor: colors.errorContainer,
+      gap: spacing.sm,
+    },
+    apiErrorRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: spacing.sm,
+    },
+    apiErrorTextCol: {
+      flex: 1,
+    },
+    apiErrorTitle: {
+      color: colors.error,
+      fontWeight: '700',
+    },
+    apiErrorDesc: {
+      color: colors.textSecondary,
+      lineHeight: 18,
+    },
+    apiErrorActions: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'flex-end',
+      gap: spacing.sm,
+    },
+  });

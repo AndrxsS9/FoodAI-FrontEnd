@@ -7,7 +7,7 @@ import {
   ViewStyle,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import { colors, radius, spacing, useTypography } from '../../theme';
+import { AppColors, radius, spacing, useTypography, useAppTheme, useThemeStyles } from '../../theme';
 
 export interface HeaderProps {
   title: string;
@@ -27,6 +27,8 @@ export const Header: React.FC<HeaderProps> = ({
   style,
 }) => {
   const typography = useTypography();
+  const { colors } = useAppTheme();
+  const styles = useThemeStyles(createStyles);
 
   return (
     <View style={[styles.container, style]}>
@@ -68,48 +70,49 @@ export const Header: React.FC<HeaderProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    width: '100%',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.margin,
-    paddingVertical: spacing.sm,
-    backgroundColor: 'transparent',
-    minHeight: 56,
-  },
-  leftRow: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  backButton: {
-    width: 44,
-    height: 44,
-    borderRadius: radius.full,
-    backgroundColor: colors.surfaceContainer,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: spacing.sm,
-  },
-  backButtonPressed: {
-    backgroundColor: colors.surfaceContainerHigh,
-    transform: [{ scale: 0.95 }],
-  },
-  titleContainer: {
-    flex: 1,
-  },
-  title: {
-    color: colors.textPrimary,
-  },
-  subtitle: {
-    color: colors.textSecondary,
-    marginTop: 2,
-  },
-  rightWrapper: {
-    marginLeft: spacing.sm,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-});
+const createStyles = (colors: AppColors) =>
+  StyleSheet.create({
+    container: {
+      width: '100%',
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: spacing.margin,
+      paddingVertical: spacing.sm,
+      backgroundColor: 'transparent',
+      minHeight: 56,
+    },
+    leftRow: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    backButton: {
+      width: 44,
+      height: 44,
+      borderRadius: radius.full,
+      backgroundColor: colors.surfaceContainer,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginRight: spacing.sm,
+    },
+    backButtonPressed: {
+      backgroundColor: colors.surfaceContainerHigh,
+      transform: [{ scale: 0.95 }],
+    },
+    titleContainer: {
+      flex: 1,
+    },
+    title: {
+      color: colors.textPrimary,
+    },
+    subtitle: {
+      color: colors.textSecondary,
+      marginTop: 2,
+    },
+    rightWrapper: {
+      marginLeft: spacing.sm,
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+  });

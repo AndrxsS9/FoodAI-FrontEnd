@@ -10,7 +10,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Image,
   Platform,
   Pressable,
@@ -27,7 +26,7 @@ import { Button, Card, Header } from '../../src/components/common';
 import { DetectedIngredientCard } from '../../src/components/scanner';
 import { usePantry } from '../../src/context/PantryContext';
 import { scannerApi, ScannerApiError } from '../../src/services/api/scannerApi';
-import { colors, radius, spacing, useTypography } from '../../src/theme';
+import { AppColors, radius, spacing, useAppTheme, useThemeStyles, useTypography } from '../../src/theme';
 import { IngredientCategory, IngredientUnit } from '../../src/types/pantry';
 import {
   ScannedIngredientAction,
@@ -50,6 +49,8 @@ import {
 export default function ScannerScreen() {
   const typography = useTypography();
   const router = useRouter();
+  const { colors } = useAppTheme();
+  const styles = useThemeStyles(createStyles);
   const { ingredients, addIngredient, updateIngredient } = usePantry();
 
   // Estados del flujo
@@ -402,24 +403,6 @@ export default function ScannerScreen() {
     );
   };
 
-  // Validación de items seleccionados
-  const selectedItems = scannedItems.filter((item) => item.isSelected);
-  const itemsWithMissingQuantity = selectedItems.filter(
-    (item) =>
-      item.quantity === null ||
-      typeof item.quantity !== 'number' ||
-      item.quantity <= 0 ||
-      isNaN(item.quantity)
-  );
-  const itemsWithInvalidName = selectedItems.filter(
-    (item) => !item.name.trim() || item.name.trim().length < 2
-  );
-  const canSave =
-    selectedItems.length > 0 &&
-    itemsWithMissingQuantity.length === 0 &&
-    itemsWithInvalidName.length === 0 &&
-    !isSaving;
-
   // 6. Guardar ingredientes confirmados en PantryContext con protección de concurrencia y conversiones seguras
   const handleConfirmAndSave = async () => {
     if (!canSave || isSubmittingRef.current) return;
@@ -520,9 +503,6 @@ export default function ScannerScreen() {
         }
       }
 
-      if (!isMountedRef.current) return;
-      isSubmittingRef.current = false;
-      setIsSaving(false);
       setSaveSummary({
         savedCount,
         updatedCount,
@@ -530,16 +510,24 @@ export default function ScannerScreen() {
         failedNames,
       });
       setStep('completed');
+    } catch {
+      setErrorMessage(
+        'Ocurrió un error inesperado al guardar los alimentos en tu despensa.'
+      );
+      setStep('error');
     } finally {
-      if (isMountedRef.current && isSubmittingRef.current) {
-        isSubmittingRef.current = false;
-        setIsSaving(false);
-      }
+      setIsSaving(false);
+      isSubmittingRef.current = false;
     }
   };
 
-  // Reset del escáner
   const handleResetScanner = () => {
+    activeRequestIdRef.current += 1;
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    isSubmittingRef.current = false;
     setSelectedImage(null);
     setScannedItems([]);
     setErrorMessage(null);
@@ -547,40 +535,24 @@ export default function ScannerScreen() {
     setStep('capture');
   };
 
+  // Cálculos de revisión
+  const selectedItems = scannedItems.filter((i) => i.isSelected);
+  const itemsWithMissingQuantity = selectedItems.filter(
+    (i) => i.quantity === null || i.quantity <= 0
+  );
+  const canSave =
+    selectedItems.length > 0 && itemsWithMissingQuantity.length === 0 && !isSaving;
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
       {/* Header unificado */}
       <Header
-        title={
-          step === 'capture'
-            ? 'Escanear alimentos'
-            : step === 'preview'
-            ? 'Vista previa'
-            : step === 'analyzing'
-            ? 'Analizando'
-            : step === 'review'
-            ? 'Confirmar ingredientes'
-            : step === 'saving'
-            ? 'Guardando'
-            : step === 'completed'
-            ? 'Completado'
-            : 'Error'
-        }
-        showBack={true}
+        title="Escáner Inteligente"
+        subtitle="Detecta ingredientes con tu cámara e IA"
+        showBack
         onBack={() => {
-          if (step === 'review' && scannedItems.length > 0) {
-            Alert.alert(
-              '¿Salir del escáner?',
-              'Los ingredientes detectados no guardados se perderán.',
-              [
-                { text: 'Continuar revisando', style: 'cancel' },
-                {
-                  text: 'Salir',
-                  style: 'destructive',
-                  onPress: () => router.back(),
-                },
-              ]
-            );
+          if (step === 'review' || step === 'preview' || step === 'error') {
+            handleResetScanner();
           } else {
             router.back();
           }
@@ -592,9 +564,9 @@ export default function ScannerScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {/* Error global banner */}
+        {/* Banner general de error */}
         {errorMessage && step !== 'error' && (
-          <View style={styles.errorBanner} testID="scanner-error-banner">
+          <View style={styles.errorBanner} testID="scanner-top-error-banner">
             <MaterialIcons name="error-outline" size={20} color={colors.error} />
             <Text style={[styles.errorBannerText, typography.bodySm]}>
               {errorMessage}
@@ -680,7 +652,7 @@ export default function ScannerScreen() {
             {/* Consejos para una buena captura */}
             <Card variant="outlined" style={styles.tipsCard}>
               <View style={styles.tipsHeaderRow}>
-                <MaterialIcons name="lightbulb" size={20} color="#F3C969" />
+                <MaterialIcons name="lightbulb" size={20} color={colors.tertiary} />
                 <Text style={[styles.tipsTitle, typography.headlineMd]}>
                   Consejos para una detección óptima
                 </Text>
@@ -868,7 +840,7 @@ export default function ScannerScreen() {
                 style={styles.missingQuantityBanner}
                 testID="scanner-missing-quantity-notice"
               >
-                <MaterialIcons name="warning" size={18} color="#A0402B" />
+                <MaterialIcons name="warning" size={18} color={colors.onErrorContainer} />
                 <Text style={[styles.missingQuantityText, typography.bodySm]}>
                   Hay {itemsWithMissingQuantity.length} alimento{itemsWithMissingQuantity.length === 1 ? '' : 's'} sin cantidad definida. Ingresa un número positivo en cada uno para poder guardarlo.
                 </Text>
@@ -978,7 +950,7 @@ export default function ScannerScreen() {
 
                 {saveSummary.updatedCount > 0 && (
                   <View style={styles.statRow}>
-                    <MaterialIcons name="sync" size={18} color="#8A5E00" />
+                    <MaterialIcons name="sync" size={18} color={colors.tertiary} />
                     <Text style={[styles.statText, typography.bodyMd]}>
                       <Text style={{ fontWeight: '700' }}>{saveSummary.updatedCount}</Text> alimento{saveSummary.updatedCount === 1 ? '' : 's'} existente{saveSummary.updatedCount === 1 ? '' : 's'} actualizado{saveSummary.updatedCount === 1 ? '' : 's'}.
                     </Text>
@@ -1115,290 +1087,291 @@ export default function ScannerScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: colors.canvas,
-  },
-  scrollContent: {
-    padding: spacing.margin,
-    paddingBottom: spacing.xxl + 20,
-    gap: spacing.md,
-  },
-  errorBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    backgroundColor: '#FFF0F0',
-    padding: spacing.sm,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.error,
-  },
-  errorBannerText: {
-    color: colors.error,
-    flex: 1,
-  },
-  captureContainer: {
-    gap: spacing.md,
-  },
-  viewfinderCard: {
-    backgroundColor: colors.surface,
-    padding: spacing.md,
-    gap: spacing.md,
-  },
-  viewfinderBox: {
-    width: '100%',
-    height: 220,
-    borderRadius: radius.lg,
-    overflow: 'hidden',
-    position: 'relative',
-    backgroundColor: colors.surfaceContainerLow,
-  },
-  viewfinderImage: {
-    width: '100%',
-    height: '100%',
-    opacity: 0.9,
-  },
-  viewfinderReticleOverlay: {
-    ...StyleSheet.absoluteFill,
-    backgroundColor: 'rgba(37, 43, 58, 0.25)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.xs,
-  },
-  viewfinderReticle: {
-    width: 64,
-    height: 64,
-    borderRadius: radius.full,
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    elevation: 4,
-  },
-  viewfinderReticleText: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-    textShadowColor: 'rgba(0, 0, 0, 0.75)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
-  },
-  captureActions: {
-    gap: spacing.xs,
-  },
-  tipsCard: {
-    backgroundColor: colors.surface,
-    padding: spacing.md,
-    gap: spacing.sm,
-  },
-  tipsHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-  },
-  tipsTitle: {
-    color: colors.textPrimary,
-    fontWeight: '700',
-  },
-  tipItem: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.xs,
-  },
-  tipText: {
-    color: colors.textSecondary,
-    flex: 1,
-    lineHeight: 18,
-  },
-  previewContainer: {
-    gap: spacing.md,
-  },
-  previewCard: {
-    backgroundColor: colors.surface,
-    padding: spacing.md,
-    gap: spacing.md,
-  },
-  previewImageBox: {
-    width: '100%',
-    height: 260,
-    borderRadius: radius.lg,
-    overflow: 'hidden',
-    backgroundColor: colors.surfaceContainerLow,
-  },
-  previewImage: {
-    width: '100%',
-    height: '100%',
-  },
-  previewInfo: {
-    gap: 4,
-  },
-  previewBadgeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  previewBadgeText: {
-    color: colors.primary,
-    fontWeight: '700',
-  },
-  previewDesc: {
-    color: colors.textSecondary,
-  },
-  previewButtonsRow: {
-    gap: spacing.xs,
-  },
-  secondaryButtonsRow: {
-    flexDirection: 'row',
-    gap: spacing.xs,
-  },
-  analyzingContainer: {
-    paddingVertical: spacing.xl,
-  },
-  analyzingCard: {
-    backgroundColor: colors.surface,
-    padding: spacing.xl,
-    alignItems: 'center',
-    gap: spacing.md,
-  },
-  analyzingSpinnerBox: {
-    width: 68,
-    height: 68,
-    borderRadius: radius.full,
-    backgroundColor: colors.surfaceContainerLow,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  analyzingTitle: {
-    color: colors.textPrimary,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  analyzingProgress: {
-    color: colors.primary,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  analyzingSubtext: {
-    color: colors.textSecondary,
-    textAlign: 'center',
-    maxWidth: 280,
-  },
-  reviewContainer: {
-    gap: spacing.md,
-  },
-  reviewTopSummary: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
-  },
-  reviewHeading: {
-    color: colors.textPrimary,
-    fontWeight: '700',
-  },
-  reviewSubheading: {
-    color: colors.textSecondary,
-  },
-  selectToggleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  toggleText: {
-    color: colors.primary,
-    fontWeight: '700',
-  },
-  toggleDivider: {
-    color: colors.outline,
-  },
-  missingQuantityBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    backgroundColor: '#FFDAD3',
-    padding: spacing.sm,
-    borderRadius: radius.md,
-  },
-  missingQuantityText: {
-    color: '#802916',
-    flex: 1,
-    lineHeight: 18,
-  },
-  cardsList: {
-    gap: spacing.sm,
-  },
-  reviewBottomActions: {
-    gap: spacing.xs,
-    marginTop: spacing.sm,
-  },
-  completedContainer: {
-    paddingVertical: spacing.lg,
-  },
-  completedCard: {
-    backgroundColor: colors.surface,
-    padding: spacing.xl,
-    alignItems: 'center',
-    gap: spacing.md,
-  },
-  successIconBox: {
-    marginBottom: spacing.xs,
-  },
-  completedTitle: {
-    color: colors.textPrimary,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  completedDesc: {
-    color: colors.textSecondary,
-    textAlign: 'center',
-    lineHeight: 22,
-  },
-  summaryStatsBox: {
-    width: '100%',
-    backgroundColor: colors.surfaceContainerLow,
-    padding: spacing.md,
-    borderRadius: radius.md,
-    gap: spacing.xs,
-  },
-  statRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-  },
-  statText: {
-    color: colors.textPrimary,
-    flex: 1,
-  },
-  completedButtons: {
-    width: '100%',
-    gap: spacing.xs,
-    marginTop: spacing.sm,
-  },
-  errorStateContainer: {
-    paddingVertical: spacing.lg,
-  },
-  errorStateCard: {
-    backgroundColor: colors.surface,
-    padding: spacing.xl,
-    alignItems: 'center',
-    gap: spacing.md,
-    borderColor: colors.error,
-  },
-  errorIconBox: {
-    marginBottom: spacing.xs,
-  },
-  errorStateTitle: {
-    color: colors.error,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  errorStateDesc: {
-    color: colors.textPrimary,
-    textAlign: 'center',
-    lineHeight: 22,
-  },
-  errorStateButtons: {
-    width: '100%',
-    gap: spacing.xs,
-    marginTop: spacing.sm,
-  },
-});
+const createStyles = (colors: AppColors) =>
+  StyleSheet.create({
+    safeArea: {
+      flex: 1,
+      backgroundColor: colors.canvas,
+    },
+    scrollContent: {
+      padding: spacing.margin,
+      paddingBottom: spacing.xxl + 20,
+      gap: spacing.md,
+    },
+    errorBanner: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.xs,
+      backgroundColor: colors.errorContainer,
+      padding: spacing.sm,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      borderColor: colors.error,
+    },
+    errorBannerText: {
+      color: colors.onErrorContainer,
+      flex: 1,
+    },
+    captureContainer: {
+      gap: spacing.md,
+    },
+    viewfinderCard: {
+      backgroundColor: colors.surface,
+      padding: spacing.md,
+      gap: spacing.md,
+    },
+    viewfinderBox: {
+      width: '100%',
+      height: 220,
+      borderRadius: radius.lg,
+      overflow: 'hidden',
+      position: 'relative',
+      backgroundColor: colors.surfaceContainerLow,
+    },
+    viewfinderImage: {
+      width: '100%',
+      height: '100%',
+      opacity: 0.9,
+    },
+    viewfinderReticleOverlay: {
+      ...StyleSheet.absoluteFill,
+      backgroundColor: colors.backdrop,
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: spacing.xs,
+    },
+    viewfinderReticle: {
+      width: 64,
+      height: 64,
+      borderRadius: radius.full,
+      backgroundColor: colors.surface,
+      alignItems: 'center',
+      justifyContent: 'center',
+      elevation: 4,
+    },
+    viewfinderReticleText: {
+      color: colors.textPrimary,
+      fontWeight: '700',
+      textShadowColor: 'rgba(0, 0, 0, 0.75)',
+      textShadowOffset: { width: 0, height: 1 },
+      textShadowRadius: 3,
+    },
+    captureActions: {
+      gap: spacing.xs,
+    },
+    tipsCard: {
+      backgroundColor: colors.surface,
+      padding: spacing.md,
+      gap: spacing.sm,
+    },
+    tipsHeaderRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.xs,
+    },
+    tipsTitle: {
+      color: colors.textPrimary,
+      fontWeight: '700',
+    },
+    tipItem: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: spacing.xs,
+    },
+    tipText: {
+      color: colors.textSecondary,
+      flex: 1,
+      lineHeight: 18,
+    },
+    previewContainer: {
+      gap: spacing.md,
+    },
+    previewCard: {
+      backgroundColor: colors.surface,
+      padding: spacing.md,
+      gap: spacing.md,
+    },
+    previewImageBox: {
+      width: '100%',
+      height: 260,
+      borderRadius: radius.lg,
+      overflow: 'hidden',
+      backgroundColor: colors.surfaceContainerLow,
+    },
+    previewImage: {
+      width: '100%',
+      height: '100%',
+    },
+    previewInfo: {
+      gap: 4,
+    },
+    previewBadgeRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
+    previewBadgeText: {
+      color: colors.primary,
+      fontWeight: '700',
+    },
+    previewDesc: {
+      color: colors.textSecondary,
+    },
+    previewButtonsRow: {
+      gap: spacing.xs,
+    },
+    secondaryButtonsRow: {
+      flexDirection: 'row',
+      gap: spacing.xs,
+    },
+    analyzingContainer: {
+      paddingVertical: spacing.xl,
+    },
+    analyzingCard: {
+      backgroundColor: colors.surface,
+      padding: spacing.xl,
+      alignItems: 'center',
+      gap: spacing.md,
+    },
+    analyzingSpinnerBox: {
+      width: 68,
+      height: 68,
+      borderRadius: radius.full,
+      backgroundColor: colors.surfaceContainerLow,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    analyzingTitle: {
+      color: colors.textPrimary,
+      fontWeight: '700',
+      textAlign: 'center',
+    },
+    analyzingProgress: {
+      color: colors.primary,
+      fontWeight: '600',
+      textAlign: 'center',
+    },
+    analyzingSubtext: {
+      color: colors.textSecondary,
+      textAlign: 'center',
+      maxWidth: 280,
+    },
+    reviewContainer: {
+      gap: spacing.md,
+    },
+    reviewTopSummary: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'flex-end',
+    },
+    reviewHeading: {
+      color: colors.textPrimary,
+      fontWeight: '700',
+    },
+    reviewSubheading: {
+      color: colors.textSecondary,
+    },
+    selectToggleRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
+    toggleText: {
+      color: colors.primary,
+      fontWeight: '700',
+    },
+    toggleDivider: {
+      color: colors.outline,
+    },
+    missingQuantityBanner: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.xs,
+      backgroundColor: colors.errorContainer,
+      padding: spacing.sm,
+      borderRadius: radius.md,
+    },
+    missingQuantityText: {
+      color: colors.onErrorContainer,
+      flex: 1,
+      lineHeight: 18,
+    },
+    cardsList: {
+      gap: spacing.sm,
+    },
+    reviewBottomActions: {
+      gap: spacing.xs,
+      marginTop: spacing.sm,
+    },
+    completedContainer: {
+      paddingVertical: spacing.lg,
+    },
+    completedCard: {
+      backgroundColor: colors.surface,
+      padding: spacing.xl,
+      alignItems: 'center',
+      gap: spacing.md,
+    },
+    successIconBox: {
+      marginBottom: spacing.xs,
+    },
+    completedTitle: {
+      color: colors.textPrimary,
+      fontWeight: '700',
+      textAlign: 'center',
+    },
+    completedDesc: {
+      color: colors.textSecondary,
+      textAlign: 'center',
+      lineHeight: 22,
+    },
+    summaryStatsBox: {
+      width: '100%',
+      backgroundColor: colors.surfaceContainerLow,
+      padding: spacing.md,
+      borderRadius: radius.md,
+      gap: spacing.xs,
+    },
+    statRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.xs,
+    },
+    statText: {
+      color: colors.textPrimary,
+      flex: 1,
+    },
+    completedButtons: {
+      width: '100%',
+      gap: spacing.xs,
+      marginTop: spacing.sm,
+    },
+    errorStateContainer: {
+      paddingVertical: spacing.lg,
+    },
+    errorStateCard: {
+      backgroundColor: colors.surface,
+      padding: spacing.xl,
+      alignItems: 'center',
+      gap: spacing.md,
+      borderColor: colors.error,
+    },
+    errorIconBox: {
+      marginBottom: spacing.xs,
+    },
+    errorStateTitle: {
+      color: colors.error,
+      fontWeight: '700',
+      textAlign: 'center',
+    },
+    errorStateDesc: {
+      color: colors.textPrimary,
+      textAlign: 'center',
+      lineHeight: 22,
+    },
+    errorStateButtons: {
+      width: '100%',
+      gap: spacing.xs,
+      marginTop: spacing.sm,
+    },
+  });

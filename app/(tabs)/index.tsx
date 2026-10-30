@@ -17,9 +17,18 @@ import { useBudget } from '../../src/context/BudgetContext';
 import { useRecipes } from '../../src/context/RecipeContext';
 import { DEMO_DASHBOARD_DATA } from '../../src/fixtures/demoDashboardData';
 import { formatCopCurrency } from '../../src/types/recipe';
-import { colors, radius, spacing, useTypography } from '../../src/theme';
+import {
+  AppColors,
+  radius,
+  spacing,
+  useTypography,
+  useAppTheme,
+  useThemeStyles,
+} from '../../src/theme';
 
 export default function HomeScreen() {
+  const { colors } = useAppTheme();
+  const styles = useThemeStyles(createStyles);
   const typography = useTypography();
   const router = useRouter();
 
@@ -556,7 +565,8 @@ export default function HomeScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: AppColors) =>
+  StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: colors.canvas,
@@ -748,7 +758,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: 'rgba(255, 218, 211, 0.6)',
+    backgroundColor: colors.errorContainer,
     paddingHorizontal: spacing.sm,
     paddingVertical: 7,
     borderRadius: radius.md,
@@ -760,7 +770,7 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   urgentBannerTitle: {
-    color: '#802916',
+    color: colors.onErrorContainer,
     fontWeight: '700',
   },
   urgentBannerTag: {
@@ -883,7 +893,7 @@ const styles = StyleSheet.create({
     height: '100%',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#F0EDE9',
+    backgroundColor: colors.surfaceContainer,
     gap: spacing.xs,
   },
   recipeFallbackText: {
@@ -897,7 +907,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: '#FFDF9B',
+    backgroundColor: colors.tertiaryContainer,
     paddingHorizontal: spacing.sm + 2,
     paddingVertical: 5,
     borderRadius: radius.full,
@@ -908,7 +918,7 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   convenienceText: {
-    color: colors.tertiaryContainer,
+    color: colors.onTertiaryContainer,
     fontWeight: '700',
   },
   recipeMetaRow: {
@@ -963,7 +973,7 @@ const styles = StyleSheet.create({
   modalBackdrop: {
     ...StyleSheet.absoluteFill,
     zIndex: 1000,
-    backgroundColor: 'rgba(37, 43, 58, 0.5)',
+    backgroundColor: colors.overlay,
     justifyContent: 'center',
     alignItems: 'center',
     padding: spacing.margin,

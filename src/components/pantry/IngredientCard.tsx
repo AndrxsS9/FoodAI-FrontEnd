@@ -1,5 +1,5 @@
 /**
- * Tarjeta de ingrediente para la lista de despensa (Fase 2B).
+ * Tarjeta de ingrediente para la lista de despensa (Fase 2B & Fase 6B.2).
  * Inspirada en las pantallas 6 (Mi Despensa) y 5 (Ingredientes Detectados) de Google Stitch.
  */
 import React from 'react';
@@ -16,7 +16,14 @@ import {
   Ingredient,
   getExpirationStatus,
 } from '../../types/pantry';
-import { colors, radius, spacing, useTypography } from '../../theme';
+import {
+  AppColors,
+  radius,
+  spacing,
+  useTypography,
+  useAppTheme,
+  useThemeStyles,
+} from '../../theme';
 import { Card } from '../common/Card';
 
 export interface IngredientCardProps {
@@ -35,6 +42,9 @@ export function IngredientCard({
   onAdjustQuantity,
 }: IngredientCardProps) {
   const typography = useTypography();
+  const { colors } = useAppTheme();
+  const styles = useThemeStyles(createStyles);
+
   const catConfig = CATEGORY_CONFIG[ingredient.category] || CATEGORY_CONFIG.Otros;
   const expiration = getExpirationStatus(ingredient.expirationDate);
 
@@ -222,141 +232,139 @@ export function IngredientCard({
   );
 }
 
-const styles = StyleSheet.create({
-  card: {
-    backgroundColor: colors.surface,
-    padding: spacing.md,
-    borderRadius: radius.xl,
-    gap: spacing.sm,
-  },
-  contentRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  iconContainer: {
-    width: 44,
-    height: 44,
-    borderRadius: radius.lg,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  infoCol: {
-    flex: 1,
-    minWidth: 0,
-    gap: 4,
-  },
-  nameText: {
-    color: colors.textPrimary,
-    fontWeight: '700',
-  },
-  tagsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: spacing.xs,
-  },
-  categoryChip: {
-    backgroundColor: colors.surfaceContainerLow,
-    paddingHorizontal: spacing.xs + 2,
-    paddingVertical: 2,
-    borderRadius: radius.sm,
-  },
-  categoryText: {
-    color: colors.textSecondary,
-    fontSize: 11,
-  },
-  urgentBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(233, 119, 94, 0.15)',
-    paddingHorizontal: spacing.xs + 2,
-    paddingVertical: 2,
-    borderRadius: radius.full,
-    gap: 3,
-  },
-  urgentText: {
-    color: colors.secondary,
-    fontWeight: '700',
-    fontSize: 11,
-  },
-  warningBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(243, 201, 105, 0.25)',
-    paddingHorizontal: spacing.xs + 2,
-    paddingVertical: 2,
-    borderRadius: radius.full,
-    gap: 3,
-  },
-  warningText: {
-    color: '#8A5E00',
-    fontWeight: '600',
-    fontSize: 11,
-  },
-  actionsCol: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
-    flexShrink: 0,
-  },
-  iconButton: {
-    width: 36,
-    height: 36,
-    borderRadius: radius.full,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  buttonPressed: {
-    opacity: 0.6,
-    transform: [{ scale: 0.95 }],
-  },
-  footerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingTop: spacing.xs,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.outlineVariant,
-  },
-  expirationInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    flex: 1,
-    minWidth: 0,
-  },
-  expirationDateText: {
-    color: colors.textSecondary,
-    fontSize: 12,
-  },
-  stepperContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.surfaceContainerLow,
-    borderRadius: radius.full,
-    padding: 2,
-    gap: 4,
-  },
-  stepperBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: radius.full,
-    backgroundColor: colors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 1,
-  },
-  quantityText: {
-    color: colors.textPrimary,
-    fontWeight: '700',
-    paddingHorizontal: spacing.xs,
-    minWidth: 48,
-    textAlign: 'center',
-  },
-});
+const createStyles = (colors: AppColors) =>
+  StyleSheet.create({
+    card: {
+      padding: spacing.md,
+      marginBottom: spacing.sm,
+    },
+    contentRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      marginBottom: spacing.sm,
+    },
+    iconContainer: {
+      width: 48,
+      height: 48,
+      borderRadius: radius.md,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    infoCol: {
+      flex: 1,
+      gap: 4,
+    },
+    nameText: {
+      color: colors.textPrimary,
+      fontWeight: '700',
+    },
+    tagsRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      flexWrap: 'wrap',
+      gap: spacing.xs,
+    },
+    categoryChip: {
+      backgroundColor: colors.surfaceContainerLow,
+      paddingHorizontal: spacing.xs + 2,
+      paddingVertical: 2,
+      borderRadius: radius.sm,
+    },
+    categoryText: {
+      color: colors.textSecondary,
+      fontSize: 11,
+    },
+    urgentBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: 'rgba(233, 119, 94, 0.15)',
+      paddingHorizontal: spacing.xs + 2,
+      paddingVertical: 2,
+      borderRadius: radius.full,
+      gap: 3,
+    },
+    urgentText: {
+      color: colors.secondary,
+      fontWeight: '700',
+      fontSize: 11,
+    },
+    warningBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: 'rgba(243, 201, 105, 0.25)',
+      paddingHorizontal: spacing.xs + 2,
+      paddingVertical: 2,
+      borderRadius: radius.full,
+      gap: 3,
+    },
+    warningText: {
+      color: colors.tertiary,
+      fontWeight: '600',
+      fontSize: 11,
+    },
+    actionsCol: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 2,
+      flexShrink: 0,
+    },
+    iconButton: {
+      width: 36,
+      height: 36,
+      borderRadius: radius.full,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    buttonPressed: {
+      opacity: 0.6,
+      transform: [{ scale: 0.95 }],
+    },
+    footerRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingTop: spacing.xs,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: colors.outlineVariant,
+    },
+    expirationInfo: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      flex: 1,
+      minWidth: 0,
+    },
+    expirationDateText: {
+      color: colors.textSecondary,
+      fontSize: 12,
+    },
+    stepperContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: colors.surfaceContainerLow,
+      borderRadius: radius.full,
+      padding: 2,
+      gap: 4,
+    },
+    stepperBtn: {
+      width: 28,
+      height: 28,
+      borderRadius: radius.full,
+      backgroundColor: colors.surface,
+      alignItems: 'center',
+      justifyContent: 'center',
+      elevation: 1,
+      shadowColor: colors.cardShadow,
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.08,
+      shadowRadius: 1,
+    },
+    quantityText: {
+      color: colors.textPrimary,
+      fontWeight: '700',
+      paddingHorizontal: spacing.xs,
+      minWidth: 48,
+      textAlign: 'center',
+    },
+  });

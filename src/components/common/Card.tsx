@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   Pressable,
   StyleProp,
@@ -6,7 +6,7 @@ import {
   View,
   ViewStyle,
 } from 'react-native';
-import { colors, radius, spacing } from '../../theme';
+import { radius, spacing, useAppTheme } from '../../theme';
 
 export type CardVariant = 'elevated' | 'flat' | 'outlined';
 
@@ -23,28 +23,6 @@ export interface CardProps {
   style?: StyleProp<ViewStyle>;
 }
 
-const variantStyles: Record<CardVariant, ViewStyle> = {
-  elevated: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    shadowColor: '#5B4B8A',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  flat: {
-    backgroundColor: colors.surfaceContainerLow,
-    borderWidth: 0,
-  },
-  outlined: {
-    backgroundColor: colors.surface,
-    borderWidth: 1.5,
-    borderColor: colors.border,
-  },
-};
-
 export const Card: React.FC<CardProps> = ({
   children,
   variant = 'elevated',
@@ -57,6 +35,33 @@ export const Card: React.FC<CardProps> = ({
   testID,
   style,
 }) => {
+  const { colors } = useAppTheme();
+
+  const variantStyles = useMemo<Record<CardVariant, ViewStyle>>(
+    () => ({
+      elevated: {
+        backgroundColor: colors.surface,
+        borderWidth: 1,
+        borderColor: colors.border,
+        shadowColor: colors.cardShadow,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.06,
+        shadowRadius: 8,
+        elevation: 2,
+      },
+      flat: {
+        backgroundColor: colors.surfaceContainerLow,
+        borderWidth: 0,
+      },
+      outlined: {
+        backgroundColor: colors.surface,
+        borderWidth: 1.5,
+        borderColor: colors.border,
+      },
+    }),
+    [colors]
+  );
+
   const paddingValue = typeof padding === 'number' ? padding : spacing[padding];
   const flattenedCustomStyle = StyleSheet.flatten(style) || {};
   const combinedStyle: ViewStyle = {
@@ -90,9 +95,9 @@ export const Card: React.FC<CardProps> = ({
   return (
     <View
       testID={testID}
-      style={combinedStyle}
       accessibilityRole={accessibilityRole}
       accessibilityLabel={accessibilityLabel}
+      style={combinedStyle}
     >
       {children}
     </View>
@@ -101,14 +106,14 @@ export const Card: React.FC<CardProps> = ({
 
 const styles = StyleSheet.create({
   base: {
-    borderRadius: radius.lg,
+    borderRadius: radius.xl,
     overflow: 'hidden',
   },
-  disabled: {
-    opacity: 0.6,
-  },
   pressed: {
-    transform: [{ scale: 0.99 }],
-    opacity: 0.96,
+    opacity: 0.88,
+    transform: [{ scale: 0.995 }],
+  },
+  disabled: {
+    opacity: 0.5,
   },
 });

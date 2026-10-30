@@ -11,16 +11,24 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Button } from '../src/components/common';
-import { colors, radius, spacing, useTypography } from '../src/theme';
+import {
+  AppColors,
+  radius,
+  spacing,
+  useTypography,
+  useAppTheme,
+  useThemeStyles,
+} from '../src/theme';
 
 export default function WelcomeScreen() {
   const typography = useTypography();
   const router = useRouter();
+  const { colors } = useAppTheme();
+  const styles = useThemeStyles(createStyles);
 
   const handleNavigateToHome = () => {
     router.replace('/(tabs)');
   };
-
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom', 'left', 'right']}>
@@ -72,7 +80,7 @@ export default function WelcomeScreen() {
               accessibilityLabel="Ilustración de cocina inteligente con despensa, sartén e ingredientes frescos"
             />
             <View style={styles.heroPillBadge}>
-              <MaterialIcons name="auto-awesome" size={15} color={colors.tertiaryContainer} />
+              <MaterialIcons name="auto-awesome" size={15} color={colors.demoBadgeText} />
               <Text style={[styles.heroPillText, typography.labelSm]}>
                 Aprovecha mejor tu despensa
               </Text>
@@ -101,8 +109,12 @@ export default function WelcomeScreen() {
           </Text>
         </View>
 
-        {/* 3 Step Features */}
-        <View style={styles.stepsRow}>
+        {/* 3 Step Feature Highlights */}
+        <View
+          style={styles.stepsRow}
+          accessible={false}
+          accessibilityLabel="Cómo funciona FoodAI en 3 pasos"
+        >
           {/* Step 1 */}
           <View style={styles.stepCard} testID="step-1">
             <View style={[styles.stepIconCircle, { backgroundColor: colors.surfaceContainerHighest }]}>
@@ -124,7 +136,7 @@ export default function WelcomeScreen() {
           {/* Step 3 */}
           <View style={styles.stepCard} testID="step-3">
             <View style={[styles.stepIconCircle, { backgroundColor: colors.surfaceContainerHighest }]}>
-              <MaterialIcons name="savings" size={18} color={colors.tertiaryContainer} />
+              <MaterialIcons name="savings" size={18} color={colors.tertiary} />
             </View>
             <Text style={[styles.stepTitle, typography.labelSm]}>3. Cocina</Text>
             <Text style={[styles.stepDesc, typography.bodySm]}>Aprovecha lo que tienes</Text>
@@ -161,195 +173,196 @@ export default function WelcomeScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: colors.canvas,
-  },
-  scrollContent: {
-    flexGrow: 1,
-    paddingHorizontal: spacing.margin,
-    paddingBottom: spacing.lg,
-    justifyContent: 'space-between',
-  },
-  topBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: spacing.sm,
-  },
-  categoryBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    backgroundColor: colors.surfaceContainerLow,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 5,
-    borderRadius: radius.full,
-  },
-  categoryBadgeText: {
-    color: colors.textSecondary,
-    fontWeight: '600',
-    letterSpacing: 0.5,
-  },
-  skipButton: {
-    paddingVertical: 4,
-    paddingHorizontal: spacing.xs,
-  },
-  buttonPressed: {
-    opacity: 0.7,
-  },
-  skipButtonText: {
-    color: colors.textSecondary,
-  },
-  heroCard: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    padding: spacing.md,
-    marginTop: spacing.xs,
-    marginBottom: spacing.sm,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: colors.borderLight,
-    shadowColor: '#5B4B8A',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 2,
-    position: 'relative',
-    overflow: 'hidden',
-  },
-  heroGlowTop: {
-    position: 'absolute',
-    top: -30,
-    right: -30,
-    width: 120,
-    height: 120,
-    borderRadius: radius.full,
-    backgroundColor: 'rgba(243, 201, 105, 0.25)',
-  },
-  heroGlowBottom: {
-    position: 'absolute',
-    bottom: -20,
-    left: -20,
-    width: 110,
-    height: 110,
-    borderRadius: radius.full,
-    backgroundColor: 'rgba(233, 119, 94, 0.2)',
-  },
-  heroImageWrapper: {
-    width: '100%',
-    alignItems: 'center',
-    zIndex: 1,
-  },
-  heroImage: {
-    width: '100%',
-    height: 170,
-    maxHeight: 190,
-  },
-  heroPillBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(255, 223, 155, 0.7)',
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 4,
-    borderRadius: radius.full,
-    marginTop: spacing.xs,
-  },
-  heroPillText: {
-    color: colors.tertiaryContainer,
-    fontWeight: '700',
-    fontSize: 11,
-  },
-  valueSection: {
-    alignItems: 'center',
-    textAlign: 'center',
-    marginVertical: spacing.xs,
-  },
-  ecoPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: spacing.sm + 2,
-    paddingVertical: 5,
-    borderRadius: radius.full,
-    backgroundColor: 'rgba(255, 218, 211, 0.7)',
-    marginBottom: spacing.xs,
-  },
-  ecoPillText: {
-    color: '#802916',
-    fontWeight: '700',
-  },
-  headline: {
-    color: colors.textPrimary,
-    textAlign: 'center',
-    fontWeight: '700',
-    marginTop: 4,
-    marginBottom: spacing.xs,
-    maxWidth: 320,
-  },
-  subtitle: {
-    color: colors.textSecondary,
-    textAlign: 'center',
-    maxWidth: 310,
-    lineHeight: 22,
-  },
-  stepsRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    marginVertical: spacing.sm,
-    width: '100%',
-  },
-  stepCard: {
-    flex: 1,
-    backgroundColor: colors.surfaceContainerLow,
-    borderRadius: radius.md,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.xs,
-    alignItems: 'center',
-    textAlign: 'center',
-  },
-  stepIconCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: radius.full,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 6,
-  },
-  stepTitle: {
-    color: colors.textPrimary,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  stepDesc: {
-    color: colors.textSecondary,
-    fontSize: 11,
-    textAlign: 'center',
-    marginTop: 2,
-  },
-  actionContainer: {
-    gap: spacing.sm,
-    marginTop: spacing.sm,
-    paddingTop: spacing.xs,
-  },
-  pagerDots: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 4,
-  },
-  dot: {
-    width: 8,
-    height: 6,
-    borderRadius: radius.full,
-    backgroundColor: colors.surfaceContainerHighest,
-  },
-  dotActive: {
-    width: 24,
-    backgroundColor: colors.primary,
-  },
-});
+const createStyles = (colors: AppColors) =>
+  StyleSheet.create({
+    safeArea: {
+      flex: 1,
+      backgroundColor: colors.canvas,
+    },
+    scrollContent: {
+      flexGrow: 1,
+      paddingHorizontal: spacing.margin,
+      paddingBottom: spacing.lg,
+      justifyContent: 'space-between',
+    },
+    topBar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingVertical: spacing.sm,
+    },
+    categoryBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.xs,
+      backgroundColor: colors.surfaceContainerLow,
+      paddingHorizontal: spacing.sm,
+      paddingVertical: 5,
+      borderRadius: radius.full,
+    },
+    categoryBadgeText: {
+      color: colors.textSecondary,
+      fontWeight: '600',
+      letterSpacing: 0.5,
+    },
+    skipButton: {
+      paddingVertical: 4,
+      paddingHorizontal: spacing.xs,
+    },
+    buttonPressed: {
+      opacity: 0.7,
+    },
+    skipButtonText: {
+      color: colors.textSecondary,
+    },
+    heroCard: {
+      backgroundColor: colors.surface,
+      borderRadius: radius.lg,
+      padding: spacing.md,
+      marginTop: spacing.xs,
+      marginBottom: spacing.sm,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderWidth: 1,
+      borderColor: colors.borderLight,
+      shadowColor: colors.cardShadow,
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.05,
+      shadowRadius: 10,
+      elevation: 2,
+      position: 'relative',
+      overflow: 'hidden',
+    },
+    heroGlowTop: {
+      position: 'absolute',
+      top: -30,
+      right: -30,
+      width: 120,
+      height: 120,
+      borderRadius: radius.full,
+      backgroundColor: 'rgba(243, 201, 105, 0.15)',
+    },
+    heroGlowBottom: {
+      position: 'absolute',
+      bottom: -20,
+      left: -20,
+      width: 110,
+      height: 110,
+      borderRadius: radius.full,
+      backgroundColor: 'rgba(233, 119, 94, 0.15)',
+    },
+    heroImageWrapper: {
+      width: '100%',
+      alignItems: 'center',
+      zIndex: 1,
+    },
+    heroImage: {
+      width: '100%',
+      height: 170,
+      maxHeight: 190,
+    },
+    heroPillBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      backgroundColor: colors.demoBadgeBackground,
+      paddingHorizontal: spacing.sm,
+      paddingVertical: 4,
+      borderRadius: radius.full,
+      marginTop: spacing.xs,
+    },
+    heroPillText: {
+      color: colors.demoBadgeText,
+      fontWeight: '700',
+      fontSize: 11,
+    },
+    valueSection: {
+      alignItems: 'center',
+      textAlign: 'center',
+      marginVertical: spacing.xs,
+    },
+    ecoPill: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      paddingHorizontal: spacing.sm + 2,
+      paddingVertical: 5,
+      borderRadius: radius.full,
+      backgroundColor: colors.surfaceContainerLow,
+      marginBottom: spacing.xs,
+    },
+    ecoPillText: {
+      color: colors.secondary,
+      fontWeight: '700',
+    },
+    headline: {
+      color: colors.textPrimary,
+      textAlign: 'center',
+      fontWeight: '700',
+      marginTop: 4,
+      marginBottom: spacing.xs,
+      maxWidth: 320,
+    },
+    subtitle: {
+      color: colors.textSecondary,
+      textAlign: 'center',
+      maxWidth: 310,
+      lineHeight: 22,
+    },
+    stepsRow: {
+      flexDirection: 'row',
+      gap: spacing.sm,
+      marginVertical: spacing.sm,
+      width: '100%',
+    },
+    stepCard: {
+      flex: 1,
+      backgroundColor: colors.surfaceContainerLow,
+      borderRadius: radius.md,
+      paddingVertical: spacing.sm,
+      paddingHorizontal: spacing.xs,
+      alignItems: 'center',
+      textAlign: 'center',
+    },
+    stepIconCircle: {
+      width: 32,
+      height: 32,
+      borderRadius: radius.full,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: 6,
+    },
+    stepTitle: {
+      color: colors.textPrimary,
+      fontWeight: '600',
+      textAlign: 'center',
+    },
+    stepDesc: {
+      color: colors.textSecondary,
+      fontSize: 11,
+      textAlign: 'center',
+      marginTop: 2,
+    },
+    actionContainer: {
+      gap: spacing.sm,
+      marginTop: spacing.sm,
+      paddingTop: spacing.xs,
+    },
+    pagerDots: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+      paddingVertical: 4,
+    },
+    dot: {
+      width: 8,
+      height: 6,
+      borderRadius: radius.full,
+      backgroundColor: colors.surfaceContainerHighest,
+    },
+    dotActive: {
+      width: 24,
+      backgroundColor: colors.primary,
+    },
+  });

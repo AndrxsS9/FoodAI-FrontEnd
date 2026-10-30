@@ -15,7 +15,7 @@ import {
   View,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import { colors, radius, spacing, useTypography } from '../../theme';
+import { AppColors, radius, spacing, useTypography, useThemeColors, useThemeStyles } from '../../theme';
 import { Button, Stepper } from '../common';
 import {
   formatCopCurrency,
@@ -64,6 +64,8 @@ function EditPreferencesForm({
   onSave,
 }: EditPreferencesModalProps) {
   const typography = useTypography();
+  const colors = useThemeColors();
+  const styles = useThemeStyles(createStyles);
 
   const [tempBudget, setTempBudget] = useState(String(budget));
   const [tempServings, setTempServings] = useState(servings);
@@ -445,11 +447,12 @@ function EditPreferencesForm({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: AppColors) =>
+  StyleSheet.create({
   modalOverlay: {
     flex: 1,
     justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    backgroundColor: colors.overlay,
   },
   modalBackdrop: {
     ...StyleSheet.absoluteFill,

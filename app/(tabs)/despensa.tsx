@@ -29,12 +29,14 @@ import {
   IngredientFormSaveData,
 } from '../../src/components/pantry';
 import { usePantry } from '../../src/context/PantryContext';
-import { colors, radius, spacing, useTypography } from '../../src/theme';
+import { AppColors, radius, spacing, useAppTheme, useThemeStyles, useTypography } from '../../src/theme';
 import { Ingredient } from '../../src/types/pantry';
 
 export default function DespensaScreen() {
   const typography = useTypography();
   const router = useRouter();
+  const { colors } = useAppTheme();
+  const styles = useThemeStyles(createStyles);
 
   const {
     ingredients,
@@ -385,7 +387,7 @@ export default function DespensaScreen() {
               <View style={styles.savingsDecorationPill} />
               <View style={styles.savingsContent}>
                 <View style={styles.savingsIconBox}>
-                  <MaterialIcons name="savings" size={24} color="#503B00" />
+                  <MaterialIcons name="savings" size={24} color={colors.onTertiaryContainer} />
                 </View>
                 <View style={styles.savingsTextCol}>
                   <View style={styles.savingsHeaderRow}>
@@ -517,297 +519,298 @@ export default function DespensaScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: colors.canvas,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.margin,
-    paddingVertical: spacing.sm,
-    backgroundColor: colors.surface,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.outlineVariant,
-  },
-  headerBrand: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-    minWidth: 0,
-    gap: spacing.sm,
-  },
-  logoImage: {
-    width: 32,
-    height: 32,
-  },
-  headerTextCol: {
-    flex: 1,
-    minWidth: 0,
-  },
-  headerSubtext: {
-    color: colors.outline,
-    letterSpacing: 0.5,
-    textTransform: 'uppercase',
-  },
-  headerTitle: {
-    color: colors.textPrimary,
-    fontWeight: '700',
-  },
-  avatarButton: {
-    width: 36,
-    height: 36,
-    borderRadius: radius.full,
-    backgroundColor: colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarPressed: {
-    opacity: 0.7,
-  },
-  scrollContent: {
-    padding: spacing.margin,
-    paddingBottom: spacing.xxl + 20,
-    gap: spacing.md,
-  },
-  topActionsContainer: {
-    gap: spacing.sm,
-  },
-  actionButtonsRow: {
-    flexDirection: 'row',
-    gap: spacing.xs,
-  },
-  actionButtonFlex: {
-    flex: 1,
-  },
-  errorCard: {
-    backgroundColor: '#FFF0F0',
-    borderColor: colors.error,
-    padding: spacing.md,
-    gap: spacing.sm,
-  },
-  errorRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.sm,
-  },
-  errorTextCol: {
-    flex: 1,
-  },
-  errorTitle: {
-    color: colors.error,
-    fontWeight: '700',
-  },
-  errorDesc: {
-    color: colors.textPrimary,
-    lineHeight: 18,
-  },
-  errorActions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: spacing.xs,
-  },
-  loadingContainer: {
-    padding: spacing.xl,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-  },
-  loadingText: {
-    color: colors.textSecondary,
-  },
-  emptyCard: {
-    backgroundColor: colors.surface,
-    padding: spacing.lg,
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  emptyIconCircle: {
-    width: 68,
-    height: 68,
-    borderRadius: radius.full,
-    backgroundColor: colors.surfaceContainerLow,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: spacing.xs,
-  },
-  emptyTitle: {
-    color: colors.textPrimary,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  emptyDesc: {
-    color: colors.textSecondary,
-    textAlign: 'center',
-    lineHeight: 22,
-    maxWidth: 320,
-  },
-  emptyAction: {
-    width: '100%',
-    marginTop: spacing.sm,
-  },
-  listContainer: {
-    gap: spacing.lg,
-  },
-  sectionContainer: {
-    gap: spacing.xs,
-  },
-  sectionHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 2,
-  },
-  sectionTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-  },
-  urgentPulseDot: {
-    width: 9,
-    height: 9,
-    borderRadius: radius.full,
-    backgroundColor: colors.secondary,
-  },
-  sectionTitle: {
-    color: colors.textPrimary,
-    fontWeight: '700',
-  },
-  urgentCountBadge: {
-    backgroundColor: '#FFDAD3',
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
-    borderRadius: radius.full,
-  },
-  urgentCountText: {
-    color: '#802916',
-    fontWeight: '700',
-  },
-  itemsCountLabel: {
-    color: colors.outline,
-    fontWeight: '600',
-  },
-  cardsStack: {
-    gap: spacing.xs,
-  },
-  savingsCard: {
-    position: 'relative',
-    overflow: 'hidden',
-    backgroundColor: colors.surface,
-    padding: spacing.md,
-    borderRadius: radius.xl,
-    gap: spacing.md,
-  },
-  savingsDecorationPill: {
-    position: 'absolute',
-    top: -24,
-    right: -24,
-    width: 96,
-    height: 96,
-    borderRadius: radius.full,
-    backgroundColor: colors.tertiary,
-    opacity: 0.15,
-  },
-  savingsContent: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.sm,
-  },
-  savingsIconBox: {
-    width: 40,
-    height: 40,
-    borderRadius: radius.lg,
-    backgroundColor: '#FFDF9B',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  savingsTextCol: {
-    flex: 1,
-    gap: 2,
-  },
-  savingsHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-  },
-  savingsBadge: {
-    color: '#503B00',
-    fontWeight: '700',
-    letterSpacing: 0.5,
-  },
-  savingsDot: {
-    width: 6,
-    height: 6,
-    borderRadius: radius.full,
-    backgroundColor: '#503B00',
-  },
-  savingsDesc: {
-    color: colors.textPrimary,
-    lineHeight: 20,
-  },
-  savingsCtaButton: {
-    height: 48,
-    borderRadius: radius.lg,
-    backgroundColor: colors.primary,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.md,
-    elevation: 2,
-    shadowColor: colors.primary,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-  },
-  savingsCtaPressed: {
-    opacity: 0.85,
-    transform: [{ scale: 0.99 }],
-  },
-  savingsCtaLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-  },
-  savingsCtaText: {
-    color: colors.onPrimary,
-    fontWeight: '700',
-  },
-  dialogBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(37, 43, 58, 0.65)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: spacing.margin,
-  },
-  dialogCard: {
-    width: '100%',
-    maxWidth: 360,
-    backgroundColor: colors.surface,
-    borderRadius: radius.xl,
-    padding: spacing.lg,
-    alignItems: 'center',
-    gap: spacing.md,
-    elevation: 8,
-  },
-  dialogIconBox: {
-    width: 60,
-    height: 60,
-    borderRadius: radius.full,
-    backgroundColor: colors.surfaceContainerLow,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  dialogTitle: {
-    color: colors.textPrimary,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  dialogDesc: {
-    color: colors.textSecondary,
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-});
+const createStyles = (colors: AppColors) =>
+  StyleSheet.create({
+    safeArea: {
+      flex: 1,
+      backgroundColor: colors.canvas,
+    },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: spacing.margin,
+      paddingVertical: spacing.sm,
+      backgroundColor: colors.surface,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.outlineVariant,
+    },
+    headerBrand: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      flex: 1,
+      minWidth: 0,
+      gap: spacing.sm,
+    },
+    logoImage: {
+      width: 32,
+      height: 32,
+    },
+    headerTextCol: {
+      flex: 1,
+      minWidth: 0,
+    },
+    headerSubtext: {
+      color: colors.outline,
+      letterSpacing: 0.5,
+      textTransform: 'uppercase',
+    },
+    headerTitle: {
+      color: colors.textPrimary,
+      fontWeight: '700',
+    },
+    avatarButton: {
+      width: 36,
+      height: 36,
+      borderRadius: radius.full,
+      backgroundColor: colors.primary,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    avatarPressed: {
+      opacity: 0.7,
+    },
+    scrollContent: {
+      padding: spacing.margin,
+      paddingBottom: spacing.xxl + 20,
+      gap: spacing.md,
+    },
+    topActionsContainer: {
+      gap: spacing.sm,
+    },
+    actionButtonsRow: {
+      flexDirection: 'row',
+      gap: spacing.xs,
+    },
+    actionButtonFlex: {
+      flex: 1,
+    },
+    errorCard: {
+      backgroundColor: colors.errorContainer,
+      borderColor: colors.error,
+      padding: spacing.md,
+      gap: spacing.sm,
+    },
+    errorRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: spacing.sm,
+    },
+    errorTextCol: {
+      flex: 1,
+    },
+    errorTitle: {
+      color: colors.error,
+      fontWeight: '700',
+    },
+    errorDesc: {
+      color: colors.textPrimary,
+      lineHeight: 18,
+    },
+    errorActions: {
+      flexDirection: 'row',
+      justifyContent: 'flex-end',
+      gap: spacing.xs,
+    },
+    loadingContainer: {
+      padding: spacing.xl,
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: spacing.sm,
+    },
+    loadingText: {
+      color: colors.textSecondary,
+    },
+    emptyCard: {
+      backgroundColor: colors.surface,
+      padding: spacing.lg,
+      alignItems: 'center',
+      gap: spacing.sm,
+    },
+    emptyIconCircle: {
+      width: 68,
+      height: 68,
+      borderRadius: radius.full,
+      backgroundColor: colors.surfaceContainerLow,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: spacing.xs,
+    },
+    emptyTitle: {
+      color: colors.textPrimary,
+      fontWeight: '700',
+      textAlign: 'center',
+    },
+    emptyDesc: {
+      color: colors.textSecondary,
+      textAlign: 'center',
+      lineHeight: 22,
+      maxWidth: 320,
+    },
+    emptyAction: {
+      width: '100%',
+      marginTop: spacing.sm,
+    },
+    listContainer: {
+      gap: spacing.lg,
+    },
+    sectionContainer: {
+      gap: spacing.xs,
+    },
+    sectionHeaderRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingVertical: 2,
+    },
+    sectionTitleRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.xs,
+    },
+    urgentPulseDot: {
+      width: 9,
+      height: 9,
+      borderRadius: radius.full,
+      backgroundColor: colors.secondary,
+    },
+    sectionTitle: {
+      color: colors.textPrimary,
+      fontWeight: '700',
+    },
+    urgentCountBadge: {
+      backgroundColor: colors.errorContainer,
+      paddingHorizontal: spacing.sm,
+      paddingVertical: 2,
+      borderRadius: radius.full,
+    },
+    urgentCountText: {
+      color: colors.onErrorContainer,
+      fontWeight: '700',
+    },
+    itemsCountLabel: {
+      color: colors.outline,
+      fontWeight: '600',
+    },
+    cardsStack: {
+      gap: spacing.xs,
+    },
+    savingsCard: {
+      position: 'relative',
+      overflow: 'hidden',
+      backgroundColor: colors.surface,
+      padding: spacing.md,
+      borderRadius: radius.xl,
+      gap: spacing.md,
+    },
+    savingsDecorationPill: {
+      position: 'absolute',
+      top: -24,
+      right: -24,
+      width: 96,
+      height: 96,
+      borderRadius: radius.full,
+      backgroundColor: colors.tertiary,
+      opacity: 0.15,
+    },
+    savingsContent: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: spacing.sm,
+    },
+    savingsIconBox: {
+      width: 40,
+      height: 40,
+      borderRadius: radius.lg,
+      backgroundColor: colors.tertiaryContainer,
+      alignItems: 'center',
+      justifyContent: 'center',
+      flexShrink: 0,
+    },
+    savingsTextCol: {
+      flex: 1,
+      gap: 2,
+    },
+    savingsHeaderRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.xs,
+    },
+    savingsBadge: {
+      color: colors.onTertiaryContainer,
+      fontWeight: '700',
+      letterSpacing: 0.5,
+    },
+    savingsDot: {
+      width: 6,
+      height: 6,
+      borderRadius: radius.full,
+      backgroundColor: colors.onTertiaryContainer,
+    },
+    savingsDesc: {
+      color: colors.textPrimary,
+      lineHeight: 20,
+    },
+    savingsCtaButton: {
+      height: 48,
+      borderRadius: radius.lg,
+      backgroundColor: colors.primary,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: spacing.md,
+      elevation: 2,
+      shadowColor: colors.primary,
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.2,
+      shadowRadius: 4,
+    },
+    savingsCtaPressed: {
+      opacity: 0.85,
+      transform: [{ scale: 0.99 }],
+    },
+    savingsCtaLeft: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.xs,
+    },
+    savingsCtaText: {
+      color: colors.onPrimary,
+      fontWeight: '700',
+    },
+    dialogBackdrop: {
+      flex: 1,
+      backgroundColor: colors.backdrop,
+      justifyContent: 'center',
+      alignItems: 'center',
+      padding: spacing.margin,
+    },
+    dialogCard: {
+      width: '100%',
+      maxWidth: 360,
+      backgroundColor: colors.surface,
+      borderRadius: radius.xl,
+      padding: spacing.lg,
+      alignItems: 'center',
+      gap: spacing.md,
+      elevation: 8,
+    },
+    dialogIconBox: {
+      width: 60,
+      height: 60,
+      borderRadius: radius.full,
+      backgroundColor: colors.surfaceContainerLow,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    dialogTitle: {
+      color: colors.textPrimary,
+      fontWeight: '700',
+      textAlign: 'center',
+    },
+    dialogDesc: {
+      color: colors.textSecondary,
+      textAlign: 'center',
+      lineHeight: 20,
+    },
+  });

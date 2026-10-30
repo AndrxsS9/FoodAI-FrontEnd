@@ -12,7 +12,7 @@ import {
   View,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import { colors, radius, spacing, useTypography } from '../../theme';
+import { AppColors, radius, spacing, useTypography, useThemeColors, useThemeStyles } from '../../theme';
 import { formatCopCurrency } from '../../types/recipe';
 
 export interface CulinaryPreferencesSectionProps {
@@ -31,6 +31,8 @@ export function CulinaryPreferencesSection({
   onOpenEdit,
 }: CulinaryPreferencesSectionProps) {
   const typography = useTypography();
+  const colors = useThemeColors();
+  const styles = useThemeStyles(createStyles);
 
   return (
     <View style={styles.card}>
@@ -216,7 +218,8 @@ export function CulinaryPreferencesSection({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: AppColors) =>
+  StyleSheet.create({
   card: {
     backgroundColor: colors.surface,
     padding: spacing.md,

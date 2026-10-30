@@ -8,7 +8,7 @@ import {
   View,
   ViewStyle,
 } from 'react-native';
-import { colors, radius, spacing, useTypography } from '../../theme';
+import { AppColors, radius, spacing, useTypography, useAppTheme, useThemeStyles } from '../../theme';
 
 export interface InputProps extends Omit<TextInputProps, 'style'> {
   label?: string;
@@ -42,6 +42,8 @@ export const Input: React.FC<InputProps> = ({
 }) => {
   const [isFocused, setIsFocused] = useState(false);
   const typography = useTypography();
+  const { colors } = useAppTheme();
+  const styles = useThemeStyles(createStyles);
 
   const effectiveErrorMessage = errorMessage || error;
   const hasError = Boolean(effectiveErrorMessage);
@@ -110,61 +112,62 @@ export const Input: React.FC<InputProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    width: '100%',
-    marginBottom: spacing.sm,
-  },
-  label: {
-    color: colors.textPrimary,
-    marginBottom: spacing.xs,
-  },
-  inputWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    height: 52,
-    backgroundColor: colors.surface,
-    borderWidth: 1.5,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.md,
-  },
-  focusedWrapper: {
-    borderColor: colors.primary,
-  },
-  errorWrapper: {
-    borderColor: colors.error,
-  },
-  input: {
-    flex: 1,
-    height: '100%',
-    color: colors.textPrimary,
-  },
-  leftElement: {
-    marginRight: spacing.sm,
-  },
-  rightElement: {
-    marginLeft: spacing.sm,
-  },
-  helperText: {
-    color: colors.textSecondary,
-    marginTop: spacing.xs,
-    marginLeft: spacing.xs,
-  },
-  labelDisabled: {
-    color: colors.textSecondary,
-  },
-  disabledWrapper: {
-    backgroundColor: colors.surfaceContainerLow,
-    borderColor: colors.borderLight,
-    opacity: 0.7,
-  },
-  disabledInput: {
-    color: colors.textSecondary,
-  },
-  errorText: {
-    color: colors.error,
-    marginTop: spacing.xs,
-    marginLeft: spacing.xs,
-  },
-});
+const createStyles = (colors: AppColors) =>
+  StyleSheet.create({
+    container: {
+      width: '100%',
+      marginBottom: spacing.sm,
+    },
+    label: {
+      color: colors.textPrimary,
+      marginBottom: spacing.xs,
+    },
+    inputWrapper: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      height: 52,
+      backgroundColor: colors.surface,
+      borderWidth: 1.5,
+      borderColor: colors.border,
+      borderRadius: radius.md,
+      paddingHorizontal: spacing.md,
+    },
+    focusedWrapper: {
+      borderColor: colors.primary,
+    },
+    errorWrapper: {
+      borderColor: colors.error,
+    },
+    input: {
+      flex: 1,
+      height: '100%',
+      color: colors.textPrimary,
+    },
+    leftElement: {
+      marginRight: spacing.sm,
+    },
+    rightElement: {
+      marginLeft: spacing.sm,
+    },
+    helperText: {
+      color: colors.textSecondary,
+      marginTop: spacing.xs,
+      marginLeft: spacing.xs,
+    },
+    labelDisabled: {
+      color: colors.textSecondary,
+    },
+    disabledWrapper: {
+      backgroundColor: colors.surfaceContainerLow,
+      borderColor: colors.borderLight,
+      opacity: 0.7,
+    },
+    disabledInput: {
+      color: colors.textSecondary,
+    },
+    errorText: {
+      color: colors.error,
+      marginTop: spacing.xs,
+      marginLeft: spacing.xs,
+    },
+  });

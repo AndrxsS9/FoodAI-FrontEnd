@@ -25,7 +25,14 @@ import { useRouter } from 'expo-router';
 import { useAuthSafe } from '../../src/context/AuthContext';
 import { useBudget } from '../../src/context/BudgetContext';
 import { usePantry } from '../../src/context/PantryContext';
-import { colors, radius, spacing, useTypography } from '../../src/theme';
+import {
+  AppColors,
+  radius,
+  spacing,
+  useTypography,
+  useAppTheme,
+  useThemeStyles,
+} from '../../src/theme';
 import {
   CulinaryPreferencesSection,
   EditPreferencesModal,
@@ -40,6 +47,8 @@ export default function PerfilScreen() {
   const typography = useTypography();
   const router = useRouter();
   const auth = useAuthSafe();
+  const { colors } = useAppTheme();
+  const styles = useThemeStyles(createStyles);
 
   // Estado global de presupuesto y preferencias culinarias
   const {
@@ -347,7 +356,8 @@ export default function PerfilScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: AppColors) =>
+  StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: colors.canvas,

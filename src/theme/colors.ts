@@ -1,9 +1,10 @@
 /**
  * FoodAI Design System - Color Tokens
  * Based on Google Stitch specifications for "Recetario por Presupuesto"
+ * Supports Light, Dark and System appearance palettes.
  */
 
-export const colors = {
+export const lightColors = {
   // Brand Anchors
   primary: '#5B4B8A',            // Deep Purple (Primary action, key headers, active states)
   primaryContainer: '#6C5D9B',
@@ -14,8 +15,9 @@ export const colors = {
   onSecondary: '#FFFFFF',
 
   tertiary: '#F3C969',           // Butter Yellow (Budget, convenience, financial grounding)
-  tertiaryContainer: '#6C5100',
+  tertiaryContainer: '#FFDF9B',
   onTertiary: '#251A00',
+  onTertiaryContainer: '#503B00',
 
   // Canvas & Surfaces (Warm domestic Ivory feel)
   canvas: '#FAF7F2',             // Neutral Ivory canvas
@@ -45,6 +47,77 @@ export const colors = {
   error: '#BA1A1A',
   errorContainer: '#FFDAD6',
   onError: '#FFFFFF',
+  onErrorContainer: '#802916',
+
+  // Semantic Helpers
+  overlay: 'rgba(0, 0, 0, 0.45)',
+  backdrop: 'rgba(37, 43, 58, 0.65)',
+  cardShadow: '#5B4B8A',
+  disabled: '#EBE8E3',
+  disabledText: '#9E9AA2',
+  demoBadgeBackground: '#FFDF9B',
+  demoBadgeText: '#503B00',
 } as const;
 
-export type ColorToken = keyof typeof colors;
+export const darkColors = {
+  // Brand Anchors (Harmonized for dark contrast with > 7:1 ratio on dark canvas)
+  primary: '#A996DC',            // Luminous Deep Purple (accessible on #131217)
+  primaryContainer: '#443572',
+  onPrimary: '#1E103E',          // High contrast deep indigo on primary
+
+  secondary: '#FF8D75',          // Luminous Coral for dark theme
+  secondaryContainer: '#5C2317',
+  onSecondary: '#380E06',
+
+  tertiary: '#FDD67C',           // Warm Butter Yellow for dark theme
+  tertiaryContainer: '#523C00',
+  onTertiary: '#2E2100',
+  onTertiaryContainer: '#FFDF9B',
+
+  // Canvas & Surfaces (Rich dark tones avoiding harsh pure black)
+  canvas: '#131217',             // Neutral dark canvas with warm domestic undertone
+  background: '#131217',
+  surface: '#1C1A22',            // Elevated surface for cards and sheets
+  surfaceContainerLow: '#17151C',
+  surfaceContainer: '#22202A',
+  surfaceContainerHigh: '#2B2835',
+  surfaceContainerHighest: '#353241',
+
+  // Outlines & Borders
+  border: '#353240',             // Gentle structural border
+  borderLight: '#282532',
+  outline: '#948F9B',
+  outlineVariant: '#484452',
+
+  // Typography & Text (WCAG AA & AAA compliant contrast)
+  textPrimary: '#F3EFF7',        // Crisp off-white text
+  textSecondary: '#ABA5B3',      // Muted clarity text
+  textTertiary: '#7A7582',
+  textInverse: '#1C1A22',
+
+  // System & Semantic Feedback
+  success: '#81C784',
+  successContainer: '#1B3B1E',
+  warning: '#FFB74D',
+  error: '#FFB4AB',
+  errorContainer: '#5C1D18',
+  onError: '#410002',
+  onErrorContainer: '#FFDAD6',
+
+  // Semantic Helpers
+  overlay: 'rgba(0, 0, 0, 0.70)',
+  backdrop: 'rgba(0, 0, 0, 0.75)',
+  cardShadow: '#000000',
+  disabled: '#2B2835',
+  disabledText: '#7A7582',
+  demoBadgeBackground: '#523C00',
+  demoBadgeText: '#FDD67C',
+} as const;
+
+export type AppColors = {
+  [K in keyof typeof lightColors]: string;
+};
+
+export const colors: AppColors = lightColors;
+
+export type ColorToken = keyof typeof lightColors;

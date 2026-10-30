@@ -29,7 +29,14 @@ import { useMealPlanSafe } from '../../../src/context/MealPlanContext';
 import { usePantrySafe } from '../../../src/context/PantryContext';
 import { calculatePantryDeduction } from '../../../src/utils/pantryConsumption';
 import { formatCopCurrency } from '../../../src/types/recipe';
-import { colors, radius, spacing, useTypography } from '../../../src/theme';
+import {
+  AppColors,
+  radius,
+  spacing,
+  useTypography,
+  useAppTheme,
+  useThemeStyles,
+} from '../../../src/theme';
 
 interface StepCountdownCardProps {
   stepDuration: { stepIndex: number; minutes?: number; action?: string };
@@ -37,6 +44,8 @@ interface StepCountdownCardProps {
 
 function StepCountdownCard({ stepDuration }: StepCountdownCardProps) {
   const typography = useTypography();
+  const { colors } = useAppTheme();
+  const styles = useThemeStyles(createStyles);
   const initialSeconds = Math.round((stepDuration.minutes || 0) * 60);
   const [countdownSeconds, setCountdownSeconds] = useState(initialSeconds);
   const [isRunning, setIsRunning] = useState(false);
@@ -150,6 +159,8 @@ function StepCountdownCard({ stepDuration }: StepCountdownCardProps) {
 
 export default function GuidedCookingScreen() {
   const typography = useTypography();
+  const { colors } = useAppTheme();
+  const styles = useThemeStyles(createStyles);
   const router = useRouter();
   const params = useLocalSearchParams<{ id?: string; fromPlan?: string }>();
   const recipeId = params.id ? String(params.id).trim() : '';
@@ -774,7 +785,8 @@ export default function GuidedCookingScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: AppColors) =>
+  StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: colors.canvas,
@@ -818,7 +830,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: '#F0EDE9',
+    backgroundColor: colors.surfaceContainer,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: radius.full,
@@ -897,7 +909,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderRadius: radius.xl,
     borderWidth: 1,
-    borderColor: '#E8E2D8',
+    borderColor: colors.borderLight,
     gap: spacing.md,
   },
   stepBadgeRow: {
@@ -909,7 +921,7 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: radius.full,
-    backgroundColor: '#E8DDFF',
+    backgroundColor: colors.primaryContainer,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -931,7 +943,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: spacing.xs,
-    backgroundColor: '#F6F3EE',
+    backgroundColor: colors.surfaceContainerLow,
     padding: spacing.md,
     borderRadius: radius.md,
     marginTop: spacing.xs,
@@ -949,7 +961,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   stepTimerCard: {
-    backgroundColor: '#FAF7F2',
+    backgroundColor: colors.canvas,
     borderColor: colors.outlineVariant,
     padding: spacing.md,
     marginTop: spacing.md,
@@ -987,7 +999,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: '#EAF6ED',
+    backgroundColor: colors.successContainer,
     paddingVertical: 6,
     paddingHorizontal: 10,
     borderRadius: radius.md,
@@ -1038,7 +1050,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: '#E8E2D8',
+    borderColor: colors.borderLight,
   },
   ingredientDot: {
     width: 6,
@@ -1070,9 +1082,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.margin,
     paddingTop: spacing.sm,
     paddingBottom: spacing.md,
-    backgroundColor: 'rgba(252, 249, 244, 0.95)',
+    backgroundColor: colors.surface,
     borderTopWidth: 1,
-    borderTopColor: '#E8E2D8',
+    borderTopColor: colors.borderLight,
   },
   controlButtonWrapper: {
     flex: 1,
@@ -1108,7 +1120,7 @@ const styles = StyleSheet.create({
     width: 68,
     height: 68,
     borderRadius: radius.full,
-    backgroundColor: '#E8DDFF',
+    backgroundColor: colors.primaryContainer,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: spacing.xs,
@@ -1127,7 +1139,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     width: '100%',
-    backgroundColor: '#F6F3EE',
+    backgroundColor: colors.surfaceContainerLow,
     padding: spacing.md,
     borderRadius: radius.lg,
     marginVertical: spacing.xs,
@@ -1154,7 +1166,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: '#EAF6ED',
+    backgroundColor: colors.successContainer,
     paddingVertical: 10,
     paddingHorizontal: 12,
     borderRadius: radius.md,
@@ -1168,7 +1180,7 @@ const styles = StyleSheet.create({
   },
   deductionSection: {
     width: '100%',
-    backgroundColor: '#FAF7F2',
+    backgroundColor: colors.canvas,
     borderRadius: radius.lg,
     padding: spacing.md,
     gap: spacing.xs,
@@ -1229,7 +1241,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: '#EAF6ED',
+    backgroundColor: colors.successContainer,
     paddingVertical: 8,
     paddingHorizontal: 12,
     borderRadius: radius.md,

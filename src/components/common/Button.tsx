@@ -8,7 +8,7 @@ import {
   View,
   ViewStyle,
 } from 'react-native';
-import { colors, radius, spacing, useTypography } from '../../theme';
+import { AppColors, radius, spacing, useTypography, useAppTheme, useThemeStyles } from '../../theme';
 
 export type ButtonVariant = 'primary' | 'secondary' | 'tertiary' | 'outline' | 'ghost';
 export type ButtonSize = 'sm' | 'md' | 'lg';
@@ -53,6 +53,9 @@ export const Button: React.FC<ButtonProps> = ({
   textStyle,
 }) => {
   const typography = useTypography();
+  const { colors } = useAppTheme();
+  const styles = useThemeStyles(createStyles);
+
   const isInteractive = !disabled && !loading;
   const computedAccessibilityLabel = loading
     ? `${accessibilityLabel || title}, cargando`
@@ -106,112 +109,113 @@ export const Button: React.FC<ButtonProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
-  base: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.lg,
-  },
-  fullWidth: {
-    width: '100%',
-  },
-  contentRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  leftIconWrapper: {
-    marginRight: spacing.sm,
-  },
-  rightIconWrapper: {
-    marginLeft: spacing.sm,
-  },
-  pressedTransform: {
-    transform: [{ scale: 0.99 }],
-  },
+const createStyles = (colors: AppColors) =>
+  StyleSheet.create({
+    base: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: radius.lg,
+    },
+    fullWidth: {
+      width: '100%',
+    },
+    contentRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    leftIconWrapper: {
+      marginRight: spacing.sm,
+    },
+    rightIconWrapper: {
+      marginLeft: spacing.sm,
+    },
+    pressedTransform: {
+      transform: [{ scale: 0.99 }],
+    },
 
-  // Sizes
-  sm: {
-    height: 36,
-    paddingHorizontal: spacing.md,
-    borderRadius: radius.md,
-  },
-  md: {
-    height: 48,
-    paddingHorizontal: spacing.lg,
-    borderRadius: radius.lg,
-  },
-  lg: {
-    height: 52,
-    paddingHorizontal: spacing.lg,
-    borderRadius: radius.xl,
-  },
+    // Sizes
+    sm: {
+      height: 36,
+      paddingHorizontal: spacing.md,
+      borderRadius: radius.md,
+    },
+    md: {
+      height: 48,
+      paddingHorizontal: spacing.lg,
+      borderRadius: radius.lg,
+    },
+    lg: {
+      height: 52,
+      paddingHorizontal: spacing.lg,
+      borderRadius: radius.xl,
+    },
 
-  // Variants
-  primary: {
-    backgroundColor: colors.primary,
-  },
-  primaryPressed: {
-    backgroundColor: '#4C3C7A',
-  },
-  secondary: {
-    backgroundColor: colors.secondary,
-  },
-  secondaryPressed: {
-    backgroundColor: '#D6654C',
-  },
-  tertiary: {
-    backgroundColor: colors.tertiary,
-  },
-  tertiaryPressed: {
-    backgroundColor: '#E5B955',
-  },
-  outline: {
-    backgroundColor: 'transparent',
-    borderWidth: 1.5,
-    borderColor: colors.border,
-  },
-  outlinePressed: {
-    backgroundColor: colors.canvas,
-    borderColor: colors.outlineVariant,
-  },
-  ghost: {
-    backgroundColor: 'transparent',
-  },
-  ghostPressed: {
-    backgroundColor: colors.surfaceContainerLow,
-  },
+    // Variants
+    primary: {
+      backgroundColor: colors.primary,
+    },
+    primaryPressed: {
+      backgroundColor: colors.primaryContainer,
+    },
+    secondary: {
+      backgroundColor: colors.secondary,
+    },
+    secondaryPressed: {
+      backgroundColor: colors.secondaryContainer,
+    },
+    tertiary: {
+      backgroundColor: colors.tertiary,
+    },
+    tertiaryPressed: {
+      backgroundColor: colors.tertiaryContainer,
+    },
+    outline: {
+      backgroundColor: 'transparent',
+      borderWidth: 1.5,
+      borderColor: colors.border,
+    },
+    outlinePressed: {
+      backgroundColor: colors.surfaceContainerLow,
+      borderColor: colors.outlineVariant,
+    },
+    ghost: {
+      backgroundColor: 'transparent',
+    },
+    ghostPressed: {
+      backgroundColor: colors.surfaceContainerLow,
+    },
 
-  // Disabled
-  disabled: {
-    backgroundColor: colors.surfaceContainerHigh,
-    borderColor: 'transparent',
-    opacity: 0.65,
-  },
+    // Disabled
+    disabled: {
+      backgroundColor: colors.surfaceContainerHigh,
+      borderColor: 'transparent',
+      opacity: 0.65,
+    },
 
-  // Text base
-  textBase: {
-    textAlign: 'center',
-  },
+    // Text base
+    textBase: {
+      textAlign: 'center',
+    },
 
-  // Text variant colors
-  primaryText: {
-    color: colors.onPrimary,
-  },
-  secondaryText: {
-    color: colors.onSecondary,
-  },
-  tertiaryText: {
-    color: colors.onTertiary,
-  },
-  outlineText: {
-    color: colors.textPrimary,
-  },
-  ghostText: {
-    color: colors.primary,
-  },
-  disabledText: {
-    color: colors.textSecondary,
-  },
-});
+    // Text variant colors
+    primaryText: {
+      color: colors.onPrimary,
+    },
+    secondaryText: {
+      color: colors.onSecondary,
+    },
+    tertiaryText: {
+      color: colors.onTertiary,
+    },
+    outlineText: {
+      color: colors.textPrimary,
+    },
+    ghostText: {
+      color: colors.primary,
+    },
+    disabledText: {
+      color: colors.textSecondary,
+    },
+  });

@@ -16,11 +16,13 @@ import {
   Input,
   Stepper,
 } from '../src/components/common';
-import { colors, radius, spacing, useTypography } from '../src/theme';
+import { AppColors, radius, spacing, useAppTheme, useThemeStyles, useTypography } from '../src/theme';
 
 export default function DesignSystemScreen() {
   const typography = useTypography();
   const router = useRouter();
+  const { colors, mode, colorScheme } = useAppTheme();
+  const styles = useThemeStyles(createStyles);
   const [inputText, setInputText] = useState('');
   const [selectedChip, setSelectedChip] = useState<'todos' | 'urgente' | 'bajo'>('todos');
   const [stepperValue, setStepperValue] = useState(2);
@@ -30,7 +32,7 @@ export default function DesignSystemScreen() {
     <SafeAreaView style={styles.safeArea}>
       <Header
         title="FoodAI Design System"
-        subtitle="Fase 1: Inicialización & Tokens"
+        subtitle={`Tema activo: ${mode} (${colorScheme})`}
         showBack
         onBack={() => router.back()}
         rightElement={
@@ -61,23 +63,23 @@ export default function DesignSystemScreen() {
 
         {/* Color Palette Tokens */}
         <View style={styles.section}>
-          <Text style={[styles.sectionTitle, typography.headlineMd]}>Paleta Cromática (Stitch)</Text>
+          <Text style={[styles.sectionTitle, typography.headlineMd]}>Paleta Cromática (Stitch - {colorScheme})</Text>
           <View style={styles.paletteRow}>
             <View style={[styles.colorBox, { backgroundColor: colors.primary }]}>
               <Text style={[styles.colorBoxText, typography.labelSm]}>Primary</Text>
-              <Text style={styles.colorHexText}>#5B4B8A</Text>
+              <Text style={styles.colorHexText}>{colors.primary}</Text>
             </View>
             <View style={[styles.colorBox, { backgroundColor: colors.secondary }]}>
               <Text style={[styles.colorBoxText, typography.labelSm]}>Coral</Text>
-              <Text style={styles.colorHexText}>#E9775E</Text>
+              <Text style={styles.colorHexText}>{colors.secondary}</Text>
             </View>
             <View style={[styles.colorBox, { backgroundColor: colors.tertiary }]}>
-              <Text style={[styles.colorBoxText, typography.labelSm, { color: colors.textPrimary }]}>Butter</Text>
-              <Text style={[styles.colorHexText, { color: colors.textPrimary }]}>#F3C969</Text>
+              <Text style={[styles.colorBoxText, typography.labelSm, { color: colors.onTertiaryContainer }]}>Butter</Text>
+              <Text style={[styles.colorHexText, { color: colors.onTertiaryContainer }]}>{colors.tertiary}</Text>
             </View>
             <View style={[styles.colorBox, { backgroundColor: colors.canvas, borderWidth: 1, borderColor: colors.border }]}>
-              <Text style={[styles.colorBoxText, typography.labelSm, { color: colors.textPrimary }]}>Ivory</Text>
-              <Text style={[styles.colorHexText, { color: colors.textSecondary }]}>#FAF7F2</Text>
+              <Text style={[styles.colorBoxText, typography.labelSm, { color: colors.textPrimary }]}>Canvas</Text>
+              <Text style={[styles.colorHexText, { color: colors.textSecondary }]}>{colors.canvas}</Text>
             </View>
           </View>
         </View>
@@ -185,95 +187,96 @@ export default function DesignSystemScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: colors.canvas,
-  },
-  scrollContent: {
-    padding: spacing.margin,
-    paddingBottom: spacing.xxl,
-  },
-  badgeWrapper: {
-    backgroundColor: colors.surfaceContainerHigh,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    borderRadius: radius.full,
-  },
-  badgeText: {
-    color: colors.primary,
-  },
-  brandCard: {
-    marginBottom: spacing.lg,
-  },
-  brandRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  logoCircle: {
-    width: 48,
-    height: 48,
-    borderRadius: radius.lg,
-    backgroundColor: colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: spacing.md,
-  },
-  brandTextCol: {
-    flex: 1,
-  },
-  brandMotto: {
-    color: colors.textSecondary,
-    fontStyle: 'italic',
-    marginTop: 2,
-  },
-  section: {
-    marginBottom: spacing.xl,
-  },
-  sectionTitle: {
-    color: colors.textPrimary,
-    marginBottom: spacing.md,
-  },
-  paletteRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: spacing.sm,
-  },
-  colorBox: {
-    flex: 1,
-    height: 64,
-    borderRadius: radius.md,
-    padding: spacing.xs,
-    justifyContent: 'flex-end',
-  },
-  colorBoxText: {
-    color: colors.onPrimary,
-    fontSize: 10,
-  },
-  colorHexText: {
-    fontSize: 9,
-    color: colors.onPrimary,
-    opacity: 0.85,
-  },
-  buttonStack: {
-    gap: spacing.sm,
-  },
-  feedbackText: {
-    color: colors.primary,
-    marginTop: spacing.xs,
-    textAlign: 'center',
-  },
-  chipsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-  },
-  controlCard: {
-    marginTop: spacing.sm,
-  },
-  controlRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-});
+const createStyles = (colors: AppColors) =>
+  StyleSheet.create({
+    safeArea: {
+      flex: 1,
+      backgroundColor: colors.canvas,
+    },
+    scrollContent: {
+      padding: spacing.margin,
+      paddingBottom: spacing.xxl,
+    },
+    badgeWrapper: {
+      backgroundColor: colors.surfaceContainerHigh,
+      paddingHorizontal: spacing.sm,
+      paddingVertical: spacing.xs,
+      borderRadius: radius.full,
+    },
+    badgeText: {
+      color: colors.primary,
+    },
+    brandCard: {
+      marginBottom: spacing.lg,
+    },
+    brandRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    logoCircle: {
+      width: 48,
+      height: 48,
+      borderRadius: radius.lg,
+      backgroundColor: colors.primary,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginRight: spacing.md,
+    },
+    brandTextCol: {
+      flex: 1,
+    },
+    brandMotto: {
+      color: colors.textSecondary,
+      fontStyle: 'italic',
+      marginTop: 2,
+    },
+    section: {
+      marginBottom: spacing.xl,
+    },
+    sectionTitle: {
+      color: colors.textPrimary,
+      marginBottom: spacing.md,
+    },
+    paletteRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      gap: spacing.sm,
+    },
+    colorBox: {
+      flex: 1,
+      height: 64,
+      borderRadius: radius.md,
+      padding: spacing.xs,
+      justifyContent: 'flex-end',
+    },
+    colorBoxText: {
+      color: colors.onPrimary,
+      fontSize: 10,
+    },
+    colorHexText: {
+      fontSize: 9,
+      color: colors.onPrimary,
+      opacity: 0.85,
+    },
+    buttonStack: {
+      gap: spacing.sm,
+    },
+    feedbackText: {
+      color: colors.primary,
+      marginTop: spacing.xs,
+      textAlign: 'center',
+    },
+    chipsRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: spacing.sm,
+    },
+    controlCard: {
+      marginTop: spacing.sm,
+    },
+    controlRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+  });

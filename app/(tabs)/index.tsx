@@ -197,7 +197,7 @@ export default function HomeScreen() {
             )}
             <View style={[styles.heroChip, styles.heroChipBudget]}>
               <Text style={[styles.heroChipBudgetText, typography.labelSm]}>
-                💰 Ahorro activo
+                💰 Control de presupuesto
               </Text>
             </View>
           </View>
@@ -774,16 +774,16 @@ const createStyles = (colors: AppColors) =>
     color: colors.onHero,
   },
   heroChipUrgent: {
-    backgroundColor: '#FD876D',
+    backgroundColor: colors.secondaryFixed,
   },
   heroChipUrgentText: {
-    color: '#73200E',
+    color: colors.onSecondaryFixed,
   },
   heroChipBudget: {
-    backgroundColor: '#FFDF9B',
+    backgroundColor: colors.tertiaryFixed,
   },
   heroChipBudgetText: {
-    color: '#251A00',
+    color: colors.onTertiaryFixed,
   },
   scannerCard: {
     backgroundColor: colors.surface,

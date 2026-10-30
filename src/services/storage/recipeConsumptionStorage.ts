@@ -111,6 +111,53 @@ export function isValidConsumedIngredientDeduction(d: unknown): boolean {
 }
 
 /**
+ * Valida la correspondencia estricta entre la clave del registro persistido y su recipeId.
+ *
+ * Casos compatibles legítimos:
+ * 1. Coincidencia directa exacta (insensible a mayúsculas y espacios en blanco).
+ * 2. Formato con sufijo de instancia/generación (ej: clave 'receta-1::gen_a' y recipeId 'receta-1', o viceversa).
+ * 3. instanceId explícito en el registro que coincida con la clave.
+ *
+ * Cualquier otra discrepancia que no pueda representar datos históricos válidos
+ * es rechazada para garantizar que la clave del ledger sea autoritativa y fidedigna.
+ */
+export function isKeyConsistentWithRecipeId(
+  recordKey: string,
+  record: Record<string, unknown>
+): boolean {
+  if (typeof record.recipeId !== 'string') return false;
+  const cleanKey = recordKey.trim().toLowerCase();
+  const cleanRecipeId = record.recipeId.trim().toLowerCase();
+
+  if (!cleanKey || !cleanRecipeId) return false;
+
+  // 1. Coincidencia directa exacta
+  if (cleanKey === cleanRecipeId) {
+    return true;
+  }
+
+  // 2. Soporte para sufijos de instancia / generación en la clave o en el recipeId
+  if (cleanKey.startsWith(`${cleanRecipeId}::`) || cleanRecipeId.startsWith(`${cleanKey}::`)) {
+    return true;
+  }
+
+  // 3. Soporte para instanceId explícito coincidente con la clave
+  if (typeof record.instanceId === 'string') {
+    const cleanInstanceId = record.instanceId.trim().toLowerCase();
+    if (
+      cleanKey === cleanInstanceId &&
+      (cleanRecipeId === cleanInstanceId ||
+        cleanInstanceId.startsWith(`${cleanRecipeId}::`) ||
+        cleanRecipeId.startsWith(`${cleanInstanceId}::`))
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
  * Valida individualmente un registro de consumo de receta.
  *
  * Requisitos estrictos de integridad:
@@ -123,8 +170,9 @@ export function isValidConsumedIngredientDeduction(d: unknown): boolean {
  *    tipos compatibles estrictos y valores numéricos finitos.
  * 5. Si `deductions` está presente, debe ser un arreglo y cada elemento debe cumplir el contrato
  *    de ConsumedIngredientDeduction sin valores NaN, Infinity o negativos.
+ * 6. Si se provee `recordKey`, se valida que sea consistente con `recipeId`.
  */
-export function isValidConsumedRecipeRecord(record: unknown): boolean {
+export function isValidConsumedRecipeRecord(record: unknown, recordKey?: string): boolean {
   if (!record || typeof record !== 'object' || Array.isArray(record)) {
     return false;
   }
@@ -137,6 +185,13 @@ export function isValidConsumedRecipeRecord(record: unknown): boolean {
   }
   if (typeof r.consumedAt !== 'string' || r.consumedAt.trim() === '') {
     return false;
+  }
+
+  // Validación de correspondencia de clave con recipeId
+  if (recordKey !== undefined) {
+    if (!isKeyConsistentWithRecipeId(recordKey, r)) {
+      return false;
+    }
   }
 
   // Validación de status (soporta registros históricos legados donde status es undefined)
@@ -255,13 +310,13 @@ export async function getConsumedRecipeRecords(
   // 5. Validación exhaustiva de cada registro individual persistido en el ledger
   const records = parsed.records as Record<string, unknown>;
   for (const [recordKey, record] of Object.entries(records)) {
-    if (!isValidConsumedRecipeRecord(record)) {
+    if (!isValidConsumedRecipeRecord(record, recordKey)) {
       console.error(
-        `[recipeConsumptionStorage] Registro inválido detectado bajo la clave "${recordKey}":`,
+        `[recipeConsumptionStorage] Registro inválido o inconsistente detectado bajo la clave "${recordKey}":`,
         record
       );
       throw new RecipeConsumptionLedgerError(
-        `El registro de consumo contiene un elemento inválido bajo la clave "${recordKey}".`
+        `El registro de consumo contiene un elemento inválido o inconsistente bajo la clave "${recordKey}".`
       );
     }
   }

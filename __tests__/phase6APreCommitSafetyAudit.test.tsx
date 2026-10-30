@@ -36,6 +36,7 @@ import {
   RecipeConsumptionLedgerError,
   isValidConsumedRecipeRecord,
   isValidConsumedIngredientDeduction,
+  isKeyConsistentWithRecipeId,
 } from '../src/services/storage/recipeConsumptionStorage';
 import {
   PantryProvider,
@@ -1237,5 +1238,294 @@ describe('FoodAI Fase 6A — Auditoría de Consistencia y Reconciliación Segura
     expect(res.success).toBe(false);
     expect(storage.saveCount).toBe(0); // Cero llamadas a saveIngredients
     expect(storage.data.find((i) => i.id === 'p-1')?.quantity).toBe(1000); // Intacto
+  });
+
+  it('20. Fallo ambiguo en saveIngredients (escribe con éxito pero rechaza después): preservación de WAL y prevención de doble deducción', async () => {
+    const userId = 'user-ambiguous-write-success';
+    const key = 'receta-ambiguous-write::gen_amb';
+    const storage = createMockPantryStorage(samplePantryIngredients);
+
+    // Simulamos que saveIngredients persiste físicamente el cambio en storage.data (1000g -> 700g),
+    // pero posteriormente la promesa es rechazada (ej. fallo en gancho post-escritura o timeout)
+    const originalSave = storage.saveIngredients.bind(storage);
+    storage.saveIngredients = async (items: Ingredient[]) => {
+      await originalSave(items); // La persistencia física ocurrió
+      throw new Error('Error en el controlador de almacenamiento post-escritura');
+    };
+
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <PantryProvider
+        storageAdapter={storage}
+        initialIngredients={samplePantryIngredients}
+        userId={userId}
+      >
+        {children}
+      </PantryProvider>
+    );
+
+    const { result } = await renderHook(() => usePantry(), { wrapper });
+
+    const recipe: ClientRecipe = {
+      id: 'receta-ambiguous-write',
+      instanceId: key,
+      name: 'Receta Escritura Ambígua',
+      description: '',
+      totalMinutes: 30,
+      servings: 2,
+      convenience: 80,
+      estimatedMissingCost: 0,
+      budgetRemaining: 10000,
+      withinBudget: true,
+      reason: '',
+      isDemoFixture: false,
+      steps: ['Cocinar'],
+      ingredients: [{ name: 'Arroz blanco', quantity: 300, unit: 'g' }],
+      availableIngredients: [],
+      missingIngredients: [],
+    };
+
+    // 1. La llamada inicial falla con el error de almacenamiento reportado
+    let res1: any;
+    await act(async () => {
+      res1 = await result.current.consumeRecipeIngredients(recipe);
+    });
+
+    expect(res1.success).toBe(false);
+    expect(res1.error).toContain('post-escritura');
+
+    // 2. El WAL no fue eliminado ciegamente; la reconciliación detectó que la despensa sí tiene stockAfter (700g)
+    // y confirmó automáticamente el ledger como 'completed'
+    const records = await getConsumedRecipeRecords(userId);
+    expect(records[key]?.status).toBe('completed');
+
+    // 3. La despensa física está en 700g
+    expect(storage.data.find((i) => i.id === 'p-1')?.quantity).toBe(700);
+
+    // 4. checkIfRecipeDeducted reporta bloqueada la receta
+    expect(await result.current.checkIfRecipeDeducted(recipe)).toBe(true);
+
+    // 5. El usuario reintenta consumir la misma receta tras el error:
+    // NUNCA debe descontar por segunda vez (700g -> 400g). Debe bloquearse inmediatamente.
+    let res2: any;
+    await act(async () => {
+      res2 = await result.current.consumeRecipeIngredients(recipe);
+    });
+
+    expect(res2.alreadyDeducted).toBe(true);
+    expect(res2.success).toBe(false);
+    expect(storage.data.find((i) => i.id === 'p-1')?.quantity).toBe(700); // Sigue estrictamente en 700g
+  });
+
+  it('21. Fallo en saveIngredients antes de escribir: la intención pendiente se descarta y el reintento procede limpiamente', async () => {
+    const userId = 'user-write-fail-before-persist';
+    const key = 'receta-fail-before::gen_fb';
+    const storage = createMockPantryStorage(samplePantryIngredients);
+
+    // Simulamos fallo antes de mutar la despensa en la primera invocación
+    let attempts = 0;
+    const originalSave = storage.saveIngredients.bind(storage);
+    storage.saveIngredients = async (items: Ingredient[]) => {
+      attempts++;
+      if (attempts === 1) {
+        throw new Error('Fallo de E/S antes de persistir');
+      }
+      return originalSave(items);
+    };
+
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <PantryProvider
+        storageAdapter={storage}
+        initialIngredients={samplePantryIngredients}
+        userId={userId}
+      >
+        {children}
+      </PantryProvider>
+    );
+
+    const { result } = await renderHook(() => usePantry(), { wrapper });
+
+    const recipe: ClientRecipe = {
+      id: 'receta-fail-before',
+      instanceId: key,
+      name: 'Receta Falla Antes de Guardar',
+      description: '',
+      totalMinutes: 25,
+      servings: 2,
+      convenience: 80,
+      estimatedMissingCost: 0,
+      budgetRemaining: 10000,
+      withinBudget: true,
+      reason: '',
+      isDemoFixture: false,
+      steps: ['Cocinar'],
+      ingredients: [{ name: 'Arroz blanco', quantity: 300, unit: 'g' }],
+      availableIngredients: [],
+      missingIngredients: [],
+    };
+
+    // 1. Primer intento falla
+    let res1: any;
+    await act(async () => {
+      res1 = await result.current.consumeRecipeIngredients(recipe);
+    });
+
+    expect(res1.success).toBe(false);
+
+    // 2. Como la despensa no cambió (permanece en 1000g = stockBefore), la intención se descarta de forma segura
+    const records1 = await getConsumedRecipeRecords(userId);
+    expect(records1[key]).toBeUndefined();
+    expect(storage.data.find((i) => i.id === 'p-1')?.quantity).toBe(1000);
+
+    // 3. El reintento posterior ahora procede y completa la deducción legítimamente
+    let res2: any;
+    await act(async () => {
+      res2 = await result.current.consumeRecipeIngredients(recipe);
+    });
+
+    expect(res2.success).toBe(true);
+    expect(res2.alreadyDeducted).toBe(false);
+    expect(storage.data.find((i) => i.id === 'p-1')?.quantity).toBe(700);
+
+    const records2 = await getConsumedRecipeRecords(userId);
+    expect(records2[key]?.status).toBe('completed');
+  });
+
+  it('22. Inconsistencia entre clave del ledger y recipeId (Mismatched Keys): rechazo y fail-closed', async () => {
+    // 1. Verificador unitario
+    expect(isKeyConsistentWithRecipeId('receta-arroz', { recipeId: 'receta-frijoles' })).toBe(false);
+    expect(isKeyConsistentWithRecipeId('rec-1', { recipeId: 'rec-2' })).toBe(false);
+    expect(isKeyConsistentWithRecipeId('', { recipeId: 'rec-1' })).toBe(false);
+
+    // isValidConsumedRecipeRecord con recordKey inconsistente
+    expect(
+      isValidConsumedRecipeRecord(
+        { recipeId: 'receta-frijoles', consumedAt: '2026-01-01T00:00:00Z', status: 'completed' },
+        'receta-arroz'
+      )
+    ).toBe(false);
+
+    // 2. Comportamiento en almacenamiento persistido
+    const userIdMismatch = 'user-key-mismatch';
+    const key = `@foodai:${userIdMismatch}:consumed_recipes_v1`;
+    const mismatchPayload = {
+      version: 1,
+      updatedAt: '2026-01-01T00:00:00Z',
+      records: {
+        'clave-arroz': {
+          recipeId: 'receta-frijoles', // Discrepancia espuria
+          consumedAt: '2026-01-01T00:00:00Z',
+          status: 'completed',
+        },
+      },
+    };
+
+    await AsyncStorage.setItem(key, JSON.stringify(mismatchPayload));
+
+    // Lectura directa rechaza con RecipeConsumptionLedgerError
+    await expect(getConsumedRecipeRecords(userIdMismatch)).rejects.toThrow(RecipeConsumptionLedgerError);
+
+    // isRecipeDeducted aplica fail-closed tanto para la clave como para el recipeId
+    expect(await isRecipeDeducted('clave-arroz', userIdMismatch)).toBe(true);
+    expect(await isRecipeDeducted('receta-frijoles', userIdMismatch)).toBe(true);
+
+    // Intento de escribir en el ledger no sobreescribe los datos
+    await expect(recordDeductionIntent('nueva-receta', userIdMismatch)).rejects.toThrow(
+      RecipeConsumptionLedgerError
+    );
+
+    // Integración con despensa: consumeRecipeIngredients aborta sin mutar
+    const storage = createMockPantryStorage(samplePantryIngredients);
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <PantryProvider
+        storageAdapter={storage}
+        initialIngredients={samplePantryIngredients}
+        userId={userIdMismatch}
+      >
+        {children}
+      </PantryProvider>
+    );
+
+    const { result } = await renderHook(() => usePantry(), { wrapper });
+
+    const testRecipe: ClientRecipe = {
+      id: 'clave-arroz',
+      name: 'Arroz',
+      description: '',
+      totalMinutes: 20,
+      servings: 2,
+      convenience: 80,
+      estimatedMissingCost: 0,
+      budgetRemaining: 10000,
+      withinBudget: true,
+      reason: '',
+      isDemoFixture: false,
+      steps: ['Cocinar'],
+      ingredients: [{ name: 'Arroz blanco', quantity: 200, unit: 'g' }],
+      availableIngredients: [],
+      missingIngredients: [],
+    };
+
+    let callRes: any;
+    await act(async () => {
+      callRes = await result.current.consumeRecipeIngredients(testRecipe);
+    });
+
+    expect(callRes.success).toBe(false);
+    expect(storage.saveCount).toBe(0); // Cero llamadas a saveIngredients
+    expect(storage.data.find((i) => i.id === 'p-1')?.quantity).toBe(1000); // Intacto
+  });
+
+  it('23. Coherencia y compatibilidad de formatos históricos entre clave y recipeId', async () => {
+    // 1. Coincidencia exacta
+    expect(isKeyConsistentWithRecipeId('receta-1', { recipeId: 'receta-1' })).toBe(true);
+
+    // 2. Insensibilidad a mayúsculas y espacios
+    expect(isKeyConsistentWithRecipeId('  Receta-1  ', { recipeId: 'receta-1' })).toBe(true);
+    expect(isKeyConsistentWithRecipeId('receta-1', { recipeId: 'RECETA-1' })).toBe(true);
+
+    // 3. Clave con sufijo de generación / instanceId y recipeId base
+    expect(isKeyConsistentWithRecipeId('receta-1::gen_123', { recipeId: 'receta-1' })).toBe(true);
+
+    // 4. RecipeId con sufijo de generación y clave base
+    expect(isKeyConsistentWithRecipeId('receta-1', { recipeId: 'receta-1::gen_123' })).toBe(true);
+
+    // 5. instanceId explícito en el registro coincidente con la clave
+    expect(
+      isKeyConsistentWithRecipeId('receta-1::gen_custom', {
+        recipeId: 'receta-1',
+        instanceId: 'receta-1::gen_custom',
+      })
+    ).toBe(true);
+
+    // 6. Prueba integrada de almacenamiento cargando registros históricos compatibles
+    const userIdValidHistory = 'user-valid-history';
+    const key = `@foodai:${userIdValidHistory}:consumed_recipes_v1`;
+    const validHistoryPayload = {
+      version: 1,
+      updatedAt: '2026-01-01T00:00:00Z',
+      records: {
+        'receta-1': {
+          recipeId: 'receta-1',
+          consumedAt: '2026-01-01T00:00:00Z',
+        },
+        'receta-2::gen_a': {
+          recipeId: 'receta-2',
+          consumedAt: '2026-01-01T00:00:00Z',
+          instanceId: 'receta-2::gen_a',
+        },
+        'receta-3': {
+          recipeId: 'RECETA-3',
+          consumedAt: '2026-01-01T00:00:00Z',
+        },
+      },
+    };
+
+    await AsyncStorage.setItem(key, JSON.stringify(validHistoryPayload));
+
+    const loadedRecords = await getConsumedRecipeRecords(userIdValidHistory);
+    expect(Object.keys(loadedRecords)).toHaveLength(3);
+    expect(await isRecipeDeducted('receta-1', userIdValidHistory)).toBe(true);
+    expect(await isRecipeDeducted('receta-2::gen_a', userIdValidHistory)).toBe(true);
+    expect(await isRecipeDeducted('receta-3', userIdValidHistory)).toBe(true);
   });
 });

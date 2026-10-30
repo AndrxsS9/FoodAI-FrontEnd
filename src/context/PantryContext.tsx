@@ -602,8 +602,43 @@ export function PantryProvider({
           try {
             await activeStorage.saveIngredients(updatedPantry);
           } catch (pantryError) {
-            // Si falla el guardado de la despensa, cancelamos la intención previa
-            await removeDeductionIntent(targetKey, effectiveUserId).catch(() => {});
+            console.warn(
+              '[PantryContext] Fallo o rechazo en activeStorage.saveIngredients; evaluando consistencia mediante reconciliación:',
+              pantryError
+            );
+            try {
+              // Leer el estado real de la despensa en almacenamiento tras el fallo
+              const freshPantry = await activeStorage.getIngredients();
+              const reconciliation = await reconcileDeductionIntent(
+                targetKey,
+                freshPantry,
+                effectiveUserId
+              );
+
+              // Si los ítems coinciden con stockAfter, la deducción sí se persistió físicamente
+              // antes del rechazo. reconcileDeductionIntent ya confirmó el ledger ('completed').
+              // Sincronizamos el estado reactivo en memoria con el inventario real.
+              if (reconciliation.status === 'completed') {
+                if (opVersion >= lastAppliedVersionRef.current) {
+                  lastAppliedVersionRef.current = opVersion;
+                  setIngredients(freshPantry);
+                }
+              }
+              // Si coincidió con stockBefore, reconcileDeductionIntent ya descartó la intención de forma segura.
+              // Si el estado es ambiguo, reconcileDeductionIntent ya marcó el registro como 'requires_review'.
+            } catch (reconcileErr) {
+              console.error(
+                '[PantryContext] Error al intentar reconciliar tras fallo de guardado en despensa:',
+                reconcileErr
+              );
+              // Si no fue posible reconciliar, se PRESERVA la intención y se marca para revisión manual
+              // para evitar que un reintento aplique una doble deducción accidental.
+              await markRequiresReview(
+                targetKey,
+                effectiveUserId,
+                'Fallo ambiguo al persistir en despensa y no fue posible reconciliar automáticamente.'
+              ).catch(() => {});
+            }
             throw pantryError;
           }
 

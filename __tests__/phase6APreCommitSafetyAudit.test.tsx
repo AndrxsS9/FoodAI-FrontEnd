@@ -34,6 +34,8 @@ import {
   getConsumedRecipeRecords,
   ConsumedIngredientDeduction,
   RecipeConsumptionLedgerError,
+  isValidConsumedRecipeRecord,
+  isValidConsumedIngredientDeduction,
 } from '../src/services/storage/recipeConsumptionStorage';
 import {
   PantryProvider,
@@ -824,9 +826,10 @@ describe('FoodAI Fase 6A — Auditoría de Consistencia y Reconciliación Segura
     await expect(getConsumedRecipeRecords(userIdArrayRecords)).rejects.toThrow(RecipeConsumptionLedgerError);
   });
 
-  it('13. Distinción de almacenamiento genuinamente ausente (usuario nuevo o clave vacía)', async () => {
+  it('13. Distinción estricta de almacenamiento genuinamente ausente (AsyncStorage retorna null)', async () => {
     const freshUserId = 'user-brand-new-999';
-    // Clave nunca escrita en AsyncStorage
+    // Clave nunca escrita en AsyncStorage (getItem retorna explícitamente null)
+    expect(await AsyncStorage.getItem(`@foodai:${freshUserId}:consumed_recipes_v1`)).toBeNull();
     const records = await getConsumedRecipeRecords(freshUserId);
     expect(records).toEqual({});
     expect(await isRecipeDeducted('receta-nueva', freshUserId)).toBe(false);
@@ -935,5 +938,304 @@ describe('FoodAI Fase 6A — Auditoría de Consistencia y Reconciliación Segura
     } finally {
       (AsyncStorage.setItem as jest.Mock).mockImplementation(baseSetItem);
     }
+  });
+
+  it('15. Validación estricta de ausencia: cadenas vacías, espacios en blanco y respuestas undefined lanzan RecipeConsumptionLedgerError', async () => {
+    // Caso 1: Cadena vacía ""
+    const emptyUserId = 'user-strict-empty';
+    const emptyKey = `@foodai:${emptyUserId}:consumed_recipes_v1`;
+    await AsyncStorage.setItem(emptyKey, '');
+
+    // Nota: El mock por defecto de Jest en async-storage utiliza (storage[k] || null), convirtiendo '' en null.
+    // Simulamos fielmente el comportamiento de AsyncStorage nativo donde '' se retorna tal cual.
+    const baseGetItem = (AsyncStorage.getItem as jest.Mock).getMockImplementation()!;
+    (AsyncStorage.getItem as jest.Mock).mockImplementation(async (key: string) => {
+      if (typeof key === 'string' && key.includes(emptyUserId)) {
+        return '';
+      }
+      return baseGetItem(key);
+    });
+
+    try {
+      await expect(getConsumedRecipeRecords(emptyUserId)).rejects.toThrow(RecipeConsumptionLedgerError);
+      expect(await isRecipeDeducted('receta-1', emptyUserId)).toBe(true); // Fail-closed
+      await expect(recordDeductionIntent('receta-1', emptyUserId)).rejects.toThrow(RecipeConsumptionLedgerError);
+    } finally {
+      (AsyncStorage.getItem as jest.Mock).mockImplementation(baseGetItem);
+    }
+
+    // Caso 2: Cadena de solo espacios en blanco "   \t \n"
+    const whitespaceUserId = 'user-strict-whitespace';
+    const wsKey = `@foodai:${whitespaceUserId}:consumed_recipes_v1`;
+    await AsyncStorage.setItem(wsKey, '   \n \t  ');
+    await expect(getConsumedRecipeRecords(whitespaceUserId)).rejects.toThrow(RecipeConsumptionLedgerError);
+    expect(await isRecipeDeducted('receta-1', whitespaceUserId)).toBe(true); // Fail-closed
+    await expect(recordDeductionIntent('receta-1', whitespaceUserId)).rejects.toThrow(RecipeConsumptionLedgerError);
+    expect(await AsyncStorage.getItem(wsKey)).toBe('   \n \t  '); // No sobreescrito
+
+    // Caso 3: Respuesta undefined inesperada del almacenamiento
+    const undefinedUserId = 'user-strict-undefined';
+    (AsyncStorage.getItem as jest.Mock).mockImplementation(async (key: string) => {
+      if (typeof key === 'string' && key.includes(undefinedUserId)) {
+        return undefined as any;
+      }
+      return baseGetItem(key);
+    });
+
+    try {
+      await expect(getConsumedRecipeRecords(undefinedUserId)).rejects.toThrow(RecipeConsumptionLedgerError);
+      expect(await isRecipeDeducted('receta-1', undefinedUserId)).toBe(true); // Fail-closed
+      await expect(recordDeductionIntent('receta-1', undefinedUserId)).rejects.toThrow(RecipeConsumptionLedgerError);
+    } finally {
+      (AsyncStorage.getItem as jest.Mock).mockImplementation(baseGetItem);
+    }
+  });
+
+  it('16. Validación de registros individuales: rechazo de estados inválidos, nulos o no soportados', async () => {
+    // Validador unitario de registros
+    expect(isValidConsumedRecipeRecord(null)).toBe(false);
+    expect(isValidConsumedRecipeRecord([])).toBe(false);
+    expect(isValidConsumedRecipeRecord('string-primitivo')).toBe(false);
+    expect(isValidConsumedRecipeRecord(12345)).toBe(false);
+
+    // Status no soportado
+    expect(
+      isValidConsumedRecipeRecord({
+        recipeId: 'rec-1',
+        consumedAt: '2026-01-01T00:00:00Z',
+        status: 'in_progress', // no soportado
+      })
+    ).toBe(false);
+
+    // Status nulo
+    expect(
+      isValidConsumedRecipeRecord({
+        recipeId: 'rec-1',
+        consumedAt: '2026-01-01T00:00:00Z',
+        status: null,
+      })
+    ).toBe(false);
+
+    // Status numérico
+    expect(
+      isValidConsumedRecipeRecord({
+        recipeId: 'rec-1',
+        consumedAt: '2026-01-01T00:00:00Z',
+        status: 1,
+      })
+    ).toBe(false);
+
+    // Estados soportados válidos
+    expect(
+      isValidConsumedRecipeRecord({
+        recipeId: 'rec-1',
+        consumedAt: '2026-01-01T00:00:00Z',
+        status: 'pending',
+      })
+    ).toBe(true);
+
+    expect(
+      isValidConsumedRecipeRecord({
+        recipeId: 'rec-1',
+        consumedAt: '2026-01-01T00:00:00Z',
+        status: 'completed',
+      })
+    ).toBe(true);
+
+    expect(
+      isValidConsumedRecipeRecord({
+        recipeId: 'rec-1',
+        consumedAt: '2026-01-01T00:00:00Z',
+        status: 'requires_review',
+      })
+    ).toBe(true);
+
+    // Prueba integrada de almacenamiento con estado inválido
+    const badStatusUser = 'user-bad-status';
+    await AsyncStorage.setItem(
+      `@foodai:${badStatusUser}:consumed_recipes_v1`,
+      JSON.stringify({
+        version: 1,
+        records: {
+          'rec-1': {
+            recipeId: 'rec-1',
+            consumedAt: '2026-01-01T00:00:00Z',
+            status: 'unknown_and_invalid',
+          },
+        },
+      })
+    );
+
+    await expect(getConsumedRecipeRecords(badStatusUser)).rejects.toThrow(RecipeConsumptionLedgerError);
+    expect(await isRecipeDeducted('rec-1', badStatusUser)).toBe(true); // Fail-closed
+  });
+
+  it('17. Validación de registros individuales: rechazo de registros nulos, arreglos o con campos obligatorios faltantes', async () => {
+    // Falta recipeId
+    expect(isValidConsumedRecipeRecord({ consumedAt: '2026-01-01T00:00:00Z' })).toBe(false);
+    expect(isValidConsumedRecipeRecord({ recipeId: '', consumedAt: '2026-01-01T00:00:00Z' })).toBe(false);
+    expect(isValidConsumedRecipeRecord({ recipeId: '   ', consumedAt: '2026-01-01T00:00:00Z' })).toBe(false);
+
+    // Falta consumedAt
+    expect(isValidConsumedRecipeRecord({ recipeId: 'rec-1' })).toBe(false);
+    expect(isValidConsumedRecipeRecord({ recipeId: 'rec-1', consumedAt: '' })).toBe(false);
+
+    // mealPlanDay no finito
+    expect(isValidConsumedRecipeRecord({ recipeId: 'rec-1', consumedAt: '2026-01-01', mealPlanDay: NaN })).toBe(false);
+    expect(isValidConsumedRecipeRecord({ recipeId: 'rec-1', consumedAt: '2026-01-01', mealPlanDay: Infinity })).toBe(false);
+    expect(isValidConsumedRecipeRecord({ recipeId: 'rec-1', consumedAt: '2026-01-01', mealPlanDay: '1' as any })).toBe(false);
+
+    // Tipos inválidos en campos escalares opcionales
+    expect(isValidConsumedRecipeRecord({ recipeId: 'rec-1', consumedAt: '2026-01-01', recipeName: 123 as any })).toBe(false);
+    expect(isValidConsumedRecipeRecord({ recipeId: 'rec-1', consumedAt: '2026-01-01', instanceId: {} as any })).toBe(false);
+    expect(isValidConsumedRecipeRecord({ recipeId: 'rec-1', consumedAt: '2026-01-01', reviewReason: [] as any })).toBe(false);
+
+    // Prueba en ledger persistido con registro null interno
+    const nullRecordUser = 'user-null-inner-record';
+    await AsyncStorage.setItem(
+      `@foodai:${nullRecordUser}:consumed_recipes_v1`,
+      JSON.stringify({
+        version: 1,
+        records: {
+          'rec-valid': { recipeId: 'rec-valid', consumedAt: '2026-01-01T00:00:00Z', status: 'completed' },
+          'rec-null': null,
+        },
+      })
+    );
+
+    // Fallo cerrado total para todo el ledger (no carga parcial)
+    await expect(getConsumedRecipeRecords(nullRecordUser)).rejects.toThrow(RecipeConsumptionLedgerError);
+  });
+
+  it('18. Validación de desgloses de deducción: rechazo de tipos inválidos, cantidades negativas o valores no finitos', async () => {
+    // Validador unitario de deducciones
+    expect(isValidConsumedIngredientDeduction(null)).toBe(false);
+    expect(isValidConsumedIngredientDeduction([])).toBe(false);
+    expect(isValidConsumedIngredientDeduction('texto')).toBe(false);
+
+    const validDeduction = {
+      ingredientId: 'p-1',
+      ingredientName: 'Arroz',
+      deductedQuantity: 200,
+      unit: 'g',
+      stockBefore: 500,
+      stockAfter: 300,
+    };
+    expect(isValidConsumedIngredientDeduction(validDeduction)).toBe(true);
+
+    // stockAfter = 0 es completamente válido (consumo total)
+    expect(isValidConsumedIngredientDeduction({ ...validDeduction, stockAfter: 0 })).toBe(true);
+
+    // deductedQuantity no finita o negativa
+    expect(isValidConsumedIngredientDeduction({ ...validDeduction, deductedQuantity: NaN })).toBe(false);
+    expect(isValidConsumedIngredientDeduction({ ...validDeduction, deductedQuantity: Infinity })).toBe(false);
+    expect(isValidConsumedIngredientDeduction({ ...validDeduction, deductedQuantity: -10 })).toBe(false);
+    expect(isValidConsumedIngredientDeduction({ ...validDeduction, deductedQuantity: '200' as any })).toBe(false);
+
+    // stockBefore o stockAfter negativos o no finitos
+    expect(isValidConsumedIngredientDeduction({ ...validDeduction, stockBefore: -1 })).toBe(false);
+    expect(isValidConsumedIngredientDeduction({ ...validDeduction, stockAfter: -5 })).toBe(false);
+    expect(isValidConsumedIngredientDeduction({ ...validDeduction, stockBefore: NaN })).toBe(false);
+    expect(isValidConsumedIngredientDeduction({ ...validDeduction, stockAfter: Infinity })).toBe(false);
+
+    // Cadenas vacías en identificadores o unidades
+    expect(isValidConsumedIngredientDeduction({ ...validDeduction, ingredientId: '' })).toBe(false);
+    expect(isValidConsumedIngredientDeduction({ ...validDeduction, ingredientName: '   ' })).toBe(false);
+    expect(isValidConsumedIngredientDeduction({ ...validDeduction, unit: '' })).toBe(false);
+
+    // deductions no es un arreglo en el registro
+    expect(
+      isValidConsumedRecipeRecord({
+        recipeId: 'rec-1',
+        consumedAt: '2026-01-01',
+        deductions: 'not-an-array' as any,
+      })
+    ).toBe(false);
+
+    // deductions contiene un elemento malformado
+    expect(
+      isValidConsumedRecipeRecord({
+        recipeId: 'rec-1',
+        consumedAt: '2026-01-01',
+        deductions: [{ ...validDeduction, deductedQuantity: NaN }],
+      })
+    ).toBe(false);
+  });
+
+  it('19. Retrocompatibilidad con registros históricos legados sin status y protección integral de despensa', async () => {
+    const legacyUserId = 'user-legacy-compatibility';
+    const legacyKey = `@foodai:${legacyUserId}:consumed_recipes_v1`;
+
+    // Registro legado histórico: contiene recipeId y consumedAt pero NO tiene status ni deductions
+    const legacyPayload = {
+      version: 1,
+      updatedAt: '2026-01-01T00:00:00Z',
+      records: {
+        'sancocho-pollo': {
+          recipeId: 'sancocho-pollo',
+          consumedAt: '2026-01-01T12:00:00Z',
+          recipeName: 'Sancocho de Pollo Tradicional',
+        },
+      },
+    };
+
+    await AsyncStorage.setItem(legacyKey, JSON.stringify(legacyPayload));
+
+    // 1. getConsumedRecipeRecords lee exitosamente los registros históricos
+    const records = await getConsumedRecipeRecords(legacyUserId);
+    expect(records['sancocho-pollo']).toBeDefined();
+    expect(records['sancocho-pollo'].status).toBeUndefined();
+
+    // 2. isRecipeDeducted reconoce la receta legada como ya deducida
+    expect(await isRecipeDeducted('sancocho-pollo', legacyUserId)).toBe(true);
+
+    // 3. Una receta nueva no consumida NO es bloqueada
+    expect(await isRecipeDeducted('arepa-huevo', legacyUserId)).toBe(false);
+
+    // 4. Integración con PantryProvider y protección contra mutaciones ante fallos
+    const storage = createMockPantryStorage(samplePantryIngredients);
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <PantryProvider
+        storageAdapter={storage}
+        initialIngredients={samplePantryIngredients}
+        userId={legacyUserId}
+      >
+        {children}
+      </PantryProvider>
+    );
+
+    const { result } = await renderHook(() => usePantry(), { wrapper });
+
+    const legacyRecipe: ClientRecipe = {
+      id: 'sancocho-pollo',
+      name: 'Sancocho de Pollo Tradicional',
+      description: '',
+      totalMinutes: 45,
+      servings: 4,
+      convenience: 85,
+      estimatedMissingCost: 0,
+      budgetRemaining: 15000,
+      withinBudget: true,
+      reason: '',
+      isDemoFixture: false,
+      steps: ['Cocinar'],
+      ingredients: [{ name: 'Arroz blanco', quantity: 200, unit: 'g' }],
+      availableIngredients: [],
+      missingIngredients: [],
+    };
+
+    // checkIfRecipeDeducted bloquea la receta histórica
+    expect(await result.current.checkIfRecipeDeducted(legacyRecipe)).toBe(true);
+
+    // Intento de consumir receta legada reporta alreadyDeducted y no muta la despensa
+    let res: any;
+    await act(async () => {
+      res = await result.current.consumeRecipeIngredients(legacyRecipe);
+    });
+
+    expect(res.alreadyDeducted).toBe(true);
+    expect(res.success).toBe(false);
+    expect(storage.saveCount).toBe(0); // Cero llamadas a saveIngredients
+    expect(storage.data.find((i) => i.id === 'p-1')?.quantity).toBe(1000); // Intacto
   });
 });

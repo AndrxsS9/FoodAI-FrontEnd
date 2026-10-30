@@ -60,6 +60,132 @@ export class RecipeConsumptionLedgerError extends Error {
   }
 }
 
+const SUPPORTED_CONSUMPTION_STATUSES: ReadonlySet<string> = new Set([
+  'pending',
+  'completed',
+  'requires_review',
+]);
+
+/**
+ * Valida individualmente un desglose de deducción de ingrediente.
+ * Rechaza tipos erróneos, strings vacíos y valores numéricos no finitos (NaN, Infinity o negativos).
+ */
+export function isValidConsumedIngredientDeduction(d: unknown): boolean {
+  if (!d || typeof d !== 'object' || Array.isArray(d)) {
+    return false;
+  }
+  const item = d as Record<string, unknown>;
+
+  if (typeof item.ingredientId !== 'string' || item.ingredientId.trim() === '') {
+    return false;
+  }
+  if (typeof item.ingredientName !== 'string' || item.ingredientName.trim() === '') {
+    return false;
+  }
+  if (
+    typeof item.deductedQuantity !== 'number' ||
+    !Number.isFinite(item.deductedQuantity) ||
+    item.deductedQuantity < 0
+  ) {
+    return false;
+  }
+  if (typeof item.unit !== 'string' || item.unit.trim() === '') {
+    return false;
+  }
+  if (
+    typeof item.stockBefore !== 'number' ||
+    !Number.isFinite(item.stockBefore) ||
+    item.stockBefore < 0
+  ) {
+    return false;
+  }
+  if (
+    typeof item.stockAfter !== 'number' ||
+    !Number.isFinite(item.stockAfter) ||
+    item.stockAfter < 0
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * Valida individualmente un registro de consumo de receta.
+ *
+ * Requisitos estrictos de integridad:
+ * 1. Campos obligatorios: `recipeId` (string no vacío) y `consumedAt` (string no vacío).
+ * 2. Retrocompatibilidad histórica: si `status` es undefined, se acepta como registro legado
+ *    (que el sistema interpreta como previamente deducido).
+ * 3. Si `status` está presente, DEBE ser exactamente uno de los estados soportados:
+ *    'pending' | 'completed' | 'requires_review'. Cualquier otro valor (null, desconocido, etc.) se rechaza.
+ * 4. Campos opcionales escalares (`mealPlanDay`, `recipeName`, `instanceId`, `reviewReason`) deben tener
+ *    tipos compatibles estrictos y valores numéricos finitos.
+ * 5. Si `deductions` está presente, debe ser un arreglo y cada elemento debe cumplir el contrato
+ *    de ConsumedIngredientDeduction sin valores NaN, Infinity o negativos.
+ */
+export function isValidConsumedRecipeRecord(record: unknown): boolean {
+  if (!record || typeof record !== 'object' || Array.isArray(record)) {
+    return false;
+  }
+
+  const r = record as Record<string, unknown>;
+
+  // Campos requeridos
+  if (typeof r.recipeId !== 'string' || r.recipeId.trim() === '') {
+    return false;
+  }
+  if (typeof r.consumedAt !== 'string' || r.consumedAt.trim() === '') {
+    return false;
+  }
+
+  // Validación de status (soporta registros históricos legados donde status es undefined)
+  if (r.status !== undefined) {
+    if (typeof r.status !== 'string' || !SUPPORTED_CONSUMPTION_STATUSES.has(r.status)) {
+      return false;
+    }
+  }
+
+  // Validación de campos escalares opcionales
+  if (r.mealPlanDay !== undefined) {
+    if (typeof r.mealPlanDay !== 'number' || !Number.isFinite(r.mealPlanDay)) {
+      return false;
+    }
+  }
+
+  if (r.recipeName !== undefined) {
+    if (typeof r.recipeName !== 'string') {
+      return false;
+    }
+  }
+
+  if (r.instanceId !== undefined) {
+    if (typeof r.instanceId !== 'string') {
+      return false;
+    }
+  }
+
+  if (r.reviewReason !== undefined) {
+    if (typeof r.reviewReason !== 'string') {
+      return false;
+    }
+  }
+
+  // Validación de desglose de deducciones opcional
+  if (r.deductions !== undefined) {
+    if (!Array.isArray(r.deductions)) {
+      return false;
+    }
+    for (const d of r.deductions) {
+      if (!isValidConsumedIngredientDeduction(d)) {
+        return false;
+      }
+    }
+  }
+
+  return true;
+}
+
 export async function getConsumedRecipeRecords(
   userId?: string | null
 ): Promise<Record<string, ConsumedRecipeRecord>> {
@@ -75,9 +201,30 @@ export async function getConsumedRecipeRecords(
     );
   }
 
-  // Almacenamiento genuinamente ausente (clave nunca creada o vacía)
-  if (raw === null || raw === undefined || raw.trim() === '') {
+  // 1. ÚNICAMENTE cuando AsyncStorage retorna explícitamente null se considera almacenamiento legítimamente ausente (primer uso)
+  if (raw === null) {
     return {};
+  }
+
+  // 2. Respuesta no definida inesperada -> fallo de almacenamiento
+  if (raw === undefined) {
+    throw new RecipeConsumptionLedgerError(
+      'Respuesta inesperada no definida del almacenamiento para el registro de consumo.'
+    );
+  }
+
+  // 3. Tipos no string -> estado inválido
+  if (typeof raw !== 'string') {
+    throw new RecipeConsumptionLedgerError(
+      'El contenido del registro de consumo en almacenamiento tiene un tipo inválido.'
+    );
+  }
+
+  // 4. Cadena vacía o de solo espacios en blanco -> datos corruptos
+  if (raw.trim() === '') {
+    throw new RecipeConsumptionLedgerError(
+      'El registro de recetas consumidas contiene una cadena vacía o en blanco corrupta.'
+    );
   }
 
   let parsed: any;
@@ -99,13 +246,27 @@ export async function getConsumedRecipeRecords(
     parsed.records === null ||
     Array.isArray(parsed.records)
   ) {
-    console.error('[recipeConsumptionStorage] Estructura de registro de consumo inválida en almacenamiento:', parsed);
+    console.error('[recipeConsumptionStorage] Estructura de envoltorio de consumo inválida en almacenamiento:', parsed);
     throw new RecipeConsumptionLedgerError(
       'La estructura del registro de recetas consumidas es inválida o incompatible.'
     );
   }
 
-  return parsed.records;
+  // 5. Validación exhaustiva de cada registro individual persistido en el ledger
+  const records = parsed.records as Record<string, unknown>;
+  for (const [recordKey, record] of Object.entries(records)) {
+    if (!isValidConsumedRecipeRecord(record)) {
+      console.error(
+        `[recipeConsumptionStorage] Registro inválido detectado bajo la clave "${recordKey}":`,
+        record
+      );
+      throw new RecipeConsumptionLedgerError(
+        `El registro de consumo contiene un elemento inválido bajo la clave "${recordKey}".`
+      );
+    }
+  }
+
+  return records as Record<string, ConsumedRecipeRecord>;
 }
 
 /**

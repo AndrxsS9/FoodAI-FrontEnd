@@ -203,11 +203,11 @@ export default function RecipeDetailScreen() {
             testID="recipe-detail-image"
             borderRadius={radius.xl}
           >
-            <View style={styles.heroGradientOverlay} />
+            <View style={styles.heroGradientOverlay} accessible={false} importantForAccessibility="no" accessibilityElementsHidden={true} />
 
             {/* Badge de afinidad / conveniencia */}
             <View style={styles.conveniencePill}>
-              <MaterialIcons name="stars" size={16} color="#503B00" />
+              <MaterialIcons name="stars" size={16} color="#503B00" importantForAccessibility="no" accessibilityElementsHidden={true} />
               <Text style={[styles.conveniencePillText, typography.labelMd]}>
                 {String(recipe.convenience)}
               </Text>

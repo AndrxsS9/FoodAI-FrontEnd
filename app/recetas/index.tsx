@@ -589,7 +589,7 @@ function RecipeCardItem({ recipe, isDominant, onPress }: RecipeCardItemProps) {
       >
         {/* Badge de afinidad / conveniencia */}
         <View style={styles.convenienceBadge}>
-          <MaterialIcons name="verified" size={14} color="#503B00" />
+          <MaterialIcons name="verified" size={14} color="#503B00" importantForAccessibility="no" accessibilityElementsHidden={true} />
           <Text style={[styles.convenienceBadgeText, typography.labelSm]}>
             {String(recipe.convenience)}
           </Text>
@@ -598,7 +598,7 @@ function RecipeCardItem({ recipe, isDominant, onPress }: RecipeCardItemProps) {
         {/* Título en tarjeta dominante o normal */}
         {isDominant && (
           <View style={styles.dominantTitleOverlay}>
-            <Text style={[styles.dominantTitle, typography.headlineLg]} numberOfLines={2}>
+            <Text style={[styles.dominantTitle, typography.headlineLg]} numberOfLines={2} accessibilityRole="header">
               {recipe.name}
             </Text>
           </View>

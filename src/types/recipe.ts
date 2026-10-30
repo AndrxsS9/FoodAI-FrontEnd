@@ -238,6 +238,46 @@ export function formatIngredientQuantity(quantity: number | null | undefined, un
 }
 
 /**
+ * Valida si una URL remota de imagen es segura.
+ *
+ * POLÍTICA DE SEGURIDAD ESTRICTA (Producción):
+ * - Enforce HTTPS (https://): todas las imágenes remotas deben provenir de orígenes cifrados TLS.
+ * - Rechaza HTTP inseguro (http://) para mitigar riesgos de Cleartext Traffic y MitM.
+ * - Excepción de desarrollo: en entorno local de pruebas (__DEV__), se permite loopback local
+ *   (localhost / 127.0.0.1 / 10.0.2.2 en emulador Android) para assets de prueba local.
+ */
+export function isSecureRemoteImageUrl(url: unknown): boolean {
+  if (typeof url !== 'string') {
+    return false;
+  }
+  const trimmed = url.trim();
+  if (!trimmed) {
+    return false;
+  }
+
+  // 1. HTTPS estricto para producción
+  if (trimmed.startsWith('https://')) {
+    const rest = trimmed.slice(8);
+    return rest.length > 0 && !rest.startsWith('/') && !rest.startsWith(' ') && !rest.includes(' ');
+  }
+
+  // 2. HTTP inseguro en desarrollo únicamente para loopback local (emuladores / dev server)
+  if (typeof __DEV__ !== 'undefined' && __DEV__ && trimmed.startsWith('http://')) {
+    const rest = trimmed.slice(7);
+    const host = rest.split(/[:/]/)[0]?.toLowerCase();
+    const isLoopback =
+      host === 'localhost' ||
+      host === '127.0.0.1' ||
+      host === '10.0.2.2' ||
+      host?.endsWith('.local');
+    return Boolean(isLoopback);
+  }
+
+  // En cualquier otro caso (HTTP remoto no seguro, ftp, file, etc.), rechazar
+  return false;
+}
+
+/**
  * Normaliza un ingrediente recibido del backend.
  */
 export function normalizeRecipeIngredient(
@@ -357,8 +397,7 @@ export function normalizeBackendRecipe(
 
   const rawImageUrl = (raw as any).imageUrl;
   const safeImageUrl: string | undefined =
-    typeof rawImageUrl === 'string' &&
-    (rawImageUrl.trim().startsWith('https://') || rawImageUrl.trim().startsWith('http://'))
+    typeof rawImageUrl === 'string' && isSecureRemoteImageUrl(rawImageUrl)
       ? rawImageUrl.trim()
       : undefined;
 

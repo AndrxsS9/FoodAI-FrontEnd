@@ -3,13 +3,14 @@
  *
  * Características:
  * 1. Soporta recursos empaquetados locales (require) y URLs remotas HTTPS seguras.
- * 2. Soporta recetas sin imagen (generadas por IA o sin fotografía asignada).
- * 3. Renderiza un respaldo visual pulido y consistente con el diseño Google Stitch cuando no hay imagen disponible.
- * 4. Maneja fallos de carga remota (onError) sin contenedores vacíos ni íconos rotos.
- * 5. Mantiene proporciones y radios de borde coherentes según los tokens del tema.
- * 6. Compatible con Android, iOS y Expo Web.
- * 7. Etiquetas de accesibilidad descriptivas para lectores de pantalla.
- * 8. Evita parpadeos y re-renderizados innecesarios.
+ * 2. Rechaza URLs HTTP inseguras para prevenir riesgos de Cleartext Traffic y MitM.
+ * 3. Soporta recetas sin imagen (generadas por IA o sin fotografía asignada).
+ * 4. Renderiza un respaldo visual pulido y consistente con el diseño Google Stitch cuando no hay imagen disponible.
+ * 5. Maneja fallos de carga remota (onError) sin contenedores vacíos ni íconos rotos.
+ * 6. Mantiene proporciones y radios de borde coherentes según los tokens del tema.
+ * 7. Compatible con Android, iOS y Expo Web.
+ * 8. Etiquetas de accesibilidad descriptivas para lectores de pantalla sin agrupar ni ocultar elementos superpuestos (children).
+ * 9. Evita parpadeos y re-renderizados innecesarios.
  */
 
 import React, { useState, useEffect, useMemo, memo } from 'react';
@@ -29,10 +30,13 @@ import { colors } from '../../theme/colors';
 import { radius } from '../../theme/radius';
 import { spacing } from '../../theme/spacing';
 import { useTypography } from '../../theme/typography';
+import { isSecureRemoteImageUrl } from '../../types/recipe';
+
+export { isSecureRemoteImageUrl } from '../../types/recipe';
 
 /**
  * Resuelve y valida de manera determinista la fuente de una imagen de receta.
- * Retorna null si la fuente es inválida, vacía o insegura.
+ * Retorna null si la fuente es inválida, vacía, malformada o insegura (HTTP no seguro).
  */
 export function resolveRecipeImageSource(
   source: unknown
@@ -46,10 +50,10 @@ export function resolveRecipeImageSource(
     return source;
   }
 
-  // Si es un string URL
+  // Si es un string URL (se exige HTTPS o loopback seguro de desarrollo)
   if (typeof source === 'string') {
     const trimmed = source.trim();
-    if (trimmed.startsWith('https://') || trimmed.startsWith('http://')) {
+    if (isSecureRemoteImageUrl(trimmed)) {
       return { uri: trimmed };
     }
     return null;
@@ -69,7 +73,7 @@ export function resolveRecipeImageSource(
     }
     if ('uri' in source && typeof (source as any).uri === 'string') {
       const uri = (source as any).uri.trim();
-      if (uri.startsWith('https://') || uri.startsWith('http://') || uri.startsWith('data:')) {
+      if (isSecureRemoteImageUrl(uri)) {
         return { ...(source as object), uri };
       }
       return null;
@@ -160,21 +164,31 @@ export const RecipeImage = memo(function RecipeImage({
       <View
         style={[styles.container, styles.fallbackContainer, containerDimensionStyles, containerStyle]}
         testID={fallbackTestID || (testID ? `${testID}-fallback` : undefined)}
-        accessible={true}
-        accessibilityRole="image"
-        accessibilityLabel={fallbackLabel}
+        accessible={false}
       >
-        <View style={styles.fallbackIconBadge}>
-          <MaterialIcons name="restaurant" size={36} color={colors.primary} />
-        </View>
-
-        <Text style={[styles.fallbackTitle, typography.labelSm]}>FoodAI Receta</Text>
-
-        {isDemo && (
-          <View style={styles.demoPillBadge}>
-            <Text style={[styles.demoPillText, typography.labelSm]}>Ejemplo</Text>
+        <View
+          style={styles.fallbackVisual}
+          accessible={true}
+          accessibilityRole="image"
+          accessibilityLabel={fallbackLabel}
+          testID={testID ? `${testID}-fallback-visual` : 'recipe-fallback-visual'}
+        >
+          <View
+            style={styles.fallbackIconBadge}
+            importantForAccessibility="no"
+            accessibilityElementsHidden={true}
+          >
+            <MaterialIcons name="restaurant" size={36} color={colors.primary} />
           </View>
-        )}
+
+          <Text style={[styles.fallbackTitle, typography.labelSm]}>FoodAI Receta</Text>
+
+          {isDemo && (
+            <View style={styles.demoPillBadge}>
+              <Text style={[styles.demoPillText, typography.labelSm]}>Ejemplo</Text>
+            </View>
+          )}
+        </View>
 
         {children}
       </View>
@@ -189,15 +203,16 @@ export const RecipeImage = memo(function RecipeImage({
     <View
       style={[styles.container, containerDimensionStyles, containerStyle]}
       testID={testID}
-      accessible={true}
-      accessibilityRole="image"
-      accessibilityLabel={imageLabel}
+      accessible={false}
     >
       <Image
         testID={testID ? `${testID}-img` : 'recipe-native-image'}
         source={resolvedSource}
         style={[styles.image, borderRadius !== undefined && { borderRadius }, imageStyle]}
         resizeMode={resizeMode}
+        accessible={true}
+        accessibilityRole="image"
+        accessibilityLabel={imageLabel}
         onLoadStart={() => setIsLoading(true)}
         onLoadEnd={() => setIsLoading(false)}
         onError={() => {
@@ -207,7 +222,12 @@ export const RecipeImage = memo(function RecipeImage({
       />
 
       {isLoading && (
-        <View style={styles.loadingContainer}>
+        <View
+          style={styles.loadingContainer}
+          accessible={false}
+          importantForAccessibility="no"
+          accessibilityElementsHidden={true}
+        >
           <ActivityIndicator size="small" color={colors.primary} />
         </View>
       )}
@@ -232,6 +252,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: colors.surfaceContainerLow,
     padding: spacing.md,
+    gap: spacing.xs,
+  },
+  fallbackVisual: {
+    alignItems: 'center',
+    justifyContent: 'center',
     gap: spacing.xs,
   },
   fallbackIconBadge: {

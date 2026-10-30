@@ -385,7 +385,7 @@ export default function HomeScreen() {
                   accessibilityRole="text"
                   accessibilityLabel={`Afinidad estimada${recommendedRecipe.isDemoFixture ? ' de ejemplo' : ''}: ${recommendedRecipe.convenience}`}
                 >
-                  <MaterialIcons name="verified" size={16} color={colors.tertiaryContainer} />
+                  <MaterialIcons name="verified" size={16} color={colors.tertiaryContainer} importantForAccessibility="no" accessibilityElementsHidden={true} />
                   <Text style={[styles.convenienceText, typography.labelSm]}>
                     {typeof recommendedRecipe.convenience === 'number'
                       ? `${recommendedRecipe.convenience}% conveniente`

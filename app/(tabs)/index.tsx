@@ -157,20 +157,50 @@ export default function HomeScreen() {
           </View>
         )}
 
-        {/* Supportive Prompt & Greeting */}
-        <View style={styles.greetingSection}>
-          <Text style={[styles.greetingCategory, typography.labelMd]}>
-            COCINA INTELIGENTE Y CONSCIENTE
-          </Text>
+        {/* Supportive Prompt & Greeting (hero card) */}
+        <View style={styles.greetingSection} testID="home-greeting-hero">
+          <View style={styles.heroGlowTop} pointerEvents="none" />
+          <View style={styles.heroGlowBottom} pointerEvents="none" />
           <Text
-            style={[styles.greetingHeadline, typography.headlineXl]}
+            style={styles.heroEmoji}
+            accessible={false}
+            importantForAccessibility="no"
+          >
+            🍳
+          </Text>
+          <View style={styles.greetingPill}>
+            <Text style={[styles.greetingCategory, typography.labelSm]}>
+              COCINA INTELIGENTE Y CONSCIENTE
+            </Text>
+          </View>
+          <Text
+            style={[styles.greetingHeadline, typography.headlineXlMobile]}
             accessibilityRole="header"
           >
             ¿Qué podemos preparar hoy?
           </Text>
-          <Text style={[styles.greetingSubtitle, typography.bodySm]}>
+          <Text style={[styles.greetingSubtitle, typography.bodyMd]}>
             Primero usa lo que tienes. Después decide qué comprar.
           </Text>
+          <View style={styles.heroChipsRow}>
+            <View style={styles.heroChip}>
+              <Text style={[styles.heroChipText, typography.labelSm]}>
+                🥬 {summary.totalCount} en despensa
+              </Text>
+            </View>
+            {summary.urgentCount > 0 && (
+              <View style={[styles.heroChip, styles.heroChipUrgent]}>
+                <Text style={[styles.heroChipUrgentText, typography.labelSm]}>
+                  ⏰ {summary.urgentCount} por usar
+                </Text>
+              </View>
+            )}
+            <View style={[styles.heroChip, styles.heroChipBudget]}>
+              <Text style={[styles.heroChipBudgetText, typography.labelSm]}>
+                💰 Ahorro activo
+              </Text>
+            </View>
+          </View>
         </View>
 
         {/* 1. Dominant Action Card: Scanner */}
@@ -239,7 +269,9 @@ export default function HomeScreen() {
         >
           <View style={styles.cardHeaderRow}>
             <View style={styles.iconTitleRow}>
-              <MaterialIcons name="kitchen" size={22} color={colors.primary} />
+              <View style={styles.pantryIconBox}>
+                <MaterialIcons name="kitchen" size={22} color={colors.primary} />
+              </View>
               <Text style={[styles.cardTitle, typography.headlineMd]}>
                 Tu despensa
               </Text>
@@ -251,6 +283,7 @@ export default function HomeScreen() {
               >
                 {summary.totalCount} producto{summary.totalCount === 1 ? '' : 's'}
               </Text>
+              <MaterialIcons name="chevron-right" size={18} color={colors.primary} />
             </View>
           </View>
 
@@ -322,11 +355,14 @@ export default function HomeScreen() {
         </Card>
 
         {/* 3. Available Budget Summary with Interactive Adjustment */}
-        <Card variant="elevated" style={styles.budgetCard}>
+        <Card variant="flat" style={styles.budgetCard}>
+          <View style={styles.budgetGlow} pointerEvents="none" />
           <View style={styles.budgetRow}>
+            <View style={styles.budgetIconBox}>
+              <MaterialIcons name="savings" size={26} color={colors.onTertiaryContainer} />
+            </View>
             <View style={styles.budgetCol}>
               <View style={styles.budgetLabelRow}>
-                <MaterialIcons name="payments" size={18} color={colors.outline} />
                 <Text style={[styles.budgetLabel, typography.labelSm]}>
                   PRESUPUESTO DISPONIBLE
                 </Text>
@@ -345,6 +381,7 @@ export default function HomeScreen() {
               title="Ajustar"
               variant="outline"
               size="sm"
+              style={styles.adjustButton}
               onPress={handleOpenBudgetModal}
               accessibilityLabel="Ajustar presupuesto disponible"
               accessibilityHint="Abre un formulario para actualizar el presupuesto disponible"
@@ -356,10 +393,13 @@ export default function HomeScreen() {
         {/* 4. Recommendation of the Day (Autoritativo desde RecipeContext) */}
         <View style={styles.recommendationSection}>
           <View style={styles.sectionHeaderRow}>
-            <View>
-              <Text style={[styles.sectionTitle, typography.headlineMd]}>
-                Recomendación del día
-              </Text>
+            <View style={styles.sectionTitleCol}>
+              <View style={styles.sectionTitleRow}>
+                <MaterialIcons name="auto-awesome" size={20} color={colors.tertiary} />
+                <Text style={[styles.sectionTitle, typography.headlineMd]}>
+                  Recomendación del día
+                </Text>
+              </View>
               <Text style={[styles.sectionSubtitle, typography.labelSm]}>
                 Optimizado a tu despensa
               </Text>
@@ -430,8 +470,8 @@ export default function HomeScreen() {
 
                 {/* Value metrics */}
                 <View style={styles.recipeHighlights}>
-                  <View style={styles.highlightRow}>
-                    <MaterialIcons name="savings" size={18} color={colors.primary} />
+                  <View style={[styles.highlightRow, styles.highlightRowPrimary]}>
+                    <MaterialIcons name="savings" size={20} color={colors.primary} />
                     <Text style={[styles.highlightText, typography.bodySm]}>
                       Solo necesitas aproximadamente{' '}
                       <Text style={[styles.highlightBold, { color: colors.primary }]}>
@@ -441,8 +481,8 @@ export default function HomeScreen() {
                   </View>
 
                   {recommendedRecipe.reason ? (
-                    <View style={styles.highlightRow}>
-                      <MaterialIcons name="recycling" size={18} color={colors.secondary} />
+                    <View style={[styles.highlightRow, styles.highlightRowSecondary]}>
+                      <MaterialIcons name="recycling" size={20} color={colors.secondary} />
                       <Text style={[styles.highlightText, typography.bodySm]}>
                         {recommendedRecipe.reason}
                       </Text>
@@ -577,9 +617,13 @@ const createStyles = (colors: AppColors) =>
     justifyContent: 'space-between',
     paddingHorizontal: spacing.margin,
     paddingVertical: spacing.sm,
-    backgroundColor: colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.borderLight,
+    backgroundColor: colors.canvas,
+    shadowColor: colors.cardShadow,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
+    zIndex: 2,
   },
   headerBrand: {
     flexDirection: 'row',
@@ -606,10 +650,10 @@ const createStyles = (colors: AppColors) =>
     marginTop: -2,
   },
   avatarButton: {
-    width: 36,
-    height: 36,
+    width: 34,
+    height: 34,
     borderRadius: radius.full,
-    backgroundColor: colors.primary,
+    backgroundColor: colors.primaryAction,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -652,21 +696,94 @@ const createStyles = (colors: AppColors) =>
     flex: 1,
   },
   greetingSection: {
-    paddingTop: spacing.xs,
+    position: 'relative',
+    overflow: 'hidden',
+    backgroundColor: colors.heroBackground,
+    borderRadius: radius.xl,
+    padding: spacing.lg,
+    shadowColor: colors.heroBackground,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+    elevation: 5,
+  },
+  heroGlowTop: {
+    position: 'absolute',
+    top: -50,
+    right: -40,
+    width: 170,
+    height: 170,
+    borderRadius: radius.full,
+    backgroundColor: colors.heroAccent,
+    opacity: 0.7,
+  },
+  heroGlowBottom: {
+    position: 'absolute',
+    bottom: -60,
+    left: -50,
+    width: 150,
+    height: 150,
+    borderRadius: radius.full,
+    backgroundColor: colors.tertiary,
+    opacity: 0.16,
+  },
+  heroEmoji: {
+    position: 'absolute',
+    top: spacing.md,
+    right: spacing.md,
+    fontSize: 46,
+    transform: [{ rotate: '-8deg' }],
+  },
+  greetingPill: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(255, 255, 255, 0.16)',
+    paddingHorizontal: spacing.sm + 4,
+    paddingVertical: 5,
+    borderRadius: radius.full,
+    maxWidth: '78%',
   },
   greetingCategory: {
-    color: colors.primary,
-    fontWeight: '600',
+    color: colors.onHero,
+    fontWeight: '700',
     letterSpacing: 0.6,
   },
   greetingHeadline: {
-    color: colors.textPrimary,
+    color: colors.onHero,
     fontWeight: '700',
-    marginTop: 4,
+    marginTop: spacing.sm + 2,
+    maxWidth: '78%',
   },
   greetingSubtitle: {
-    color: colors.textSecondary,
+    color: colors.onHeroMuted,
     marginTop: 4,
+    maxWidth: '88%',
+  },
+  heroChipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs + 2,
+    marginTop: spacing.md,
+  },
+  heroChip: {
+    backgroundColor: 'rgba(255, 255, 255, 0.16)',
+    paddingHorizontal: spacing.sm + 4,
+    paddingVertical: 6,
+    borderRadius: radius.full,
+  },
+  heroChipText: {
+    color: colors.onHero,
+  },
+  heroChipUrgent: {
+    backgroundColor: '#FD876D',
+  },
+  heroChipUrgentText: {
+    color: '#73200E',
+  },
+  heroChipBudget: {
+    backgroundColor: '#FFDF9B',
+  },
+  heroChipBudgetText: {
+    color: '#251A00',
   },
   scannerCard: {
     backgroundColor: colors.surface,
@@ -679,10 +796,10 @@ const createStyles = (colors: AppColors) =>
     marginBottom: spacing.md,
   },
   scannerIconBox: {
-    width: 44,
-    height: 44,
-    borderRadius: radius.md,
-    backgroundColor: colors.surfaceContainerLow,
+    width: 48,
+    height: 48,
+    borderRadius: radius.lg,
+    backgroundColor: colors.primaryFixed,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -699,8 +816,8 @@ const createStyles = (colors: AppColors) =>
   },
   viewfinderWrapper: {
     width: '100%',
-    height: 130,
-    borderRadius: radius.md,
+    height: 160,
+    borderRadius: radius.lg,
     overflow: 'hidden',
     position: 'relative',
     marginBottom: spacing.md,
@@ -713,15 +830,17 @@ const createStyles = (colors: AppColors) =>
   },
   viewfinderOverlay: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: 'rgba(91, 75, 138, 0.12)',
+    backgroundColor: 'rgba(67, 51, 113, 0.22)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   viewfinderReticle: {
-    width: 54,
-    height: 54,
+    width: 64,
+    height: 64,
     borderRadius: radius.full,
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    backgroundColor: colors.surface,
+    borderWidth: 6,
+    borderColor: 'rgba(255, 255, 255, 0.45)',
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#000',
@@ -743,12 +862,20 @@ const createStyles = (colors: AppColors) =>
   iconTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.xs + 2,
+    gap: spacing.sm,
+  },
+  pantryIconBox: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.md + 4,
+    backgroundColor: colors.primaryFixed,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   pantryBadgeRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.xs,
+    gap: 2,
   },
   countBadge: {
     color: colors.primary,
@@ -758,10 +885,10 @@ const createStyles = (colors: AppColors) =>
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: colors.errorContainer,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 7,
-    borderRadius: radius.md,
+    backgroundColor: colors.secondaryFixed,
+    paddingHorizontal: spacing.sm + 4,
+    paddingVertical: 10,
+    borderRadius: radius.lg,
     marginBottom: spacing.sm,
   },
   urgentBannerLeft: {
@@ -770,7 +897,7 @@ const createStyles = (colors: AppColors) =>
     gap: spacing.xs,
   },
   urgentBannerTitle: {
-    color: colors.onErrorContainer,
+    color: colors.onSecondaryFixed,
     fontWeight: '700',
   },
   urgentBannerTag: {
@@ -781,10 +908,10 @@ const createStyles = (colors: AppColors) =>
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: 'rgba(91, 75, 138, 0.08)',
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 7,
-    borderRadius: radius.md,
+    backgroundColor: colors.primaryFixed,
+    paddingHorizontal: spacing.sm + 4,
+    paddingVertical: 10,
+    borderRadius: radius.lg,
     marginBottom: spacing.sm,
   },
   okBannerLeft: {
@@ -802,7 +929,7 @@ const createStyles = (colors: AppColors) =>
   },
   emptyPantryBox: {
     backgroundColor: colors.surfaceContainerLow,
-    borderRadius: radius.md,
+    borderRadius: radius.lg,
     padding: spacing.md,
     alignItems: 'center',
     gap: spacing.xs,
@@ -828,13 +955,47 @@ const createStyles = (colors: AppColors) =>
     marginRight: 4,
   },
   budgetCard: {
-    backgroundColor: colors.surface,
+    backgroundColor: colors.tertiaryFixed,
     padding: spacing.md,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  budgetGlow: {
+    position: 'absolute',
+    right: -30,
+    bottom: -40,
+    width: 120,
+    height: 120,
+    borderRadius: radius.full,
+    backgroundColor: colors.tertiary,
+    opacity: 0.45,
   },
   budgetRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  budgetIconBox: {
+    width: 48,
+    height: 48,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: colors.cardShadow,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  adjustButton: {
+    backgroundColor: colors.surface,
+    shadowColor: colors.cardShadow,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 1,
   },
   budgetCol: {
     flex: 1,
@@ -846,15 +1007,17 @@ const createStyles = (colors: AppColors) =>
     marginBottom: 4,
   },
   budgetLabel: {
-    color: colors.outline,
+    color: colors.onTertiaryContainer,
     letterSpacing: 0.5,
   },
   budgetAmount: {
-    color: colors.textPrimary,
+    color: colors.onTertiaryFixed,
     fontWeight: '700',
+    fontSize: 26,
+    lineHeight: 32,
   },
   budgetCurrency: {
-    color: colors.textSecondary,
+    color: colors.onTertiaryContainer,
     fontWeight: '500',
   },
   recommendationSection: {
@@ -865,6 +1028,14 @@ const createStyles = (colors: AppColors) =>
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: spacing.sm,
+  },
+  sectionTitleCol: {
+    flexShrink: 1,
+  },
+  sectionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs + 2,
   },
   sectionTitle: {
     color: colors.textPrimary,
@@ -880,7 +1051,7 @@ const createStyles = (colors: AppColors) =>
   },
   recipeImageWrapper: {
     width: '100%',
-    height: 180,
+    height: 192,
     position: 'relative',
     backgroundColor: colors.surfaceContainerLow,
   },
@@ -932,13 +1103,13 @@ const createStyles = (colors: AppColors) =>
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: 'rgba(255, 255, 255, 0.88)',
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 4,
-    borderRadius: radius.sm,
+    backgroundColor: 'rgba(255, 255, 255, 0.92)',
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: 5,
+    borderRadius: radius.full,
   },
   recipeMetaText: {
-    color: colors.textPrimary,
+    color: '#1C1C19',
     fontWeight: '600',
     fontSize: 11,
   },
@@ -960,8 +1131,17 @@ const createStyles = (colors: AppColors) =>
   },
   highlightRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.xs + 2,
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.sm + 4,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.lg,
+  },
+  highlightRowPrimary: {
+    backgroundColor: colors.primaryFixed,
+  },
+  highlightRowSecondary: {
+    backgroundColor: colors.secondaryFixed,
   },
   highlightText: {
     color: colors.textPrimary,
@@ -996,7 +1176,7 @@ const createStyles = (colors: AppColors) =>
     width: '100%',
     maxWidth: 360,
     backgroundColor: colors.surface,
-    borderRadius: radius.lg,
+    borderRadius: radius.xl,
     padding: spacing.lg,
     gap: spacing.sm,
     shadowColor: '#000',
@@ -1009,7 +1189,7 @@ const createStyles = (colors: AppColors) =>
     width: 52,
     height: 52,
     borderRadius: radius.full,
-    backgroundColor: colors.surfaceContainerLow,
+    backgroundColor: colors.primaryFixed,
     alignItems: 'center',
     justifyContent: 'center',
     alignSelf: 'center',

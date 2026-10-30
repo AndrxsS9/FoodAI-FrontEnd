@@ -114,8 +114,8 @@ const createStyles = (colors: AppColors) =>
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
-      height: 32,
-      paddingHorizontal: spacing.md,
+      height: 34,
+      paddingHorizontal: spacing.md - 2,
       borderRadius: radius.full,
     },
     leftIconWrapper: {
@@ -131,16 +131,15 @@ const createStyles = (colors: AppColors) =>
 
     // Variants
     filter: {
-      backgroundColor: colors.surface,
-      borderWidth: 1,
-      borderColor: colors.border,
+      backgroundColor: colors.surfaceContainerLow,
+      borderWidth: 0,
     },
     urgent: {
-      backgroundColor: 'rgba(233, 119, 94, 0.16)', // Coral tint
+      backgroundColor: colors.secondaryFixed,
       borderWidth: 0,
     },
     budget: {
-      backgroundColor: 'rgba(243, 201, 105, 0.28)', // Butter Yellow tint
+      backgroundColor: colors.tertiaryFixed,
       borderWidth: 0,
     },
     neutral: {
@@ -150,8 +149,8 @@ const createStyles = (colors: AppColors) =>
 
     // Selected State
     selected: {
-      backgroundColor: colors.primary,
-      borderColor: colors.primary,
+      backgroundColor: colors.primaryAction,
+      borderColor: colors.primaryAction,
     },
 
     disabled: {
@@ -168,10 +167,10 @@ const createStyles = (colors: AppColors) =>
       color: colors.textPrimary,
     },
     urgentText: {
-      color: colors.secondary,
+      color: colors.onSecondaryFixed,
     },
     budgetText: {
-      color: colors.textPrimary,
+      color: colors.onTertiaryFixed,
     },
     neutralText: {
       color: colors.textSecondary,

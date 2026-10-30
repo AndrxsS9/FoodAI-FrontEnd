@@ -57,6 +57,19 @@ export const lightColors = {
   disabledText: '#9E9AA2',
   demoBadgeBackground: '#FFDF9B',
   demoBadgeText: '#503B00',
+
+  // Demo-aligned accents (Recetario por Presupuesto mockup)
+  primaryAction: '#433371',      // Deep action purple for primary buttons
+  primaryFixed: '#E8DDFF',       // Lavender tint for icon boxes and soft highlights
+  onPrimaryFixed: '#200D4C',
+  secondaryFixed: '#FFDAD3',     // Soft coral tint for urgency banners
+  onSecondaryFixed: '#802916',
+  tertiaryFixed: '#FFDF9B',      // Butter tint for budget surfaces
+  onTertiaryFixed: '#251A00',
+  heroBackground: '#433371',     // Greeting hero card
+  heroAccent: '#5B4B8A',
+  onHero: '#FFFFFF',
+  onHeroMuted: '#E8DDFF',
 } as const;
 
 export const darkColors = {
@@ -112,6 +125,19 @@ export const darkColors = {
   disabledText: '#7A7582',
   demoBadgeBackground: '#523C00',
   demoBadgeText: '#FDD67C',
+
+  // Demo-aligned accents (Recetario por Presupuesto mockup)
+  primaryAction: '#A996DC',
+  primaryFixed: '#2E2452',
+  onPrimaryFixed: '#E8DDFF',
+  secondaryFixed: '#4A2018',
+  onSecondaryFixed: '#FFB4A4',
+  tertiaryFixed: '#3D2E00',
+  onTertiaryFixed: '#FFDF9B',
+  heroBackground: '#2E2452',
+  heroAccent: '#443572',
+  onHero: '#FFFFFF',
+  onHeroMuted: '#D2C1FF',
 } as const;
 
 export type AppColors = {

@@ -1,5 +1,6 @@
 import React from 'react';
 import {
+  Image,
   Pressable,
   StyleSheet,
   Text,
@@ -15,6 +16,12 @@ export interface HeaderProps {
   showBack?: boolean;
   onBack?: () => void;
   rightElement?: React.ReactNode;
+  /** Muestra el logotipo de la marca a la izquierda del título */
+  showLogo?: boolean;
+  /** Texto pequeño en mayúsculas sobre el título (ej. nombre de la app) */
+  eyebrow?: string;
+  /** Aplica fondo del lienzo con sombra suave como barra superior fija */
+  elevated?: boolean;
   style?: ViewStyle;
 }
 
@@ -24,6 +31,9 @@ export const Header: React.FC<HeaderProps> = ({
   showBack = false,
   onBack,
   rightElement,
+  showLogo = false,
+  eyebrow,
+  elevated = false,
   style,
 }) => {
   const typography = useTypography();
@@ -31,7 +41,7 @@ export const Header: React.FC<HeaderProps> = ({
   const styles = useThemeStyles(createStyles);
 
   return (
-    <View style={[styles.container, style]}>
+    <View style={[styles.container, elevated && styles.elevated, style]}>
       <View style={styles.leftRow}>
         {showBack && (
           <Pressable
@@ -49,7 +59,21 @@ export const Header: React.FC<HeaderProps> = ({
           </Pressable>
         )}
 
+        {showLogo && (
+          <Image
+            source={require('../../../assets/images/logo.png')}
+            style={styles.logo}
+            resizeMode="contain"
+            accessibilityLabel="Logotipo de Recetario por Presupuesto"
+          />
+        )}
+
         <View style={styles.titleContainer}>
+          {eyebrow ? (
+            <Text style={[styles.eyebrow, typography.labelSm]} numberOfLines={1}>
+              {eyebrow}
+            </Text>
+          ) : null}
           <Text
             style={[styles.title, typography.headlineMd]}
             numberOfLines={1}
@@ -82,6 +106,26 @@ const createStyles = (colors: AppColors) =>
       backgroundColor: 'transparent',
       minHeight: 56,
     },
+    elevated: {
+      backgroundColor: colors.canvas,
+      shadowColor: colors.cardShadow,
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.04,
+      shadowRadius: 8,
+      elevation: 2,
+      zIndex: 2,
+    },
+    logo: {
+      width: 34,
+      height: 34,
+      borderRadius: radius.md,
+      marginRight: spacing.sm,
+    },
+    eyebrow: {
+      color: colors.outline,
+      letterSpacing: 0.6,
+      textTransform: 'uppercase',
+    },
     leftRow: {
       flex: 1,
       flexDirection: 'row',
@@ -91,13 +135,14 @@ const createStyles = (colors: AppColors) =>
       width: 44,
       height: 44,
       borderRadius: radius.full,
-      backgroundColor: colors.surfaceContainer,
+      backgroundColor: 'transparent',
       alignItems: 'center',
       justifyContent: 'center',
-      marginRight: spacing.sm,
+      marginRight: spacing.xs,
+      marginLeft: -spacing.sm,
     },
     backButtonPressed: {
-      backgroundColor: colors.surfaceContainerHigh,
+      backgroundColor: colors.surfaceContainer,
       transform: [{ scale: 0.95 }],
     },
     titleContainer: {

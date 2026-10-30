@@ -460,8 +460,6 @@ const createStyles = (colors: AppColors) =>
       backgroundColor: colors.surface,
       borderRadius: radius.lg,
       padding: spacing.md,
-      borderWidth: 1,
-      borderColor: colors.border,
       gap: spacing.sm,
       shadowColor: colors.cardShadow,
       shadowOffset: { width: 0, height: 1 },

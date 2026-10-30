@@ -7,7 +7,7 @@ import {
   View,
   ViewStyle,
 } from 'react-native';
-import { colors, radius, spacing, useTypography } from '../../theme';
+import { AppColors, radius, spacing, useTypography, useThemeStyles } from '../../theme';
 
 export type ChipVariant = 'filter' | 'urgent' | 'budget' | 'neutral';
 
@@ -43,6 +43,7 @@ export const Chip: React.FC<ChipProps> = ({
   textStyle,
 }) => {
   const typography = useTypography();
+  const styles = useThemeStyles(createStyles);
   const isPressable = typeof onPress === 'function';
 
   const containerStyles = [
@@ -107,77 +108,78 @@ export const Chip: React.FC<ChipProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
-  base: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    height: 32,
-    paddingHorizontal: spacing.md,
-    borderRadius: radius.full,
-  },
-  leftIconWrapper: {
-    marginRight: spacing.xs,
-  },
-  rightIconWrapper: {
-    marginLeft: spacing.xs,
-  },
-  pressed: {
-    opacity: 0.85,
-    transform: [{ scale: 0.98 }],
-  },
+const createStyles = (colors: AppColors) =>
+  StyleSheet.create({
+    base: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      height: 32,
+      paddingHorizontal: spacing.md,
+      borderRadius: radius.full,
+    },
+    leftIconWrapper: {
+      marginRight: spacing.xs,
+    },
+    rightIconWrapper: {
+      marginLeft: spacing.xs,
+    },
+    pressed: {
+      opacity: 0.85,
+      transform: [{ scale: 0.98 }],
+    },
 
-  // Variants
-  filter: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  urgent: {
-    backgroundColor: 'rgba(233, 119, 94, 0.16)', // Coral tint
-    borderWidth: 0,
-  },
-  budget: {
-    backgroundColor: 'rgba(243, 201, 105, 0.28)', // Butter Yellow tint
-    borderWidth: 0,
-  },
-  neutral: {
-    backgroundColor: colors.surfaceContainerLow,
-    borderWidth: 0,
-  },
+    // Variants
+    filter: {
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    urgent: {
+      backgroundColor: 'rgba(233, 119, 94, 0.16)', // Coral tint
+      borderWidth: 0,
+    },
+    budget: {
+      backgroundColor: 'rgba(243, 201, 105, 0.28)', // Butter Yellow tint
+      borderWidth: 0,
+    },
+    neutral: {
+      backgroundColor: colors.surfaceContainerLow,
+      borderWidth: 0,
+    },
 
-  // Selected State (e.g. for active filter or unit selection)
-  selected: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
+    // Selected State
+    selected: {
+      backgroundColor: colors.primary,
+      borderColor: colors.primary,
+    },
 
-  disabled: {
-    opacity: 0.5,
-    borderColor: colors.borderLight,
-  },
+    disabled: {
+      opacity: 0.5,
+      borderColor: colors.borderLight,
+    },
 
-  // Text base
-  text: {
-    textAlign: 'center',
-  },
+    // Text base
+    text: {
+      textAlign: 'center',
+    },
 
-  filterText: {
-    color: colors.textPrimary,
-  },
-  urgentText: {
-    color: '#B8432B', // Deep coral for WCAG AA 4.6:1 text contrast
-  },
-  budgetText: {
-    color: colors.textPrimary,
-  },
-  neutralText: {
-    color: colors.textSecondary,
-  },
-  selectedText: {
-    color: colors.onPrimary,
-  },
-  disabledText: {
-    color: colors.textTertiary,
-  },
-});
+    filterText: {
+      color: colors.textPrimary,
+    },
+    urgentText: {
+      color: colors.secondary,
+    },
+    budgetText: {
+      color: colors.textPrimary,
+    },
+    neutralText: {
+      color: colors.textSecondary,
+    },
+    selectedText: {
+      color: colors.onPrimary,
+    },
+    disabledText: {
+      color: colors.textTertiary,
+    },
+  });

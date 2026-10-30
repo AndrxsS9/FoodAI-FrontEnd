@@ -29,7 +29,14 @@ import { useMealPlanSafe } from '../../../src/context/MealPlanContext';
 import { usePantrySafe } from '../../../src/context/PantryContext';
 import { calculatePantryDeduction } from '../../../src/utils/pantryConsumption';
 import { formatCopCurrency } from '../../../src/types/recipe';
-import { colors, radius, spacing, useTypography } from '../../../src/theme';
+import {
+  AppColors,
+  radius,
+  spacing,
+  useTypography,
+  useAppTheme,
+  useThemeStyles,
+} from '../../../src/theme';
 
 interface StepCountdownCardProps {
   stepDuration: { stepIndex: number; minutes?: number; action?: string };
@@ -37,6 +44,8 @@ interface StepCountdownCardProps {
 
 function StepCountdownCard({ stepDuration }: StepCountdownCardProps) {
   const typography = useTypography();
+  const { colors } = useAppTheme();
+  const styles = useThemeStyles(createStyles);
   const initialSeconds = Math.round((stepDuration.minutes || 0) * 60);
   const [countdownSeconds, setCountdownSeconds] = useState(initialSeconds);
   const [isRunning, setIsRunning] = useState(false);
@@ -150,6 +159,8 @@ function StepCountdownCard({ stepDuration }: StepCountdownCardProps) {
 
 export default function GuidedCookingScreen() {
   const typography = useTypography();
+  const { colors } = useAppTheme();
+  const styles = useThemeStyles(createStyles);
   const router = useRouter();
   const params = useLocalSearchParams<{ id?: string; fromPlan?: string }>();
   const recipeId = params.id ? String(params.id).trim() : '';
@@ -774,7 +785,8 @@ export default function GuidedCookingScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: AppColors) =>
+  StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: colors.canvas,

@@ -15,11 +15,20 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../src/context/AuthContext';
 import { isValidEmail, isValidPassword, MIN_PASSWORD_LENGTH } from '../../src/types/auth';
-import { colors, radius, spacing, useTypography } from '../../src/theme';
+import {
+  AppColors,
+  radius,
+  spacing,
+  useTypography,
+  useAppTheme,
+  useThemeStyles,
+} from '../../src/theme';
 
 export default function RegisterScreen() {
   const typography = useTypography();
   const router = useRouter();
+  const { colors } = useAppTheme();
+  const styles = useThemeStyles(createStyles);
   const { signUp, isSubmitting, authError, clearAuthError } = useAuth();
 
   const [email, setEmail] = useState('');
@@ -454,7 +463,8 @@ export default function RegisterScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: AppColors) =>
+  StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: colors.canvas,

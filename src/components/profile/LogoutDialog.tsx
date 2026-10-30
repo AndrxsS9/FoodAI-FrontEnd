@@ -12,7 +12,7 @@ import {
   View,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import { colors, radius, spacing, useTypography } from '../../theme';
+import { AppColors, radius, spacing, useTypography, useThemeColors, useThemeStyles } from '../../theme';
 import { Button } from '../common';
 
 export interface LogoutDialogProps {
@@ -33,6 +33,8 @@ export function LogoutDialog({
   onConfirmLogout,
 }: LogoutDialogProps) {
   const typography = useTypography();
+  const colors = useThemeColors();
+  const styles = useThemeStyles(createStyles);
 
   return (
     <View style={styles.logoutSection}>
@@ -137,7 +139,8 @@ export function LogoutDialog({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: AppColors) =>
+  StyleSheet.create({
   logoutSection: {
     paddingTop: spacing.xs,
     paddingBottom: spacing.sm,
@@ -176,7 +179,7 @@ const styles = StyleSheet.create({
   // Modal styles
   dialogOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    backgroundColor: colors.overlay,
     justifyContent: 'center',
     alignItems: 'center',
     padding: spacing.margin,

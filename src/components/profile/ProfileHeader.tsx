@@ -15,7 +15,7 @@ import {
   View,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import { colors, radius, spacing, useTypography } from '../../theme';
+import { AppColors, radius, spacing, useTypography, useThemeColors, useThemeStyles } from '../../theme';
 import { AuthUser, getAvatarInitials, getUserDisplayName } from '../../types/auth';
 import { Button } from '../common';
 
@@ -31,6 +31,8 @@ export function ProfileHeader({
   isUpdatingName = false,
 }: ProfileHeaderProps) {
   const typography = useTypography();
+  const colors = useThemeColors();
+  const styles = useThemeStyles(createStyles);
   const displayName = getUserDisplayName(user);
   const email = user?.email ?? 'Correo no disponible';
   const initials = getAvatarInitials(displayName || email);
@@ -259,7 +261,8 @@ export function ProfileHeader({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: AppColors) =>
+  StyleSheet.create({
   container: {
     width: '100%',
   },
@@ -368,7 +371,7 @@ const styles = StyleSheet.create({
   // Modal styles
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    backgroundColor: colors.overlay,
     justifyContent: 'center',
     alignItems: 'center',
     padding: spacing.margin,

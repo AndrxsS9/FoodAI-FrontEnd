@@ -7,7 +7,7 @@ import {
   ViewStyle,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import { colors, radius, spacing, useTypography } from '../../theme';
+import { AppColors, radius, spacing, useTypography, useAppTheme, useThemeStyles } from '../../theme';
 
 export interface StepperProps {
   value: number;
@@ -48,6 +48,9 @@ export const Stepper: React.FC<StepperProps> = ({
   style,
 }) => {
   const typography = useTypography();
+  const { colors } = useAppTheme();
+  const styles = useThemeStyles(createStyles);
+
   // Normalize min and max bounds safely
   const parsedMin = Number.isFinite(min) ? min : 0;
   const parsedMax = Number.isFinite(max) ? max : 9999;
@@ -107,19 +110,29 @@ export const Stepper: React.FC<StepperProps> = ({
     }
   };
 
+  const displayValue = unit ? `${safeValue} ${unit}` : `${safeValue}`;
+
   return (
     <View
-      style={[styles.container, disabled && styles.containerDisabled, style]}
-      accessibilityLabel={accessibilityLabel}
-      accessibilityHint={accessibilityHint}
       testID={testID}
+      style={[styles.container, disabled && styles.containerDisabled, style]}
+      accessibilityRole="adjustable"
+      accessibilityLabel={accessibilityLabel}
+      accessibilityValue={{
+        min: safeMin,
+        max: safeMax,
+        now: safeValue,
+        text: displayValue,
+      }}
+      accessibilityHint={accessibilityHint}
     >
       <Pressable
+        testID={testID ? `${testID}-minus` : 'stepper-decrement-button'}
         onPress={handleDecrement}
         disabled={!canDecrement}
         accessibilityRole="button"
         accessibilityLabel="Disminuir"
-        accessibilityHint={`Disminuir en ${safeStep}${unit ? ` ${unit}` : ''}`}
+        accessibilityHint={`Reducir en ${safeStep}${unit ? ` ${unit}` : ''}`}
         accessibilityState={{ disabled: !canDecrement }}
         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         style={({ pressed }) => [
@@ -136,13 +149,21 @@ export const Stepper: React.FC<StepperProps> = ({
       </Pressable>
 
       <View style={styles.valueContainer}>
-        <Text style={[styles.valueText, typography.labelMd, disabled && styles.valueTextDisabled]}>
-          {safeValue}
-          {unit ? ` ${unit}` : ''}
+        <Text
+          testID={testID ? `${testID}-value` : 'stepper-value-display'}
+          style={[
+            styles.valueText,
+            typography.labelLg,
+            disabled && styles.valueTextDisabled,
+          ]}
+          numberOfLines={1}
+        >
+          {displayValue}
         </Text>
       </View>
 
       <Pressable
+        testID={testID ? `${testID}-plus` : 'stepper-increment-button'}
         onPress={handleIncrement}
         disabled={!canIncrement}
         accessibilityRole="button"
@@ -166,47 +187,48 @@ export const Stepper: React.FC<StepperProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.surfaceContainerLow,
-    borderRadius: radius.full,
-    padding: 3,
-  },
-  containerDisabled: {
-    opacity: 0.6,
-  },
-  stepButton: {
-    width: 36,
-    height: 36,
-    borderRadius: radius.full,
-    backgroundColor: colors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  buttonPressed: {
-    backgroundColor: colors.surfaceContainer,
-    transform: [{ scale: 0.92 }],
-  },
-  buttonDisabled: {
-    backgroundColor: colors.surfaceContainerLow,
-    borderColor: 'transparent',
-    opacity: 0.5,
-  },
-  valueContainer: {
-    minWidth: 44,
-    paddingHorizontal: spacing.sm,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  valueText: {
-    color: colors.textPrimary,
-    fontWeight: '700',
-  },
-  valueTextDisabled: {
-    color: colors.textSecondary,
-  },
-});
+const createStyles = (colors: AppColors) =>
+  StyleSheet.create({
+    container: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: colors.surfaceContainerLow,
+      borderRadius: radius.full,
+      padding: 3,
+    },
+    containerDisabled: {
+      opacity: 0.6,
+    },
+    stepButton: {
+      width: 36,
+      height: 36,
+      borderRadius: radius.full,
+      backgroundColor: colors.surface,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    buttonPressed: {
+      backgroundColor: colors.surfaceContainer,
+      transform: [{ scale: 0.92 }],
+    },
+    buttonDisabled: {
+      backgroundColor: colors.surfaceContainerLow,
+      borderColor: 'transparent',
+      opacity: 0.5,
+    },
+    valueContainer: {
+      minWidth: 44,
+      paddingHorizontal: spacing.sm,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    valueText: {
+      color: colors.textPrimary,
+      fontWeight: '700',
+    },
+    valueTextDisabled: {
+      color: colors.textSecondary,
+    },
+  });

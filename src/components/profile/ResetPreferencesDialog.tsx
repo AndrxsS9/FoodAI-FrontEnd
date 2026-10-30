@@ -11,7 +11,7 @@ import {
   View,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import { colors, radius, spacing, useTypography } from '../../theme';
+import { AppColors, radius, spacing, useTypography, useThemeColors, useThemeStyles } from '../../theme';
 import { Button } from '../common';
 
 export interface ResetPreferencesDialogProps {
@@ -34,6 +34,8 @@ export function ResetPreferencesDialog({
   onConfirmReset,
 }: ResetPreferencesDialogProps) {
   const typography = useTypography();
+  const colors = useThemeColors();
+  const styles = useThemeStyles(createStyles);
 
   return (
     <View style={styles.resetSection}>
@@ -146,7 +148,8 @@ export function ResetPreferencesDialog({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: AppColors) =>
+  StyleSheet.create({
   resetSection: {
     alignItems: 'center',
     gap: spacing.xs,
@@ -187,7 +190,7 @@ const styles = StyleSheet.create({
   // Modal styles
   dialogOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    backgroundColor: colors.overlay,
     justifyContent: 'center',
     alignItems: 'center',
     padding: spacing.margin,

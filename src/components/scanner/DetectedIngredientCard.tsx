@@ -1,5 +1,5 @@
 /**
- * FoodAI - Tarjeta interactiva de revisión y edición para ingredientes detectados (Fase 3B).
+ * FoodAI - Tarjeta interactiva de revisión y edición para ingredientes detectados (Fase 3B & Fase 6B.2).
  * Permite corregir nombre, asignar cantidad requerida, seleccionar unidad/categoría,
  * excluir ingredientes o resolver duplicados existentes en la despensa.
  */
@@ -26,7 +26,14 @@ import {
   ScannedIngredientItem,
 } from '../../types/scanner';
 import { areUnitsCompatibleForAddition } from '../../utils/ingredientMapper';
-import { colors, radius, spacing, useTypography } from '../../theme';
+import {
+  AppColors,
+  radius,
+  spacing,
+  useTypography,
+  useAppTheme,
+  useThemeStyles,
+} from '../../theme';
 
 export interface DetectedIngredientCardProps {
   item: ScannedIngredientItem;
@@ -50,6 +57,8 @@ export function DetectedIngredientCard({
   onRemove,
 }: DetectedIngredientCardProps) {
   const typography = useTypography();
+  const { colors } = useAppTheme();
+  const styles = useThemeStyles(createStyles);
   const [isEditingDetails, setIsEditingDetails] = useState(false);
   const [quantityInput, setQuantityInput] = useState(
     item.quantity !== null ? String(item.quantity) : ''
@@ -445,283 +454,284 @@ export function DetectedIngredientCard({
   );
 }
 
-const styles = StyleSheet.create({
-  cardContainer: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    padding: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    gap: spacing.sm,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 2,
-  },
-  cardContainerDeselected: {
-    opacity: 0.5,
-    backgroundColor: colors.surfaceContainerLow,
-  },
-  cardContainerError: {
-    borderColor: colors.error,
-    backgroundColor: '#FFFDFD',
-  },
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  checkbox: {
-    width: 24,
-    height: 24,
-    borderRadius: radius.sm,
-    borderWidth: 2,
-    borderColor: colors.outline,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.surface,
-  },
-  checkboxActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  nameContainer: {
-    flex: 1,
-  },
-  nameInput: {
-    color: colors.textPrimary,
-    fontWeight: '700',
-    paddingVertical: 2,
-    borderBottomWidth: 1,
-    borderBottomColor: 'transparent',
-  },
-  removeButton: {
-    padding: 4,
-  },
-  badgesRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    flexWrap: 'wrap',
-  },
-  categoryPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: radius.full,
-  },
-  categoryPillText: {
-    fontWeight: '600',
-  },
-  reviewBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#FFDF9B',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: radius.full,
-  },
-  reviewBadgeText: {
-    color: '#6C5100',
-    fontWeight: '600',
-  },
-  duplicateBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: 'rgba(91, 75, 138, 0.1)',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: radius.full,
-  },
-  duplicateBadgePossible: {
-    backgroundColor: '#FFF4E5',
-  },
-  duplicateBadgeText: {
-    color: colors.primary,
-    fontWeight: '700',
-  },
-  quantityRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.md,
-    marginTop: spacing.xs,
-  },
-  quantityFieldGroup: {
-    width: 110,
-    gap: 4,
-  },
-  unitFieldGroup: {
-    flex: 1,
-    gap: 4,
-    overflow: 'hidden',
-  },
-  fieldLabel: {
-    color: colors.outline,
-    fontWeight: '600',
-    letterSpacing: 0.5,
-  },
-  quantityInputContainer: {
-    height: 40,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    backgroundColor: colors.surfaceContainerLow,
-    justifyContent: 'center',
-    paddingHorizontal: spacing.sm,
-  },
-  quantityInputContainerError: {
-    borderColor: colors.error,
-    backgroundColor: '#FFF0F0',
-  },
-  quantityInput: {
-    color: colors.textPrimary,
-    fontWeight: '600',
-  },
-  unitScroll: {
-    flexDirection: 'row',
-    gap: spacing.xs,
-    paddingVertical: 2,
-  },
-  unitChip: {
-    paddingHorizontal: 10,
-    height: 36,
-    borderRadius: radius.full,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surfaceContainerLow,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  unitChipSelected: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  unitChipText: {
-    color: colors.textPrimary,
-    fontWeight: '600',
-  },
-  unitChipTextSelected: {
-    color: colors.onPrimary,
-  },
-  errorNotice: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    backgroundColor: '#FFF0F0',
-    padding: spacing.xs,
-    borderRadius: radius.sm,
-  },
-  errorNoticeText: {
-    color: colors.error,
-    flex: 1,
-  },
-  duplicateSection: {
-    backgroundColor: 'rgba(91, 75, 138, 0.05)',
-    borderRadius: radius.md,
-    padding: spacing.sm,
-    gap: spacing.xs,
-    borderWidth: 1,
-    borderColor: 'rgba(91, 75, 138, 0.15)',
-  },
-  duplicateInfoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-  },
-  duplicateText: {
-    color: colors.textPrimary,
-    flex: 1,
-    lineHeight: 18,
-  },
-  actionButtonsRow: {
-    flexDirection: 'row',
-    gap: spacing.xs,
-    marginTop: 4,
-  },
-  actionOptionButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-    paddingVertical: 6,
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-  },
-  actionOptionButtonActive: {
-    borderColor: colors.primary,
-    backgroundColor: 'rgba(91, 75, 138, 0.08)',
-  },
-  actionOptionButtonDisabled: {
-    opacity: 0.45,
-    backgroundColor: colors.surfaceContainerLow,
-  },
-  actionOptionText: {
-    color: colors.textSecondary,
-    fontWeight: '600',
-  },
-  actionOptionTextActive: {
-    color: colors.primary,
-    fontWeight: '700',
-  },
-  incompatibleNotice: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#FFF8E1',
-    padding: spacing.xs,
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    borderColor: '#FFE082',
-    marginTop: 4,
-  },
-  incompatibleNoticeText: {
-    color: '#6C5100',
-    flex: 1,
-    fontSize: 12,
-    lineHeight: 16,
-  },
-  expandDetailsButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-    paddingVertical: 4,
-  },
-  expandDetailsText: {
-    color: colors.primary,
-    fontWeight: '600',
-  },
-  categoryPickerContainer: {
-    gap: spacing.xs,
-    paddingTop: spacing.xs,
-    borderTopWidth: 1,
-    borderTopColor: colors.borderLight,
-  },
-  categoryChipsWrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.xs,
-  },
-  categorySelectChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: radius.full,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surfaceContainerLow,
-  },
-  categorySelectChipText: {
-    color: colors.textPrimary,
-  },
-});
+const createStyles = (colors: AppColors) =>
+  StyleSheet.create({
+    cardContainer: {
+      backgroundColor: colors.surface,
+      borderRadius: radius.lg,
+      padding: spacing.md,
+      borderWidth: 1,
+      borderColor: colors.border,
+      gap: spacing.sm,
+      shadowColor: colors.cardShadow,
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.05,
+      shadowRadius: 3,
+      elevation: 2,
+    },
+    cardContainerDeselected: {
+      opacity: 0.5,
+      backgroundColor: colors.surfaceContainerLow,
+    },
+    cardContainerError: {
+      borderColor: colors.error,
+      backgroundColor: colors.errorContainer,
+    },
+    headerRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+    },
+    checkbox: {
+      width: 24,
+      height: 24,
+      borderRadius: radius.sm,
+      borderWidth: 2,
+      borderColor: colors.outline,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.surface,
+    },
+    checkboxActive: {
+      backgroundColor: colors.primary,
+      borderColor: colors.primary,
+    },
+    nameContainer: {
+      flex: 1,
+    },
+    nameInput: {
+      color: colors.textPrimary,
+      fontWeight: '700',
+      paddingVertical: 2,
+      borderBottomWidth: 1,
+      borderBottomColor: 'transparent',
+    },
+    removeButton: {
+      padding: 4,
+    },
+    badgesRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.xs,
+      flexWrap: 'wrap',
+    },
+    categoryPill: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      paddingHorizontal: 8,
+      paddingVertical: 2,
+      borderRadius: radius.full,
+    },
+    categoryPillText: {
+      fontWeight: '600',
+    },
+    reviewBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      backgroundColor: colors.demoBadgeBackground,
+      paddingHorizontal: 8,
+      paddingVertical: 2,
+      borderRadius: radius.full,
+    },
+    reviewBadgeText: {
+      color: colors.demoBadgeText,
+      fontWeight: '600',
+    },
+    duplicateBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      backgroundColor: colors.surfaceContainerLow,
+      paddingHorizontal: 8,
+      paddingVertical: 2,
+      borderRadius: radius.full,
+    },
+    duplicateBadgePossible: {
+      backgroundColor: colors.surfaceContainer,
+    },
+    duplicateBadgeText: {
+      color: colors.primary,
+      fontWeight: '700',
+    },
+    quantityRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: spacing.md,
+      marginTop: spacing.xs,
+    },
+    quantityFieldGroup: {
+      width: 110,
+      gap: 4,
+    },
+    unitFieldGroup: {
+      flex: 1,
+      gap: 4,
+      overflow: 'hidden',
+    },
+    fieldLabel: {
+      color: colors.outline,
+      fontWeight: '600',
+      letterSpacing: 0.5,
+    },
+    quantityInputContainer: {
+      height: 40,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: radius.md,
+      backgroundColor: colors.surfaceContainerLow,
+      justifyContent: 'center',
+      paddingHorizontal: spacing.sm,
+    },
+    quantityInputContainerError: {
+      borderColor: colors.error,
+      backgroundColor: colors.errorContainer,
+    },
+    quantityInput: {
+      color: colors.textPrimary,
+      fontWeight: '600',
+    },
+    unitScroll: {
+      flexDirection: 'row',
+      gap: spacing.xs,
+      paddingVertical: 2,
+    },
+    unitChip: {
+      paddingHorizontal: 10,
+      height: 36,
+      borderRadius: radius.full,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceContainerLow,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    unitChipSelected: {
+      backgroundColor: colors.primary,
+      borderColor: colors.primary,
+    },
+    unitChipText: {
+      color: colors.textPrimary,
+      fontWeight: '600',
+    },
+    unitChipTextSelected: {
+      color: colors.onPrimary,
+    },
+    errorNotice: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.xs,
+      backgroundColor: colors.errorContainer,
+      padding: spacing.xs,
+      borderRadius: radius.sm,
+    },
+    errorNoticeText: {
+      color: colors.error,
+      flex: 1,
+    },
+    duplicateSection: {
+      backgroundColor: colors.surfaceContainerLow,
+      borderRadius: radius.md,
+      padding: spacing.sm,
+      gap: spacing.xs,
+      borderWidth: 1,
+      borderColor: colors.borderLight,
+    },
+    duplicateInfoRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.xs,
+    },
+    duplicateText: {
+      color: colors.textPrimary,
+      flex: 1,
+      lineHeight: 18,
+    },
+    actionButtonsRow: {
+      flexDirection: 'row',
+      gap: spacing.xs,
+      marginTop: 4,
+    },
+    actionOptionButton: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 4,
+      paddingVertical: 6,
+      borderRadius: radius.sm,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+    },
+    actionOptionButtonActive: {
+      borderColor: colors.primary,
+      backgroundColor: colors.surfaceContainer,
+    },
+    actionOptionButtonDisabled: {
+      opacity: 0.45,
+      backgroundColor: colors.surfaceContainerLow,
+    },
+    actionOptionText: {
+      color: colors.textSecondary,
+      fontWeight: '600',
+    },
+    actionOptionTextActive: {
+      color: colors.primary,
+      fontWeight: '700',
+    },
+    incompatibleNotice: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      backgroundColor: colors.surfaceContainer,
+      padding: spacing.xs,
+      borderRadius: radius.sm,
+      borderWidth: 1,
+      borderColor: colors.border,
+      marginTop: 4,
+    },
+    incompatibleNoticeText: {
+      color: colors.textSecondary,
+      flex: 1,
+      fontSize: 12,
+      lineHeight: 16,
+    },
+    expandDetailsButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 4,
+      paddingVertical: 4,
+    },
+    expandDetailsText: {
+      color: colors.primary,
+      fontWeight: '600',
+    },
+    categoryPickerContainer: {
+      gap: spacing.xs,
+      paddingTop: spacing.xs,
+      borderTopWidth: 1,
+      borderTopColor: colors.borderLight,
+    },
+    categoryChipsWrap: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: spacing.xs,
+    },
+    categorySelectChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+      borderRadius: radius.full,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceContainerLow,
+    },
+    categorySelectChipText: {
+      color: colors.textPrimary,
+    },
+  });

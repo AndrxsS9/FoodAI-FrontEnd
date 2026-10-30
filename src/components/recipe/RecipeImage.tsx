@@ -1,5 +1,5 @@
 /**
- * FoodAI - Componente reutilizable y accesible de imagen de receta (Fase 6B.1).
+ * FoodAI - Componente reutilizable y accesible de imagen de receta (Fase 6B.1 & 6B.2).
  *
  * Características:
  * 1. Soporta recursos empaquetados locales (require) y URLs remotas HTTPS seguras.
@@ -11,6 +11,7 @@
  * 7. Compatible con Android, iOS y Expo Web.
  * 8. Etiquetas de accesibilidad descriptivas para lectores de pantalla sin agrupar ni ocultar elementos superpuestos (children).
  * 9. Evita parpadeos y re-renderizados innecesarios.
+ * 10. Respaldo neutral y estados de carga adaptables al tema claro y oscuro con alto contraste.
  */
 
 import React, { useState, useEffect, useMemo, memo } from 'react';
@@ -26,10 +27,11 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import { colors } from '../../theme/colors';
+import { AppColors } from '../../theme/colors';
 import { radius } from '../../theme/radius';
 import { spacing } from '../../theme/spacing';
 import { useTypography } from '../../theme/typography';
+import { useAppTheme, useThemeStyles } from '../../context/ThemeContext';
 import { isSecureRemoteImageUrl } from '../../types/recipe';
 
 export { isSecureRemoteImageUrl } from '../../types/recipe';
@@ -150,6 +152,8 @@ export const RecipeImage = memo(function RecipeImage({
   children,
 }: RecipeImageProps) {
   const typography = useTypography();
+  const { colors } = useAppTheme();
+  const styles = useThemeStyles(createStyles);
   const [loadError, setLoadError] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -252,58 +256,59 @@ export const RecipeImage = memo(function RecipeImage({
   );
 });
 
-const styles = StyleSheet.create({
-  container: {
-    position: 'relative',
-    overflow: 'hidden',
-    backgroundColor: colors.surfaceContainer,
-  },
-  image: {
-    width: '100%',
-    height: '100%',
-  },
-  fallbackContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.surfaceContainerLow,
-    padding: spacing.md,
-    gap: spacing.xs,
-  },
-  fallbackVisual: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.xs,
-  },
-  fallbackIconBadge: {
-    width: 60,
-    height: 60,
-    borderRadius: radius.full,
-    backgroundColor: colors.surfaceContainerHighest,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 2,
-  },
-  fallbackTitle: {
-    color: colors.primary,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-  },
-  demoPillBadge: {
-    backgroundColor: '#FFDF9B',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: radius.full,
-    marginTop: 2,
-  },
-  demoPillText: {
-    color: '#503B00',
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  loadingContainer: {
-    ...StyleSheet.absoluteFill,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(240, 237, 233, 0.4)',
-  },
-});
+const createStyles = (colors: AppColors) =>
+  StyleSheet.create({
+    container: {
+      position: 'relative',
+      overflow: 'hidden',
+      backgroundColor: colors.surfaceContainer,
+    },
+    image: {
+      width: '100%',
+      height: '100%',
+    },
+    fallbackContainer: {
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.surfaceContainerLow,
+      padding: spacing.md,
+      gap: spacing.xs,
+    },
+    fallbackVisual: {
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: spacing.xs,
+    },
+    fallbackIconBadge: {
+      width: 60,
+      height: 60,
+      borderRadius: radius.full,
+      backgroundColor: colors.surfaceContainerHighest,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: 2,
+    },
+    fallbackTitle: {
+      color: colors.primary,
+      fontWeight: '700',
+      letterSpacing: 0.5,
+    },
+    demoPillBadge: {
+      backgroundColor: colors.demoBadgeBackground,
+      paddingHorizontal: 8,
+      paddingVertical: 2,
+      borderRadius: radius.full,
+      marginTop: 2,
+    },
+    demoPillText: {
+      color: colors.demoBadgeText,
+      fontSize: 10,
+      fontWeight: '700',
+    },
+    loadingContainer: {
+      ...StyleSheet.absoluteFill,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: 'rgba(240, 237, 233, 0.4)',
+    },
+  });

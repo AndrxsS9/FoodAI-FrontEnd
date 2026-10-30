@@ -3,27 +3,28 @@ import { StyleSheet, Platform } from 'react-native';
 import { Tabs } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { colors, useTypography } from '../../src/theme';
+import { useTypography, useAppTheme } from '../../src/theme';
 
 export default function TabsLayout() {
   const insets = useSafeAreaInsets();
   const typography = useTypography();
+  const { colors: activeColors } = useAppTheme();
 
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.outline,
+        tabBarActiveTintColor: activeColors.primary,
+        tabBarInactiveTintColor: activeColors.outline,
         tabBarStyle: {
-          backgroundColor: colors.surface,
-          borderTopColor: colors.borderLight,
+          backgroundColor: activeColors.surface,
+          borderTopColor: activeColors.borderLight,
           borderTopWidth: 1,
           height: 60 + (Platform.OS === 'ios' ? insets.bottom : Math.max(insets.bottom, 6)),
           paddingBottom: Platform.OS === 'ios' ? insets.bottom : Math.max(insets.bottom, 6),
           paddingTop: 6,
           elevation: 8,
-          shadowColor: '#5B4B8A',
+          shadowColor: activeColors.cardShadow,
           shadowOffset: { width: 0, height: -2 },
           shadowOpacity: 0.05,
           shadowRadius: 10,

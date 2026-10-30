@@ -17,9 +17,18 @@ import { useBudget } from '../../src/context/BudgetContext';
 import { useRecipes } from '../../src/context/RecipeContext';
 import { DEMO_DASHBOARD_DATA } from '../../src/fixtures/demoDashboardData';
 import { formatCopCurrency } from '../../src/types/recipe';
-import { colors, radius, spacing, useTypography } from '../../src/theme';
+import {
+  AppColors,
+  radius,
+  spacing,
+  useTypography,
+  useAppTheme,
+  useThemeStyles,
+} from '../../src/theme';
 
 export default function HomeScreen() {
+  const { colors } = useAppTheme();
+  const styles = useThemeStyles(createStyles);
   const typography = useTypography();
   const router = useRouter();
 
@@ -556,7 +565,8 @@ export default function HomeScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: AppColors) =>
+  StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: colors.canvas,
@@ -963,7 +973,7 @@ const styles = StyleSheet.create({
   modalBackdrop: {
     ...StyleSheet.absoluteFill,
     zIndex: 1000,
-    backgroundColor: 'rgba(37, 43, 58, 0.5)',
+    backgroundColor: colors.overlay,
     justifyContent: 'center',
     alignItems: 'center',
     padding: spacing.margin,

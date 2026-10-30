@@ -1,7 +1,14 @@
 /**
- * FoodAI - Grupo de Configuración y Soporte del Proyecto (Fase 5B).
- * Presenta opciones informativas reales, sin pretender ser preferencias editables falsas.
+ * FoodAI - Grupo de Configuración, Apariencia y Soporte del Proyecto (Fase 5B & Fase 6B.2).
+ *
+ * Características:
+ * - Selector genuino, reactivo y accesible de apariencia (Claro, Oscuro y Automático).
+ * - Persistencia asíncrona inmediata en dispositivo sin remonte de autenticación.
+ * - Manejo explícito de fallos de persistencia sin confirmaciones falsas.
+ * - Información del sistema real sobre moneda (COP), unidades métricas y privacidad.
+ * - Compatibilidad total con lectores de pantalla y WCAG AA.
  */
+
 import React, { useState } from 'react';
 import {
   Modal,
@@ -12,17 +19,156 @@ import {
   View,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import { colors, radius, spacing, useTypography } from '../../theme';
+import {
+  AppColors,
+  ThemeMode,
+  radius,
+  spacing,
+  useTypography,
+  useAppTheme,
+  useThemeStyles,
+} from '../../theme';
 import { Button } from '../common';
+
+interface AppearanceOption {
+  id: ThemeMode;
+  label: string;
+  icon: keyof typeof MaterialIcons.glyphMap;
+  hint: string;
+}
+
+const APPEARANCE_OPTIONS: AppearanceOption[] = [
+  {
+    id: 'light',
+    label: 'Claro',
+    icon: 'light-mode',
+    hint: 'Paleta luminosa con fondo marfil cálido',
+  },
+  {
+    id: 'dark',
+    label: 'Oscuro',
+    icon: 'dark-mode',
+    hint: 'Paleta nocturna con tonos oscuros elegantes',
+  },
+  {
+    id: 'system',
+    label: 'Automático',
+    icon: 'brightness-auto',
+    hint: 'Sigue automáticamente la apariencia del dispositivo',
+  },
+];
 
 export function ProfileSettingsGroup() {
   const typography = useTypography();
+  const { themeMode, setThemeMode } = useAppTheme();
+  const styles = useThemeStyles(createStyles);
+
   const [activeInfoModal, setActiveInfoModal] = useState<
     'config' | 'help' | 'about' | null
   >(null);
+  const [appearanceError, setAppearanceError] = useState<string | null>(null);
+
+  const handleSelectTheme = async (mode: ThemeMode) => {
+    if (mode === themeMode) return;
+    try {
+      setAppearanceError(null);
+      await setThemeMode(mode);
+    } catch (err) {
+      const msg =
+        err instanceof Error
+          ? err.message
+          : 'Error al persistir la preferencia de apariencia.';
+      setAppearanceError(msg);
+    }
+  };
 
   return (
-    <View style={styles.card}>
+    <View style={styles.card} testID="profile-settings-card">
+      {/* SECCIÓN 1: Selector de Apariencia Visual */}
+      <View style={styles.appearanceSection} testID="theme-selector-group">
+        <View style={styles.appearanceHeader}>
+          <View style={styles.settingsIconBox}>
+            <MaterialIcons name="palette" size={20} color={styles.iconColor.color} />
+          </View>
+          <View style={styles.settingsTextCol}>
+            <Text style={[styles.settingsRowTitle, typography.labelLg]}>
+              Apariencia visual
+            </Text>
+            <Text style={[styles.settingsRowSubtitle, typography.bodySm]}>
+              Selecciona tu tema preferido
+            </Text>
+          </View>
+        </View>
+
+        {appearanceError && (
+          <View
+            style={styles.appearanceErrorBanner}
+            accessibilityRole="alert"
+            testID="theme-save-error-banner"
+          >
+            <MaterialIcons name="error-outline" size={16} color={styles.errorIconColor.color} />
+            <Text style={[styles.appearanceErrorText, typography.labelSm]}>
+              {appearanceError}
+            </Text>
+            <Pressable
+              onPress={() => setAppearanceError(null)}
+              accessibilityLabel="Cerrar mensaje de error"
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <MaterialIcons name="close" size={14} color={styles.errorIconColor.color} />
+            </Pressable>
+          </View>
+        )}
+
+        <View
+          style={styles.optionsRow}
+          accessibilityRole="radiogroup"
+          accessibilityLabel="Opciones de tema: Claro, Oscuro y Automático"
+        >
+          {APPEARANCE_OPTIONS.map((option) => {
+            const isSelected = themeMode === option.id;
+
+            return (
+              <Pressable
+                key={option.id}
+                onPress={() => handleSelectTheme(option.id)}
+                accessibilityRole="radio"
+                accessibilityLabel={`${option.label}, ${
+                  isSelected ? 'seleccionado' : 'no seleccionado'
+                }`}
+                accessibilityHint={option.hint}
+                accessibilityState={{ selected: isSelected }}
+                testID={`appearance-option-${option.id}`}
+                style={({ pressed }) => [
+                  styles.optionButton,
+                  isSelected && styles.optionButtonSelected,
+                  pressed && styles.optionButtonPressed,
+                ]}
+              >
+                <MaterialIcons
+                  name={option.icon}
+                  size={22}
+                  color={isSelected ? styles.selectedColor.color : styles.unselectedColor.color}
+                />
+                <Text
+                  style={[
+                    styles.optionLabel,
+                    typography.labelSm,
+                    isSelected ? styles.optionLabelSelected : styles.optionLabelUnselected,
+                  ]}
+                  numberOfLines={1}
+                >
+                  {option.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      </View>
+
+      <View style={styles.sectionDivider} />
+
+      {/* SECCIÓN 2: Filas Informativas y de Soporte */}
       {/* Fila 1: Configuración */}
       <Pressable
         style={({ pressed }) => [
@@ -36,7 +182,7 @@ export function ProfileSettingsGroup() {
       >
         <View style={styles.settingsRowLeft}>
           <View style={styles.settingsIconBox}>
-            <MaterialIcons name="settings" size={20} color={colors.textPrimary} />
+            <MaterialIcons name="settings" size={20} color={styles.iconColor.color} />
           </View>
           <View style={styles.settingsTextCol}>
             <Text style={[styles.settingsRowTitle, typography.labelLg]}>
@@ -47,7 +193,7 @@ export function ProfileSettingsGroup() {
             </Text>
           </View>
         </View>
-        <MaterialIcons name="chevron-right" size={22} color={colors.outline} />
+        <MaterialIcons name="chevron-right" size={22} color={styles.chevronColor.color} />
       </Pressable>
 
       <View style={styles.rowDivider} />
@@ -68,7 +214,7 @@ export function ProfileSettingsGroup() {
             <MaterialIcons
               name="help-outline"
               size={20}
-              color={colors.textPrimary}
+              color={styles.iconColor.color}
             />
           </View>
           <View style={styles.settingsTextCol}>
@@ -80,7 +226,7 @@ export function ProfileSettingsGroup() {
             </Text>
           </View>
         </View>
-        <MaterialIcons name="chevron-right" size={22} color={colors.outline} />
+        <MaterialIcons name="chevron-right" size={22} color={styles.chevronColor.color} />
       </Pressable>
 
       <View style={styles.rowDivider} />
@@ -98,7 +244,7 @@ export function ProfileSettingsGroup() {
       >
         <View style={styles.settingsRowLeft}>
           <View style={styles.settingsIconBox}>
-            <MaterialIcons name="info" size={20} color={colors.textPrimary} />
+            <MaterialIcons name="info" size={20} color={styles.iconColor.color} />
           </View>
           <View style={styles.settingsTextCol}>
             <Text style={[styles.settingsRowTitle, typography.labelLg]}>
@@ -115,7 +261,7 @@ export function ProfileSettingsGroup() {
               v1.0.0
             </Text>
           </View>
-          <MaterialIcons name="chevron-right" size={22} color={colors.outline} />
+          <MaterialIcons name="chevron-right" size={22} color={styles.chevronColor.color} />
         </View>
       </Pressable>
 
@@ -146,7 +292,7 @@ export function ProfileSettingsGroup() {
                       : 'info'
                   }
                   size={24}
-                  color={colors.primary}
+                  color={styles.selectedColor.color}
                 />
               </View>
               <Text style={[styles.infoDialogTitle, typography.headlineMd]}>
@@ -217,125 +363,209 @@ export function ProfileSettingsGroup() {
   );
 }
 
-const styles = StyleSheet.create({
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.xl,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: colors.borderLight,
-    shadowColor: colors.primary,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 2,
-    width: '100%',
-  },
-  settingsGroupRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.md,
-    paddingVertical: 14,
-  },
-  settingsGroupRowPressed: {
-    backgroundColor: colors.surfaceContainerLow,
-  },
-  settingsRowLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    flex: 1,
-  },
-  settingsIconBox: {
-    width: 36,
-    height: 36,
-    borderRadius: radius.md,
-    backgroundColor: colors.surfaceContainerLow,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  settingsTextCol: {
-    flex: 1,
-  },
-  settingsRowTitle: {
-    color: colors.textPrimary,
-    fontWeight: '600',
-  },
-  settingsRowSubtitle: {
-    color: colors.textSecondary,
-    marginTop: 2,
-    lineHeight: 18,
-  },
-  rowDivider: {
-    height: 1,
-    backgroundColor: colors.borderLight,
-    marginLeft: 60,
-  },
-  versionBadgeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-  },
-  versionBadge: {
-    backgroundColor: colors.surfaceContainer,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
-    borderRadius: radius.full,
-  },
-  versionBadgeText: {
-    color: colors.outline,
-    fontWeight: '700',
-  },
+const createStyles = (colors: AppColors) =>
+  StyleSheet.create({
+    card: {
+      backgroundColor: colors.surface,
+      borderRadius: radius.xl,
+      overflow: 'hidden',
+      borderWidth: 1,
+      borderColor: colors.borderLight,
+      shadowColor: colors.cardShadow,
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.04,
+      shadowRadius: 8,
+      elevation: 2,
+      width: '100%',
+    },
 
-  // Modal de información
-  dialogOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.45)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: spacing.margin,
-  },
-  infoDialogCard: {
-    width: '100%',
-    maxWidth: 380,
-    backgroundColor: colors.surface,
-    borderRadius: radius.xl,
-    padding: spacing.lg,
-    gap: spacing.md,
-    maxHeight: '80%',
-    shadowColor: colors.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 16,
-    elevation: 8,
-  },
-  infoDialogHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  infoDialogIconBox: {
-    width: 40,
-    height: 40,
-    borderRadius: radius.md,
-    backgroundColor: colors.surfaceContainerLow,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  infoDialogTitle: {
-    color: colors.textPrimary,
-    fontWeight: '700',
-    flex: 1,
-  },
-  infoDialogScroll: {
-    maxHeight: 260,
-  },
-  infoContentBox: {
-    gap: spacing.sm,
-  },
-  infoParagraph: {
-    color: colors.textSecondary,
-    lineHeight: 22,
-  },
-});
+    // Sección de apariencia
+    appearanceSection: {
+      padding: spacing.md,
+      gap: spacing.sm,
+    },
+    appearanceHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+    },
+    appearanceErrorBanner: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: colors.errorContainer,
+      borderRadius: radius.sm,
+      paddingHorizontal: spacing.sm,
+      paddingVertical: 6,
+      gap: spacing.xs,
+    },
+    appearanceErrorText: {
+      flex: 1,
+      color: colors.error,
+    },
+    optionsRow: {
+      flexDirection: 'row',
+      gap: spacing.sm,
+      marginTop: 2,
+    },
+    optionButton: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 10,
+      paddingHorizontal: spacing.xs,
+      borderRadius: radius.md,
+      borderWidth: 1.5,
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceContainerLow,
+      gap: 4,
+      minHeight: 52,
+    },
+    optionButtonSelected: {
+      borderColor: colors.primary,
+      backgroundColor: colors.surface,
+    },
+    optionButtonPressed: {
+      opacity: 0.8,
+    },
+    optionLabel: {
+      fontSize: 12,
+    },
+    optionLabelSelected: {
+      color: colors.primary,
+      fontWeight: '700',
+    },
+    optionLabelUnselected: {
+      color: colors.textSecondary,
+      fontWeight: '500',
+    },
+
+    sectionDivider: {
+      height: 1,
+      backgroundColor: colors.borderLight,
+    },
+
+    settingsGroupRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: spacing.md,
+      paddingVertical: 14,
+    },
+    settingsGroupRowPressed: {
+      backgroundColor: colors.surfaceContainerLow,
+    },
+    settingsRowLeft: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      flex: 1,
+    },
+    settingsIconBox: {
+      width: 36,
+      height: 36,
+      borderRadius: radius.md,
+      backgroundColor: colors.surfaceContainerLow,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    settingsTextCol: {
+      flex: 1,
+    },
+    settingsRowTitle: {
+      color: colors.textPrimary,
+      fontWeight: '600',
+    },
+    settingsRowSubtitle: {
+      color: colors.textSecondary,
+      marginTop: 2,
+      lineHeight: 18,
+    },
+    rowDivider: {
+      height: 1,
+      backgroundColor: colors.borderLight,
+      marginLeft: 60,
+    },
+    versionBadgeRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.xs,
+    },
+    versionBadge: {
+      backgroundColor: colors.surfaceContainer,
+      paddingHorizontal: spacing.sm,
+      paddingVertical: 2,
+      borderRadius: radius.full,
+    },
+    versionBadgeText: {
+      color: colors.outline,
+      fontWeight: '700',
+    },
+
+    // Modal de información
+    dialogOverlay: {
+      flex: 1,
+      backgroundColor: colors.overlay,
+      justifyContent: 'center',
+      alignItems: 'center',
+      padding: spacing.margin,
+    },
+    infoDialogCard: {
+      width: '100%',
+      maxWidth: 380,
+      backgroundColor: colors.surface,
+      borderRadius: radius.xl,
+      padding: spacing.lg,
+      gap: spacing.md,
+      maxHeight: '80%',
+      shadowColor: colors.cardShadow,
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.1,
+      shadowRadius: 16,
+      elevation: 8,
+    },
+    infoDialogHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+    },
+    infoDialogIconBox: {
+      width: 40,
+      height: 40,
+      borderRadius: radius.md,
+      backgroundColor: colors.surfaceContainerLow,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    infoDialogTitle: {
+      color: colors.textPrimary,
+      fontWeight: '700',
+      flex: 1,
+    },
+    infoDialogScroll: {
+      maxHeight: 260,
+    },
+    infoContentBox: {
+      gap: spacing.sm,
+    },
+    infoParagraph: {
+      color: colors.textSecondary,
+      lineHeight: 22,
+    },
+
+    // Helper colors for inline icons
+    iconColor: {
+      color: colors.textPrimary,
+    },
+    chevronColor: {
+      color: colors.outline,
+    },
+    selectedColor: {
+      color: colors.primary,
+    },
+    unselectedColor: {
+      color: colors.outline,
+    },
+    errorIconColor: {
+      color: colors.error,
+    },
+  });

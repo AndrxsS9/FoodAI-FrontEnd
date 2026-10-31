@@ -16,17 +16,29 @@ import {
   MealPlanApiError,
   generateMealPlan,
 } from '../src/services/api/mealPlanApi';
+import { supabase } from '../src/services/supabase/client';
 import { MealPlanRequest } from '../src/types/mealPlan';
 
 describe('Cliente de API de Plan de Comidas (mealPlanApi)', () => {
   const originalFetch = (globalThis as any).fetch;
+  const mockAccessToken = 'mock-supabase-jwt-meal-plan-api';
 
   beforeEach(() => {
     process.env.EXPO_PUBLIC_API_BASE_URL = 'http://localhost:3000';
+    jest.spyOn(supabase.auth, 'getSession').mockImplementation(async () => ({
+      data: {
+        session: {
+          access_token: mockAccessToken,
+          expires_at: Math.floor(Date.now() / 1000) + 3600,
+        } as any,
+      },
+      error: null,
+    }));
   });
 
   afterEach(() => {
     (globalThis as any).fetch = originalFetch;
+    jest.restoreAllMocks();
     jest.clearAllMocks();
   });
 
@@ -176,6 +188,7 @@ describe('Cliente de API de Plan de Comidas (mealPlanApi)', () => {
       expect(options.headers).toEqual({
         'Content-Type': 'application/json',
         Accept: 'application/json',
+        Authorization: `Bearer ${mockAccessToken}`,
       });
 
       const parsedBody = JSON.parse(options.body);

@@ -25,6 +25,10 @@ import {
   MIN_PASSWORD_LENGTH,
 } from '../types/auth';
 import { isSupabaseConfigured, supabase as defaultSupabase } from '../services/supabase/client';
+import {
+  clearAuthSigningOutState,
+  notifyAuthSessionTransition,
+} from '../services/api/authHeaders';
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
@@ -56,6 +60,9 @@ export function AuthProvider({
   // Inicialización de sesión y suscripción al listener de Supabase Auth
   useEffect(() => {
     isMountedRef.current = true;
+    if (initialSession !== undefined) {
+      notifyAuthSessionTransition(supabaseClient, initialSession);
+    }
 
     let authSubscription: { unsubscribe: () => void } | null = null;
     try {
@@ -82,6 +89,9 @@ export function AuthProvider({
           // evitamos revivir esa sesión mientras se procesa la salida
           if (isSigningOutRef.current && (event === 'INITIAL_SESSION' || currentSession?.user)) {
             if (event === 'SIGNED_OUT' || !currentSession) {
+              notifyAuthSessionTransition(supabaseClient, null, {
+                forceInvalidate: true,
+              });
               lastAppliedSeqRef.current = eventSeq;
               setSession(null);
               setUser(null);
@@ -102,6 +112,9 @@ export function AuthProvider({
           }
 
           lastAppliedSeqRef.current = eventSeq;
+          notifyAuthSessionTransition(supabaseClient, currentSession, {
+            forceInvalidate: event === 'SIGNED_OUT' || !currentSession,
+          });
           setSession(currentSession);
           setUser(currentSession?.user ?? null);
           if (currentSession) {
@@ -138,6 +151,7 @@ export function AuthProvider({
             lastAppliedSeqRef.current = initSeq;
             initialSessionHandledRef.current = true;
             const restoredSession = data?.session ?? null;
+            notifyAuthSessionTransition(supabaseClient, restoredSession);
             setSession(restoredSession);
             setUser(restoredSession?.user ?? null);
           }
@@ -226,6 +240,9 @@ export function AuthProvider({
           if (signUpSeq >= lastAppliedSeqRef.current) {
             lastAppliedSeqRef.current = signUpSeq;
             lastLoginSeqRef.current = signUpSeq;
+            notifyAuthSessionTransition(supabaseClient, registeredSession, {
+              signingOut: false,
+            });
             setSession(registeredSession);
             setUser(registeredUser);
           }
@@ -303,6 +320,9 @@ export function AuthProvider({
           if (signInSeq >= lastAppliedSeqRef.current) {
             lastAppliedSeqRef.current = signInSeq;
             lastLoginSeqRef.current = signInSeq;
+            notifyAuthSessionTransition(supabaseClient, data.session, {
+              signingOut: false,
+            });
             setSession(data.session);
             setUser(data.user);
             setAuthError(null);
@@ -333,6 +353,10 @@ export function AuthProvider({
    */
   const signOut = useCallback(async () => {
     const signOutSeq = ++authOpSeqRef.current;
+    notifyAuthSessionTransition(supabaseClient, null, {
+      signingOut: true,
+      forceInvalidate: true,
+    });
     isSigningOutRef.current = true;
     isSubmittingRef.current = true;
     setIsSubmitting(true);
@@ -351,6 +375,10 @@ export function AuthProvider({
         // Garantizar cierre de sesión a menos que un login posterior más nuevo haya ocurrido
         if (signOutSeq >= lastLoginSeqRef.current) {
           lastAppliedSeqRef.current = Math.max(lastAppliedSeqRef.current, signOutSeq);
+          notifyAuthSessionTransition(supabaseClient, null, {
+            signingOut: false,
+            forceInvalidate: true,
+          });
           setSession(null);
           setUser(null);
         }
@@ -361,6 +389,7 @@ export function AuthProvider({
       setAuthError(msg);
       throw err instanceof Error ? err : new Error(msg);
     } finally {
+      clearAuthSigningOutState(supabaseClient);
       isSigningOutRef.current = false;
       isSubmittingRef.current = false;
       if (isMountedRef.current) {

@@ -1,11 +1,14 @@
 /**
- * FoodAI - Helper compartido de autenticación Bearer con Supabase (Fase 6C.2).
+ * FoodAI - Helper compartido de autenticación Bearer con Supabase (Fase 6C.2 / Hardening concurrencia).
  *
  * Responsabilidades de seguridad:
  * 1. Obtiene dinámicamente el access_token de la sesión activa de Supabase justo antes de cada petición protegida.
- * 2. Opera en modo fail-closed si no existe sesión válida, el token es malformado o la sesión expiró sin poder renovarse.
- * 3. Previene condiciones de carrera de refresco (single-flight refresh por cliente) y evita refrescos innecesarios.
- * 4. NUNCA registra tokens en consola, NUNCA los persiste por separado y NUNCA los expone en mensajes de error ni query params.
+ * 2. Opera en modo fail-closed si no existe sesión válida, la identidad de sesión no puede establecerse con seguridad,
+ *    el token es malformado o la sesión expiró sin poder renovarse.
+ * 3. Aísla estrictamente la deduplicación single-flight de refreshSession por cliente, generación (epoch) e identidad
+ *    verificada de sesión, revalidando la titularidad activa tras operaciones asíncronas para impedir fugas entre cuentas.
+ * 4. NUNCA decodifica claims JWT no verificados para inferir identidad de usuario, NUNCA registra tokens en consola,
+ *    NUNCA los persiste por separado y NUNCA los expone en mensajes de error ni query params.
  * 5. Traduce los contratos HTTP de autenticación del backend (401 y 503) a mensajes claros en español.
  */
 
@@ -34,10 +37,15 @@ export const AUTH_ERROR_MESSAGES: Record<AuthErrorCode, string> = {
     'No fue posible verificar tu sesión temporalmente. Por favor, intenta nuevamente en unos momentos.',
 };
 
+export interface SupabaseAuthUserLike {
+  id?: string | null;
+}
+
 export interface SupabaseAuthSessionLike {
   access_token?: string | null;
   refresh_token?: string | null;
   expires_at?: number | null;
+  user?: SupabaseAuthUserLike | null;
 }
 
 export interface SupabaseAuthErrorLike {
@@ -89,11 +97,134 @@ interface RefreshSingleFlightResult {
   isUnconfigured: boolean;
 }
 
-// Mapa débil por instancia de cliente Supabase para deduplicar refrescos concurrentes sin fugas de memoria
-const inFlightRefreshByClient = new WeakMap<
-  object,
-  Promise<RefreshSingleFlightResult>
->();
+interface InFlightRefreshEntry {
+  readonly epoch: number;
+  readonly userId: string | null;
+  readonly scopeKey: string;
+  readonly promise: Promise<RefreshSingleFlightResult>;
+}
+
+interface ClientAuthTracker {
+  epoch: number;
+  activeUserId: string | null;
+  isSigningOut: boolean;
+  inFlightByScope: Map<string, InFlightRefreshEntry>;
+}
+
+type ResolvedSessionIdentity =
+  | {
+      readonly kind: 'verified';
+      readonly userId: string;
+      readonly refreshToken: string | null;
+      readonly scopeKey: string;
+    }
+  | {
+      readonly kind: 'legacy_mock';
+      readonly userId: null;
+      readonly refreshToken: string | null;
+      readonly scopeKey: string;
+    }
+  | {
+      readonly kind: 'invalid';
+    };
+
+// Estado débil por instancia de cliente Supabase para aislar generaciones de sesión y refrescos concurrentes sin fugas de memoria
+const trackerByClient = new WeakMap<object, ClientAuthTracker>();
+
+function getClientTracker(client: object): ClientAuthTracker {
+  let tracker = trackerByClient.get(client);
+  if (!tracker) {
+    tracker = {
+      epoch: 0,
+      activeUserId: null,
+      isSigningOut: false,
+      inFlightByScope: new Map(),
+    };
+    trackerByClient.set(client, tracker);
+  }
+  return tracker;
+}
+
+function hasAuthLifecycleSupport(client: SupabaseAuthClientLike): boolean {
+  const authCandidate = client.auth as { onAuthStateChange?: unknown };
+  return typeof authCandidate.onAuthStateChange === 'function';
+}
+
+function extractVerifiedSessionUserId(
+  session: SupabaseAuthSessionLike | null | undefined
+): string | null {
+  if (!session || typeof session !== 'object') {
+    return null;
+  }
+  const userCandidate = session.user;
+  if (!userCandidate || typeof userCandidate !== 'object') {
+    return null;
+  }
+  if (typeof userCandidate.id !== 'string') {
+    return null;
+  }
+  const trimmedId = userCandidate.id.trim();
+  return trimmedId.length > 0 ? trimmedId : null;
+}
+
+/**
+ * Notifica transiciones de ciclo de vida de sesión (signOut, cambio de usuario, restauración o login)
+ * para invalidar de inmediato cualquier refresco en vuelo perteneciente a una sesión superada.
+ *
+ * Preserva intacta la rotación normal de tokens (TOKEN_REFRESHED del mismo user.id).
+ */
+export function notifyAuthSessionTransition(
+  client?: SupabaseAuthClientLike | object | null,
+  session?: SupabaseAuthSessionLike | null,
+  options?: { signingOut?: boolean; forceInvalidate?: boolean }
+): void {
+  const target = (
+    client && typeof client === 'object' ? client : defaultSupabase
+  ) as object;
+  const tracker = getClientTracker(target);
+
+  if (typeof options?.signingOut === 'boolean') {
+    tracker.isSigningOut = options.signingOut;
+  }
+
+  const nextUserId = extractVerifiedSessionUserId(session);
+  const sessionCleared =
+    (!session || nextUserId === null) &&
+    (tracker.activeUserId !== null || tracker.inFlightByScope.size > 0);
+  const userSwitched =
+    nextUserId !== null &&
+    tracker.activeUserId !== null &&
+    nextUserId !== tracker.activeUserId;
+  const enteredUserOverPending =
+    nextUserId !== null &&
+    tracker.activeUserId === null &&
+    tracker.inFlightByScope.size > 0;
+
+  if (
+    options?.forceInvalidate === true ||
+    sessionCleared ||
+    userSwitched ||
+    enteredUserOverPending
+  ) {
+    tracker.epoch += 1;
+    tracker.inFlightByScope.clear();
+  }
+
+  tracker.activeUserId = session ? nextUserId : null;
+}
+
+/**
+ * Limpia el indicador transitorio de cierre de sesión en progreso sin alterar la generación actual.
+ */
+export function clearAuthSigningOutState(
+  client?: SupabaseAuthClientLike | object | null
+): void {
+  const target = (
+    client && typeof client === 'object' ? client : defaultSupabase
+  ) as object;
+  const tracker = getClientTracker(target);
+  tracker.isSigningOut = false;
+}
 
 const BASE64_ALPHABET =
   'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
@@ -154,6 +285,8 @@ function decodeBase64UrlToString(segment: string): string | null {
 
 /**
  * Extrae defensivamente la marca de expiración (exp en segundos Unix) de la sesión o del payload JWT.
+ * IMPORTANTE: Solo se usa como respaldo de tiempo de expiración; NUNCA se usan claims JWT no verificados
+ * para establecer la identidad del usuario autenticado.
  */
 export function resolveSessionExpiresAtSeconds(
   session: SupabaseAuthSessionLike | null | undefined
@@ -234,15 +367,91 @@ function isExpiredErrorHint(error: unknown): boolean {
 }
 
 /**
- * Ejecuta un único refreshSession compartido por instancia de cliente cuando múltiples
- * solicitudes protegidas coinciden ante una sesión vencida o próxima a vencer.
+ * Determina la identidad verificada de la sesión únicamente a partir del objeto `session.user.id`
+ * entregado por Supabase Auth (nunca decodificando claims JWT sin verificar).
  */
-function refreshSessionSingleFlight(
-  client: SupabaseAuthClientLike
+function resolveSessionIdentity(
+  session: SupabaseAuthSessionLike,
+  trimmedAccessToken: string,
+  requireVerifiedUser: boolean
+): ResolvedSessionIdentity {
+  const hasExplicitUserField =
+    Object.prototype.hasOwnProperty.call(session, 'user') ||
+    session.user !== undefined;
+
+  const refreshToken =
+    typeof session.refresh_token === 'string' &&
+    session.refresh_token.trim().length > 0
+      ? session.refresh_token.trim()
+      : null;
+
+  if (hasExplicitUserField) {
+    const verifiedUserId = extractVerifiedSessionUserId(session);
+    if (!verifiedUserId) {
+      return { kind: 'invalid' };
+    }
+
+    const scopeKey = refreshToken
+      ? `user:${verifiedUserId}::rt:${refreshToken}`
+      : `user:${verifiedUserId}`;
+
+    return {
+      kind: 'verified',
+      userId: verifiedUserId,
+      refreshToken,
+      scopeKey,
+    };
+  }
+
+  if (requireVerifiedUser) {
+    return { kind: 'invalid' };
+  }
+
+  const scopeKey = refreshToken
+    ? `legacy-rt:${refreshToken}`
+    : `legacy-at:${trimmedAccessToken}`;
+
+  return {
+    kind: 'legacy_mock',
+    userId: null,
+    refreshToken,
+    scopeKey,
+  };
+}
+
+function createAbortError(): Error {
+  const abortError = new Error('The operation was aborted.');
+  abortError.name = 'AbortError';
+  return abortError;
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) {
+    throw createAbortError();
+  }
+}
+
+/**
+ * Ejecuta un único refreshSession deduplicado exclusivamente dentro de la misma generación
+ * e identidad lógica de sesión. Nunca reutiliza promesas en vuelo entre cuentas o sesiones distintas.
+ */
+function refreshSessionScoped(
+  client: SupabaseAuthClientLike,
+  tracker: ClientAuthTracker,
+  expectedEpoch: number,
+  identity: Exclude<ResolvedSessionIdentity, { kind: 'invalid' }>
 ): Promise<RefreshSingleFlightResult> {
-  const existing = inFlightRefreshByClient.get(client);
-  if (existing) {
-    return existing;
+  const compositeKey = `${expectedEpoch}::${identity.scopeKey}`;
+  const existing = tracker.inFlightByScope.get(compositeKey);
+  if (
+    existing &&
+    !tracker.isSigningOut &&
+    existing.epoch === tracker.epoch &&
+    existing.epoch === expectedEpoch &&
+    existing.userId === identity.userId &&
+    existing.scopeKey === identity.scopeKey
+  ) {
+    return existing.promise;
   }
 
   const refreshFn = client.auth.refreshSession;
@@ -254,6 +463,7 @@ function refreshSessionSingleFlight(
     });
   }
 
+  let currentEntry: InFlightRefreshEntry | null = null;
   const refreshPromise = (async (): Promise<RefreshSingleFlightResult> => {
     try {
       const response = await refreshFn.call(client.auth);
@@ -285,11 +495,26 @@ function refreshSessionSingleFlight(
         isUnconfigured: false,
       };
     } finally {
-      inFlightRefreshByClient.delete(client);
+      if (
+        currentEntry &&
+        tracker.inFlightByScope.get(compositeKey) === currentEntry
+      ) {
+        tracker.inFlightByScope.delete(compositeKey);
+      }
     }
   })();
 
-  inFlightRefreshByClient.set(client, refreshPromise);
+  currentEntry = {
+    epoch: expectedEpoch,
+    userId: identity.userId,
+    scopeKey: identity.scopeKey,
+    promise: refreshPromise,
+  };
+
+  if (tracker.epoch === expectedEpoch && !tracker.isSigningOut) {
+    tracker.inFlightByScope.set(compositeKey, currentEntry);
+  }
+
   return refreshPromise;
 }
 
@@ -301,18 +526,12 @@ async function withAbortSignal<T>(
     return promise;
   }
 
-  if (signal.aborted) {
-    const abortError = new Error('The operation was aborted.');
-    abortError.name = 'AbortError';
-    throw abortError;
-  }
+  throwIfAborted(signal);
 
   let onAbort: (() => void) | undefined;
   const abortPromise = new Promise<never>((_resolve, reject) => {
     onAbort = () => {
-      const abortError = new Error('The operation was aborted.');
-      abortError.name = 'AbortError';
-      reject(abortError);
+      reject(createAbortError());
     };
     signal.addEventListener('abort', onAbort, { once: true });
   });
@@ -327,7 +546,8 @@ async function withAbortSignal<T>(
 }
 
 async function acquireBearerToken(
-  client: SupabaseAuthClientLike
+  client: SupabaseAuthClientLike,
+  signal?: AbortSignal
 ): Promise<string> {
   if (!client || !client.auth || typeof client.auth.getSession !== 'function') {
     throw new ApiAuthError(
@@ -337,15 +557,33 @@ async function acquireBearerToken(
     );
   }
 
+  throwIfAborted(signal);
+
+  const tracker = getClientTracker(client);
+  if (tracker.isSigningOut) {
+    throw new ApiAuthError(
+      AUTH_ERROR_MESSAGES.AUTH_TOKEN_REQUIRED,
+      AUTH_ERROR_CODES.AUTH_TOKEN_REQUIRED,
+      401
+    );
+  }
+
+  const epochBeforeInitialRead = tracker.epoch;
+
   let sessionResponse: SupabaseAuthResponseLike;
   try {
-    sessionResponse = await client.auth.getSession();
+    sessionResponse = await withAbortSignal(client.auth.getSession(), signal);
   } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw err;
+    }
     const code = isExpiredErrorHint(err)
       ? AUTH_ERROR_CODES.AUTH_TOKEN_EXPIRED
       : AUTH_ERROR_CODES.AUTH_TOKEN_REQUIRED;
     throw new ApiAuthError(AUTH_ERROR_MESSAGES[code], code, 401);
   }
+
+  throwIfAborted(signal);
 
   if (!sessionResponse || sessionResponse.error) {
     const code = isExpiredErrorHint(sessionResponse?.error)
@@ -356,6 +594,11 @@ async function acquireBearerToken(
 
   const session = sessionResponse.data?.session ?? null;
   if (!session) {
+    if (tracker.activeUserId !== null || tracker.inFlightByScope.size > 0) {
+      tracker.epoch += 1;
+      tracker.activeUserId = null;
+      tracker.inFlightByScope.clear();
+    }
     throw new ApiAuthError(
       AUTH_ERROR_MESSAGES.AUTH_TOKEN_REQUIRED,
       AUTH_ERROR_CODES.AUTH_TOKEN_REQUIRED,
@@ -387,13 +630,214 @@ async function acquireBearerToken(
   const isExpiringSoon =
     expiresAtSeconds !== null &&
     expiresAtSeconds <= nowSeconds + SESSION_REFRESH_LEEWAY_SECONDS;
+  const needsRefresh = isStrictlyExpired || isExpiringSoon;
 
-  if (!isStrictlyExpired && !isExpiringSoon) {
+  const initialIdentity = resolveSessionIdentity(
+    session,
+    trimmedToken,
+    needsRefresh && hasAuthLifecycleSupport(client)
+  );
+
+  if (initialIdentity.kind === 'invalid') {
+    throw new ApiAuthError(
+      AUTH_ERROR_MESSAGES.AUTH_TOKEN_REQUIRED,
+      AUTH_ERROR_CODES.AUTH_TOKEN_REQUIRED,
+      401
+    );
+  }
+
+  if (tracker.isSigningOut) {
+    throw new ApiAuthError(
+      AUTH_ERROR_MESSAGES.AUTH_TOKEN_REQUIRED,
+      AUTH_ERROR_CODES.AUTH_TOKEN_REQUIRED,
+      401
+    );
+  }
+
+  // Si ocurrió una transición de frontera (signOut o cambio de cuenta) durante getSession(),
+  // solo se permite continuar si la frontera aterrizó exactamente en el usuario verificado actual.
+  if (tracker.epoch !== epochBeforeInitialRead) {
+    const settledOnSameVerifiedUser =
+      initialIdentity.kind === 'verified' &&
+      tracker.activeUserId !== null &&
+      tracker.activeUserId === initialIdentity.userId;
+
+    if (!settledOnSameVerifiedUser) {
+      throw new ApiAuthError(
+        AUTH_ERROR_MESSAGES.AUTH_TOKEN_REQUIRED,
+        AUTH_ERROR_CODES.AUTH_TOKEN_REQUIRED,
+        401
+      );
+    }
+  }
+
+  // Detectar cambios directos de identidad en el cliente incluso sin eventos externos
+  if (initialIdentity.kind === 'verified') {
+    if (
+      tracker.activeUserId !== null &&
+      tracker.activeUserId !== initialIdentity.userId
+    ) {
+      tracker.epoch += 1;
+      tracker.inFlightByScope.clear();
+    }
+    tracker.activeUserId = initialIdentity.userId;
+  } else if (tracker.activeUserId !== null) {
+    tracker.epoch += 1;
+    tracker.activeUserId = null;
+    tracker.inFlightByScope.clear();
+  }
+
+  const capturedEpoch = tracker.epoch;
+
+  if (!needsRefresh) {
     return trimmedToken;
   }
 
-  // Sesión expirada o próxima a expirar: intentar refresco deduplicado (single-flight)
-  const refreshOutcome = await refreshSessionSingleFlight(client);
+  // Sesión expirada o próxima a expirar: intentar refresco deduplicado aislado por (epoch, identidad)
+  const refreshOutcome = await withAbortSignal(
+    refreshSessionScoped(client, tracker, capturedEpoch, initialIdentity),
+    signal
+  );
+
+  throwIfAborted(signal);
+
+  // 1. Verificar que la generación e identidad de sesión no hayan sido invalidadas durante el refresh
+  if (
+    tracker.isSigningOut ||
+    tracker.epoch !== capturedEpoch ||
+    (initialIdentity.kind === 'verified' &&
+      tracker.activeUserId !== initialIdentity.userId)
+  ) {
+    throw new ApiAuthError(
+      AUTH_ERROR_MESSAGES.AUTH_TOKEN_REQUIRED,
+      AUTH_ERROR_CODES.AUTH_TOKEN_REQUIRED,
+      401
+    );
+  }
+
+  // 2. Revalidar titularidad de la sesión refrescada y de la sesión activa actual en el cliente
+  if (initialIdentity.kind === 'verified') {
+    if (refreshOutcome.session) {
+      const refreshedUserId = extractVerifiedSessionUserId(
+        refreshOutcome.session
+      );
+      if (!refreshedUserId || refreshedUserId !== initialIdentity.userId) {
+        if (refreshedUserId && refreshedUserId !== initialIdentity.userId) {
+          tracker.epoch += 1;
+          tracker.activeUserId = refreshedUserId;
+          tracker.inFlightByScope.clear();
+        }
+        throw new ApiAuthError(
+          AUTH_ERROR_MESSAGES.AUTH_TOKEN_REQUIRED,
+          AUTH_ERROR_CODES.AUTH_TOKEN_REQUIRED,
+          401
+        );
+      }
+    }
+
+    let postRefreshResponse: SupabaseAuthResponseLike;
+    try {
+      postRefreshResponse = await withAbortSignal(
+        client.auth.getSession(),
+        signal
+      );
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') {
+        throw err;
+      }
+      throw new ApiAuthError(
+        AUTH_ERROR_MESSAGES.AUTH_TOKEN_REQUIRED,
+        AUTH_ERROR_CODES.AUTH_TOKEN_REQUIRED,
+        401
+      );
+    }
+
+    throwIfAborted(signal);
+
+    if (
+      tracker.isSigningOut ||
+      tracker.epoch !== capturedEpoch ||
+      tracker.activeUserId !== initialIdentity.userId
+    ) {
+      throw new ApiAuthError(
+        AUTH_ERROR_MESSAGES.AUTH_TOKEN_REQUIRED,
+        AUTH_ERROR_CODES.AUTH_TOKEN_REQUIRED,
+        401
+      );
+    }
+
+    const postSession =
+      !postRefreshResponse || postRefreshResponse.error
+        ? null
+        : (postRefreshResponse.data?.session ?? null);
+
+    if (!postSession) {
+      tracker.epoch += 1;
+      tracker.activeUserId = null;
+      tracker.inFlightByScope.clear();
+
+      if (refreshOutcome.session || !refreshOutcome.hasError) {
+        throw new ApiAuthError(
+          AUTH_ERROR_MESSAGES.AUTH_TOKEN_REQUIRED,
+          AUTH_ERROR_CODES.AUTH_TOKEN_REQUIRED,
+          401
+        );
+      }
+      throw new ApiAuthError(
+        AUTH_ERROR_MESSAGES.AUTH_TOKEN_EXPIRED,
+        AUTH_ERROR_CODES.AUTH_TOKEN_EXPIRED,
+        401
+      );
+    }
+
+    const postUserId = extractVerifiedSessionUserId(postSession);
+    if (!postUserId || postUserId !== initialIdentity.userId) {
+      tracker.epoch += 1;
+      tracker.activeUserId = postUserId;
+      tracker.inFlightByScope.clear();
+      throw new ApiAuthError(
+        AUTH_ERROR_MESSAGES.AUTH_TOKEN_REQUIRED,
+        AUTH_ERROR_CODES.AUTH_TOKEN_REQUIRED,
+        401
+      );
+    }
+
+    if (refreshOutcome.session) {
+      const postRawToken =
+        typeof postSession.access_token === 'string'
+          ? postSession.access_token.trim()
+          : '';
+      const refreshedCandidateToken =
+        typeof refreshOutcome.session.access_token === 'string'
+          ? refreshOutcome.session.access_token.trim()
+          : '';
+
+      if (
+        !postRawToken ||
+        (refreshedCandidateToken.length > 0 &&
+          postRawToken !== refreshedCandidateToken &&
+          postRawToken !== trimmedToken)
+      ) {
+        tracker.epoch += 1;
+        tracker.inFlightByScope.clear();
+        throw new ApiAuthError(
+          AUTH_ERROR_MESSAGES.AUTH_TOKEN_REQUIRED,
+          AUTH_ERROR_CODES.AUTH_TOKEN_REQUIRED,
+          401
+        );
+      }
+    }
+  } else if (
+    refreshOutcome.session &&
+    (Object.prototype.hasOwnProperty.call(refreshOutcome.session, 'user') ||
+      refreshOutcome.session.user !== undefined)
+  ) {
+    throw new ApiAuthError(
+      AUTH_ERROR_MESSAGES.AUTH_TOKEN_REQUIRED,
+      AUTH_ERROR_CODES.AUTH_TOKEN_REQUIRED,
+      401
+    );
+  }
 
   if (refreshOutcome.session) {
     const refreshedRaw =
@@ -463,10 +907,7 @@ export async function getSupabaseAuthHeaders(
   options?: GetAuthHeadersOptions
 ): Promise<{ Authorization: string }> {
   const client = options?.authClient ?? (defaultSupabase as unknown as SupabaseAuthClientLike);
-  const accessToken = await withAbortSignal(
-    acquireBearerToken(client),
-    options?.signal
-  );
+  const accessToken = await acquireBearerToken(client, options?.signal);
 
   return {
     Authorization: `Bearer ${accessToken}`,

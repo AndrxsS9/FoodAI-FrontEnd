@@ -36,6 +36,7 @@ describe('Cliente de API de Recetas (recipeApi)', () => {
         session: {
           access_token: mockAccessToken,
           expires_at: Math.floor(Date.now() / 1000) + 3600,
+          user: { id: 'mock-user-recipe-api' },
         } as any,
       },
       error: null,

@@ -30,6 +30,7 @@ describe('Cliente de API de Plan de Comidas (mealPlanApi)', () => {
         session: {
           access_token: mockAccessToken,
           expires_at: Math.floor(Date.now() / 1000) + 3600,
+          user: { id: 'mock-user-meal-plan-api' },
         } as any,
       },
       error: null,

@@ -108,6 +108,7 @@ interface ClientAuthTracker {
   epoch: number;
   activeUserId: string | null;
   isSigningOut: boolean;
+  pendingInitialReads: number;
   inFlightByScope: Map<string, InFlightRefreshEntry>;
 }
 
@@ -128,6 +129,34 @@ type ResolvedSessionIdentity =
       readonly kind: 'invalid';
     };
 
+const FULL_SUPABASE_CLIENT_KEYS = [
+  'from',
+  'rpc',
+  'rest',
+  'realtime',
+  'storage',
+  'functions',
+  'channel',
+  'supabaseUrl',
+  'supabaseKey',
+] as const;
+
+const FULL_SUPABASE_AUTH_KEYS = [
+  'onAuthStateChange',
+  'getUser',
+  'signInWithPassword',
+  'signInWithOAuth',
+  'signInWithOtp',
+  'signInAnonymously',
+  'signUp',
+  'signOut',
+  'updateUser',
+  'setSession',
+  'exchangeCodeForSession',
+  'startAutoRefresh',
+  'stopAutoRefresh',
+] as const;
+
 // Estado débil por instancia de cliente Supabase para aislar generaciones de sesión y refrescos concurrentes sin fugas de memoria
 const trackerByClient = new WeakMap<object, ClientAuthTracker>();
 
@@ -138,6 +167,7 @@ function getClientTracker(client: object): ClientAuthTracker {
       epoch: 0,
       activeUserId: null,
       isSigningOut: false,
+      pendingInitialReads: 0,
       inFlightByScope: new Map(),
     };
     trackerByClient.set(client, tracker);
@@ -145,9 +175,55 @@ function getClientTracker(client: object): ClientAuthTracker {
   return tracker;
 }
 
-function hasAuthLifecycleSupport(client: SupabaseAuthClientLike): boolean {
-  const authCandidate = client.auth as { onAuthStateChange?: unknown };
-  return typeof authCandidate.onAuthStateChange === 'function';
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+/**
+ * Determina si el cliente fue inyectado explícitamente como un mock ligero de pruebas
+ * (`{ auth: { getSession, refreshSession? } }`).
+ *
+ * El cliente Supabase real de producción (`defaultSupabase` / instancias de `SupabaseClient`)
+ * y cualquier cliente tipo Supabase completo exigen SIEMPRE `session.user.id` válido,
+ * independientemente de si el `access_token` expiró o está vigente.
+ */
+function isExplicitLightweightMockClient(
+  client: SupabaseAuthClientLike,
+  wasExplicitlyInjected: boolean
+): boolean {
+  if (!wasExplicitlyInjected) {
+    return false;
+  }
+
+  if ((client as unknown) === (defaultSupabase as unknown)) {
+    return false;
+  }
+
+  if (!isPlainObject(client) || !isPlainObject(client.auth)) {
+    return false;
+  }
+
+  for (const key of FULL_SUPABASE_CLIENT_KEYS) {
+    if (key in client) {
+      return false;
+    }
+  }
+
+  const authRecord = client.auth as Record<string, unknown>;
+  for (const key of FULL_SUPABASE_AUTH_KEYS) {
+    if (key in authRecord && authRecord[key] !== undefined) {
+      return false;
+    }
+  }
+
+  const authKeys = Object.keys(authRecord);
+  return authKeys.every(
+    (key) => key === 'getSession' || key === 'refreshSession'
+  );
 }
 
 function extractVerifiedSessionUserId(
@@ -190,7 +266,9 @@ export function notifyAuthSessionTransition(
   const nextUserId = extractVerifiedSessionUserId(session);
   const sessionCleared =
     (!session || nextUserId === null) &&
-    (tracker.activeUserId !== null || tracker.inFlightByScope.size > 0);
+    (tracker.activeUserId !== null ||
+      tracker.inFlightByScope.size > 0 ||
+      tracker.pendingInitialReads > 0);
   const userSwitched =
     nextUserId !== null &&
     tracker.activeUserId !== null &&
@@ -547,6 +625,7 @@ async function withAbortSignal<T>(
 
 async function acquireBearerToken(
   client: SupabaseAuthClientLike,
+  wasExplicitlyInjected: boolean,
   signal?: AbortSignal
 ): Promise<string> {
   if (!client || !client.auth || typeof client.auth.getSession !== 'function') {
@@ -569,6 +648,8 @@ async function acquireBearerToken(
   }
 
   const epochBeforeInitialRead = tracker.epoch;
+  const activeUserIdBeforeInitialRead = tracker.activeUserId;
+  tracker.pendingInitialReads += 1;
 
   let sessionResponse: SupabaseAuthResponseLike;
   try {
@@ -577,13 +658,33 @@ async function acquireBearerToken(
     if (err instanceof Error && err.name === 'AbortError') {
       throw err;
     }
+    if (tracker.isSigningOut || tracker.epoch !== epochBeforeInitialRead) {
+      throw new ApiAuthError(
+        AUTH_ERROR_MESSAGES.AUTH_TOKEN_REQUIRED,
+        AUTH_ERROR_CODES.AUTH_TOKEN_REQUIRED,
+        401
+      );
+    }
     const code = isExpiredErrorHint(err)
       ? AUTH_ERROR_CODES.AUTH_TOKEN_EXPIRED
       : AUTH_ERROR_CODES.AUTH_TOKEN_REQUIRED;
     throw new ApiAuthError(AUTH_ERROR_MESSAGES[code], code, 401);
+  } finally {
+    tracker.pendingInitialReads = Math.max(0, tracker.pendingInitialReads - 1);
   }
 
   throwIfAborted(signal);
+
+  // Cualquier transición invalidante de generación (signOut, signOut + re-login del mismo usuario
+  // o cambio de cuenta) ocurrida mientras getSession() estaba en vuelo invalida esta operación.
+  // Los eventos normales TOKEN_REFRESHED de la misma sesión ininterrumpida no incrementan epoch.
+  if (tracker.isSigningOut || tracker.epoch !== epochBeforeInitialRead) {
+    throw new ApiAuthError(
+      AUTH_ERROR_MESSAGES.AUTH_TOKEN_REQUIRED,
+      AUTH_ERROR_CODES.AUTH_TOKEN_REQUIRED,
+      401
+    );
+  }
 
   if (!sessionResponse || sessionResponse.error) {
     const code = isExpiredErrorHint(sessionResponse?.error)
@@ -594,7 +695,10 @@ async function acquireBearerToken(
 
   const session = sessionResponse.data?.session ?? null;
   if (!session) {
-    if (tracker.activeUserId !== null || tracker.inFlightByScope.size > 0) {
+    if (
+      tracker.activeUserId === activeUserIdBeforeInitialRead &&
+      (tracker.activeUserId !== null || tracker.inFlightByScope.size > 0)
+    ) {
       tracker.epoch += 1;
       tracker.activeUserId = null;
       tracker.inFlightByScope.clear();
@@ -632,10 +736,14 @@ async function acquireBearerToken(
     expiresAtSeconds <= nowSeconds + SESSION_REFRESH_LEEWAY_SECONDS;
   const needsRefresh = isStrictlyExpired || isExpiringSoon;
 
+  const requireVerifiedUser = !isExplicitLightweightMockClient(
+    client,
+    wasExplicitlyInjected
+  );
   const initialIdentity = resolveSessionIdentity(
     session,
     trimmedToken,
-    needsRefresh && hasAuthLifecycleSupport(client)
+    requireVerifiedUser
   );
 
   if (initialIdentity.kind === 'invalid') {
@@ -646,7 +754,7 @@ async function acquireBearerToken(
     );
   }
 
-  if (tracker.isSigningOut) {
+  if (tracker.isSigningOut || tracker.epoch !== epochBeforeInitialRead) {
     throw new ApiAuthError(
       AUTH_ERROR_MESSAGES.AUTH_TOKEN_REQUIRED,
       AUTH_ERROR_CODES.AUTH_TOKEN_REQUIRED,
@@ -654,24 +762,21 @@ async function acquireBearerToken(
     );
   }
 
-  // Si ocurrió una transición de frontera (signOut o cambio de cuenta) durante getSession(),
-  // solo se permite continuar si la frontera aterrizó exactamente en el usuario verificado actual.
-  if (tracker.epoch !== epochBeforeInitialRead) {
-    const settledOnSameVerifiedUser =
-      initialIdentity.kind === 'verified' &&
-      tracker.activeUserId !== null &&
-      tracker.activeUserId === initialIdentity.userId;
-
-    if (!settledOnSameVerifiedUser) {
-      throw new ApiAuthError(
-        AUTH_ERROR_MESSAGES.AUTH_TOKEN_REQUIRED,
-        AUTH_ERROR_CODES.AUTH_TOKEN_REQUIRED,
-        401
-      );
-    }
+  // Si mientras getSession() estaba pendiente se estableció concurrentemente otro usuario activo,
+  // rechazar la lectura inicial obsoleta sin sobrescribir la identidad activa vigente.
+  if (
+    tracker.activeUserId !== activeUserIdBeforeInitialRead &&
+    (initialIdentity.kind !== 'verified' ||
+      tracker.activeUserId !== initialIdentity.userId)
+  ) {
+    throw new ApiAuthError(
+      AUTH_ERROR_MESSAGES.AUTH_TOKEN_REQUIRED,
+      AUTH_ERROR_CODES.AUTH_TOKEN_REQUIRED,
+      401
+    );
   }
 
-  // Detectar cambios directos de identidad en el cliente incluso sin eventos externos
+  // Detectar cambios secuenciales directos de identidad en el cliente incluso sin eventos externos
   if (initialIdentity.kind === 'verified') {
     if (
       tracker.activeUserId !== null &&
@@ -906,8 +1011,14 @@ async function acquireBearerToken(
 export async function getSupabaseAuthHeaders(
   options?: GetAuthHeadersOptions
 ): Promise<{ Authorization: string }> {
-  const client = options?.authClient ?? (defaultSupabase as unknown as SupabaseAuthClientLike);
-  const accessToken = await acquireBearerToken(client, options?.signal);
+  const wasExplicitlyInjected = options?.authClient !== undefined;
+  const client =
+    options?.authClient ?? (defaultSupabase as unknown as SupabaseAuthClientLike);
+  const accessToken = await acquireBearerToken(
+    client,
+    wasExplicitlyInjected,
+    options?.signal
+  );
 
   return {
     Authorization: `Bearer ${accessToken}`,

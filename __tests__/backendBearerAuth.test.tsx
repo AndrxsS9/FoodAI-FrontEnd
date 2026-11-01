@@ -754,7 +754,15 @@ describe('Integración de Autenticación Bearer con Supabase en Clientes de IA (
     );
 
     it('propaga errores 401 hacia RecipeContext y MealPlanContext con código exacto y mensaje en español', async () => {
-      const authClient = createAuthClientMock();
+      const futureExp = Math.floor(Date.now() / 1000) + 3600;
+      const authClient = createAuthClientMock({
+        session: {
+          access_token: buildSyntheticJwt({ sub: 'usr-ctx-401', exp: futureExp }),
+          refresh_token: 'refresh-ctx-401',
+          expires_at: futureExp,
+          user: { id: 'usr-ctx-401' },
+        },
+      });
       jest
         .spyOn(supabase.auth, 'getSession')
         .mockImplementation(() => authClient.auth.getSession() as any);

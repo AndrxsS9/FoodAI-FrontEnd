@@ -12,7 +12,9 @@
  * 6. Cancelación de solicitud (AbortController) durante un refresco pendiente sin afectar peticiones hermanas.
  * 7. Garantía estricta de que jamás se envía un encabezado Authorization de un usuario anterior ni se filtran tokens en logs.
  * 8. Garantía fail-closed: no se envía ninguna petición de IA cuando la identidad de sesión no puede establecerse con seguridad
- *    (sin confiar jamás en claims JWT no verificados como fuente de identidad).
+ *    (incluyendo tokens vigentes sin campo `user` en clientes Supabase reales/completos, sin confiar jamás en claims JWT no verificados).
+ * 9. Rechazo determinista de sesiones obsoletas durante la lectura inicial `getSession()` tras transiciones invalidantes de epoch
+ *    (signOut + re-login del mismo usuario o cambio de usuario), preservando eventos normales `TOKEN_REFRESHED` de la misma sesión.
  */
 
 import React from 'react';
@@ -30,6 +32,7 @@ import {
 import { recommendRecipes } from '../src/services/api/recipeApi';
 import { analyzeIngredientsImage } from '../src/services/api/scannerApi';
 import { generateMealPlan } from '../src/services/api/mealPlanApi';
+import { supabase } from '../src/services/supabase/client';
 import { AuthProvider, useAuth } from '../src/context/AuthContext';
 import { AuthSession, AuthUser } from '../src/types/auth';
 import { RecommendRecipesRequest } from '../src/types/recipe';
@@ -1495,6 +1498,754 @@ describe('FoodAI — Aislamiento de Concurrencia en Refresco de Tokens Bearer (S
 
       // Cero peticiones de IA enviadas en todos los escenarios sin identidad verificable
       expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('rechaza con 401 y cero llamadas a fetch un access_token vigente (no expirado) sin campo user en un cliente tipo Supabase completo y en el cliente real de producción', async () => {
+      const futureExp = Math.floor(Date.now() / 1000) + 3600;
+      const nonExpiredJwtWithoutVerifiedUser = buildSyntheticJwt(
+        { sub: 'unverified-jwt-sub-claim', role: 'authenticated', exp: futureExp },
+        'sig_non_expired_no_user'
+      );
+
+      const fetchMock = createSuccessFetchMock();
+      globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+      // 1. Cliente tipo Supabase completo (con ciclo de vida / métodos completos de Auth) cuya sesión vigente carece de `user`
+      const fullClientRefreshSpy = jest.fn();
+      const fullSupabaseLikeClient = {
+        auth: {
+          getSession: jest.fn(async () => ({
+            data: {
+              session: {
+                access_token: nonExpiredJwtWithoutVerifiedUser,
+                refresh_token: 'rt-full-client-no-user',
+                expires_at: futureExp,
+              },
+            },
+            error: null,
+          })),
+          refreshSession: fullClientRefreshSpy,
+          onAuthStateChange: jest.fn(() => ({
+            data: { subscription: { unsubscribe: jest.fn() } },
+          })),
+          signInWithPassword: jest.fn(),
+          signOut: jest.fn(),
+          getUser: jest.fn(),
+        },
+      } as unknown as SupabaseAuthClientLike;
+
+      await expect(
+        getSupabaseAuthHeaders({ authClient: fullSupabaseLikeClient })
+      ).rejects.toMatchObject({
+        code: AUTH_ERROR_CODES.AUTH_TOKEN_REQUIRED,
+        status: 401,
+        isAuthError: true,
+        message: AUTH_ERROR_MESSAGES.AUTH_TOKEN_REQUIRED,
+      });
+
+      await expect(
+        recommendRecipes(VALID_RECIPE_REQUEST, { authClient: fullSupabaseLikeClient })
+      ).rejects.toMatchObject({
+        name: 'RecipeApiError',
+        code: AUTH_ERROR_CODES.AUTH_TOKEN_REQUIRED,
+        status: 401,
+        isAuthError: true,
+      });
+
+      await expect(
+        analyzeIngredientsImage(VALID_IMAGE, { authClient: fullSupabaseLikeClient })
+      ).rejects.toMatchObject({
+        name: 'ScannerApiError',
+        code: AUTH_ERROR_CODES.AUTH_TOKEN_REQUIRED,
+        status: 401,
+        isAuthError: true,
+      });
+
+      await expect(
+        generateMealPlan(VALID_MEAL_PLAN_REQUEST, { authClient: fullSupabaseLikeClient })
+      ).rejects.toMatchObject({
+        name: 'MealPlanApiError',
+        code: AUTH_ERROR_CODES.AUTH_TOKEN_REQUIRED,
+        status: 401,
+        isAuthError: true,
+      });
+
+      expect(fullClientRefreshSpy).not.toHaveBeenCalled();
+      expect(fetchMock).not.toHaveBeenCalled();
+
+      // 2. Cliente Supabase real de producción (sin inyectar authClient) con token vigente y sin campo `user`
+      jest.spyOn(supabase.auth, 'getSession').mockImplementation(
+        async () =>
+          ({
+            data: {
+              session: {
+                access_token: nonExpiredJwtWithoutVerifiedUser,
+                refresh_token: 'rt-prod-client-no-user',
+                expires_at: futureExp,
+              },
+            },
+            error: null,
+          }) as any
+      );
+
+      await expect(getSupabaseAuthHeaders()).rejects.toMatchObject({
+        code: AUTH_ERROR_CODES.AUTH_TOKEN_REQUIRED,
+        status: 401,
+        isAuthError: true,
+      });
+
+      await expect(recommendRecipes(VALID_RECIPE_REQUEST)).rejects.toMatchObject({
+        name: 'RecipeApiError',
+        code: AUTH_ERROR_CODES.AUTH_TOKEN_REQUIRED,
+        status: 401,
+        isAuthError: true,
+      });
+
+      await expect(analyzeIngredientsImage(VALID_IMAGE)).rejects.toMatchObject({
+        name: 'ScannerApiError',
+        code: AUTH_ERROR_CODES.AUTH_TOKEN_REQUIRED,
+        status: 401,
+        isAuthError: true,
+      });
+
+      await expect(generateMealPlan(VALID_MEAL_PLAN_REQUEST)).rejects.toMatchObject({
+        name: 'MealPlanApiError',
+        code: AUTH_ERROR_CODES.AUTH_TOKEN_REQUIRED,
+        status: 401,
+        isAuthError: true,
+      });
+
+      // Cero peticiones protegidas enviadas al backend
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('9. Sesiones obsoletas durante la lectura inicial getSession() (Transiciones de Epoch)', () => {
+    it('rechaza con 401 y cero fetch obsoletos cuando el MISMO usuario cierra sesión y vuelve a iniciar sesión durante getSession() inicial', async () => {
+      const futureExp = Math.floor(Date.now() / 1000) + 3600;
+
+      const tokenASession1Stale = buildSyntheticJwt(
+        { sub: USER_A.id, jti: 'alice-session-1-old', exp: futureExp },
+        'sig_alice_s1_old'
+      );
+      const tokenASession2Fresh = buildSyntheticJwt(
+        { sub: USER_A.id, jti: 'alice-session-2-new', exp: futureExp },
+        'sig_alice_s2_new'
+      );
+
+      const sessionA1 = buildAuthSession({
+        user: USER_A,
+        accessToken: tokenASession1Stale,
+        refreshToken: 'rt-alice-initial-s1',
+        expiresAt: futureExp,
+      });
+      const sessionA2 = buildAuthSession({
+        user: USER_A,
+        accessToken: tokenASession2Fresh,
+        refreshToken: 'rt-alice-relogin-s2',
+        expiresAt: futureExp,
+      });
+
+      let currentSession: AuthSession | null = sessionA1;
+      let authListener:
+        | ((event: string, session: AuthSession | null) => void)
+        | null = null;
+
+      const initialGetSessionDeferred1 = createDeferred<SupabaseAuthResponseLike>();
+      const initialGetSessionDeferred2 = createDeferred<SupabaseAuthResponseLike>();
+      const initialGetSessionDeferred3 = createDeferred<SupabaseAuthResponseLike>();
+      let getSessionCallCount = 0;
+
+      const supabaseMock = {
+        auth: {
+          getSession: jest.fn(() => {
+            getSessionCallCount += 1;
+            if (getSessionCallCount === 1) {
+              return initialGetSessionDeferred1.promise;
+            }
+            if (getSessionCallCount === 2) {
+              return initialGetSessionDeferred2.promise;
+            }
+            if (getSessionCallCount === 3) {
+              return initialGetSessionDeferred3.promise;
+            }
+            return Promise.resolve({
+              data: { session: currentSession },
+              error: null,
+            });
+          }),
+          refreshSession: jest.fn(),
+          signOut: jest.fn(async () => {
+            currentSession = null;
+            authListener?.('SIGNED_OUT', null);
+            return { error: null };
+          }),
+          signInWithPassword: jest.fn(async () => {
+            currentSession = sessionA2;
+            authListener?.('SIGNED_IN', sessionA2);
+            return {
+              data: { user: USER_A, session: sessionA2 },
+              error: null,
+            };
+          }),
+          onAuthStateChange: jest.fn((cb) => {
+            authListener = cb;
+            return { data: { subscription: { unsubscribe: jest.fn() } } };
+          }),
+        },
+      } as unknown as SupabaseClient & SupabaseAuthClientLike;
+
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        <AuthProvider initialSession={sessionA1} supabaseClient={supabaseMock}>
+          {children}
+        </AuthProvider>
+      );
+
+      const { result } = await renderHook(() => useAuth(), { wrapper });
+      expect(result.current.user?.id).toBe(USER_A.id);
+
+      const fetchMock = createSuccessFetchMock();
+      globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+      // 1. Iniciar las 3 peticiones protegidas bajo la Sesión 1 de Alice: quedan bloqueadas en getSession()
+      const staleRecipesPromise = recommendRecipes(VALID_RECIPE_REQUEST, {
+        authClient: supabaseMock,
+      });
+      const staleScannerPromise = analyzeIngredientsImage(VALID_IMAGE, {
+        authClient: supabaseMock,
+      });
+      const staleMealPlanPromise = generateMealPlan(VALID_MEAL_PLAN_REQUEST, {
+        authClient: supabaseMock,
+      });
+      await flushMicrotasks();
+
+      expect(getSessionCallCount).toBe(3);
+      expect(fetchMock).not.toHaveBeenCalled();
+
+      // 2. Mientras getSession() sigue pendiente, la MISMA usuaria Alice cierra sesión y vuelve a iniciar sesión
+      await act(async () => {
+        await result.current.signOut();
+      });
+      expect(result.current.isAuthenticated).toBe(false);
+
+      await act(async () => {
+        await result.current.signIn('alice@foodai.app', 'claveSeguraAlice123');
+      });
+      expect(result.current.isAuthenticated).toBe(true);
+      expect(result.current.user?.id).toBe(USER_A.id);
+
+      // 3. Ahora resuelven tardíamente las lecturas getSession() iniciadas antes de la transición con sessionA1
+      initialGetSessionDeferred1.resolve({
+        data: { session: sessionA1 },
+        error: null,
+      });
+      initialGetSessionDeferred2.resolve({
+        data: { session: sessionA1 },
+        error: null,
+      });
+      initialGetSessionDeferred3.resolve({
+        data: { session: sessionA1 },
+        error: null,
+      });
+
+      await expect(staleRecipesPromise).rejects.toMatchObject({
+        name: 'RecipeApiError',
+        code: AUTH_ERROR_CODES.AUTH_TOKEN_REQUIRED,
+        status: 401,
+        isAuthError: true,
+        message: AUTH_ERROR_MESSAGES.AUTH_TOKEN_REQUIRED,
+      });
+      await expect(staleScannerPromise).rejects.toMatchObject({
+        name: 'ScannerApiError',
+        code: AUTH_ERROR_CODES.AUTH_TOKEN_REQUIRED,
+        status: 401,
+        isAuthError: true,
+        message: AUTH_ERROR_MESSAGES.AUTH_TOKEN_REQUIRED,
+      });
+      await expect(staleMealPlanPromise).rejects.toMatchObject({
+        name: 'MealPlanApiError',
+        code: AUTH_ERROR_CODES.AUTH_TOKEN_REQUIRED,
+        status: 401,
+        isAuthError: true,
+        message: AUTH_ERROR_MESSAGES.AUTH_TOKEN_REQUIRED,
+      });
+
+      // Ninguna petición obsoleta llegó jamás a fetch
+      expect(fetchMock).not.toHaveBeenCalled();
+
+      // 4. Una nueva petición iniciada legítimamente bajo la Sesión 2 de Alice sí se autoriza con tokenASession2Fresh
+      const freshRecipes = await recommendRecipes(VALID_RECIPE_REQUEST, {
+        authClient: supabaseMock,
+      });
+      expect(freshRecipes).toHaveLength(1);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(fetchMock.mock.calls[0][1].headers.Authorization).toBe(
+        `Bearer ${tokenASession2Fresh}`
+      );
+      expect(fetchMock.mock.calls[0][1].headers.Authorization).not.toContain(
+        tokenASession1Stale
+      );
+    });
+
+    it('rechaza lecturas getSession() obsoletas tras signOut e inicio de sesión de un usuario diferente sin contaminar al nuevo usuario', async () => {
+      const futureExp = Math.floor(Date.now() / 1000) + 3600;
+
+      const tokenAStale = buildSyntheticJwt(
+        { sub: USER_A.id, jti: 'alice-pre-switch', exp: futureExp },
+        'sig_alice_pre_switch'
+      );
+      const tokenBActive = buildSyntheticJwt(
+        { sub: USER_B.id, jti: 'bob-post-switch', exp: futureExp },
+        'sig_bob_post_switch'
+      );
+
+      const sessionA = buildAuthSession({
+        user: USER_A,
+        accessToken: tokenAStale,
+        refreshToken: 'rt-alice-getsession-switch',
+        expiresAt: futureExp,
+      });
+      const sessionB = buildAuthSession({
+        user: USER_B,
+        accessToken: tokenBActive,
+        refreshToken: 'rt-bob-getsession-switch',
+        expiresAt: futureExp,
+      });
+
+      let currentSession: AuthSession | null = sessionA;
+      let authListener:
+        | ((event: string, session: AuthSession | null) => void)
+        | null = null;
+
+      const deferredGetSessionUserA = createDeferred<SupabaseAuthResponseLike>();
+      let callCount = 0;
+
+      const supabaseMock = {
+        auth: {
+          getSession: jest.fn(() => {
+            callCount += 1;
+            if (callCount === 1) {
+              return deferredGetSessionUserA.promise;
+            }
+            return Promise.resolve({
+              data: { session: currentSession },
+              error: null,
+            });
+          }),
+          refreshSession: jest.fn(),
+          signOut: jest.fn(async () => {
+            currentSession = null;
+            authListener?.('SIGNED_OUT', null);
+            return { error: null };
+          }),
+          signInWithPassword: jest.fn(async () => {
+            currentSession = sessionB;
+            authListener?.('SIGNED_IN', sessionB);
+            return {
+              data: { user: USER_B, session: sessionB },
+              error: null,
+            };
+          }),
+          onAuthStateChange: jest.fn((cb) => {
+            authListener = cb;
+            return { data: { subscription: { unsubscribe: jest.fn() } } };
+          }),
+        },
+      } as unknown as SupabaseClient & SupabaseAuthClientLike;
+
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        <AuthProvider initialSession={sessionA} supabaseClient={supabaseMock}>
+          {children}
+        </AuthProvider>
+      );
+
+      const { result } = await renderHook(() => useAuth(), { wrapper });
+
+      const fetchMock = createSuccessFetchMock();
+      globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+      // 1. Petición de Usuario A queda pendiente en getSession()
+      const staleRequestA = generateMealPlan(VALID_MEAL_PLAN_REQUEST, {
+        authClient: supabaseMock,
+      });
+      await flushMicrotasks();
+      expect(fetchMock).not.toHaveBeenCalled();
+
+      // 2. Usuario A cierra sesión e inicia sesión Usuario B mientras getSession() de A sigue en vuelo
+      await act(async () => {
+        await result.current.signOut();
+      });
+      await act(async () => {
+        await result.current.signIn('bob@foodai.app', 'claveSeguraBob123');
+      });
+      expect(result.current.user?.id).toBe(USER_B.id);
+
+      // 3. Usuario B realiza una petición protegida concurrente antes de que resuelva el getSession() viejo de A
+      const bobRecipes = await recommendRecipes(VALID_RECIPE_REQUEST, {
+        authClient: supabaseMock,
+      });
+      expect(bobRecipes).toHaveLength(1);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(fetchMock.mock.calls[0][1].headers.Authorization).toBe(
+        `Bearer ${tokenBActive}`
+      );
+
+      // 4. El getSession() obsoleto de Usuario A resuelve tardíamente con sessionA vigente
+      deferredGetSessionUserA.resolve({
+        data: { session: sessionA },
+        error: null,
+      });
+
+      await expect(staleRequestA).rejects.toMatchObject({
+        name: 'MealPlanApiError',
+        code: AUTH_ERROR_CODES.AUTH_TOKEN_REQUIRED,
+        status: 401,
+        isAuthError: true,
+      });
+
+      // 5. La sesión activa de Usuario B no fue alterada por la resolución tardía de A
+      const bobScan = await analyzeIngredientsImage(VALID_IMAGE, {
+        authClient: supabaseMock,
+      });
+      expect(bobScan).toHaveLength(1);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(fetchMock.mock.calls[1][1].headers.Authorization).toBe(
+        `Bearer ${tokenBActive}`
+      );
+
+      for (const [, init] of fetchMock.mock.calls) {
+        expect(init.headers.Authorization).toBe(`Bearer ${tokenBActive}`);
+        expect(init.headers.Authorization).not.toContain(tokenAStale);
+      }
+    });
+
+    it('preserva eventos normales TOKEN_REFRESHED de la misma sesión ininterrumpida durante getSession() y mantiene single-flight', async () => {
+      const pastExp = Math.floor(Date.now() / 1000) - 20;
+      const futureExp = Math.floor(Date.now() / 1000) + 3600;
+
+      const tokenAV1Initial = buildSyntheticJwt(
+        { sub: USER_A.id, jti: 'alice-uninterrupted-v1', exp: pastExp },
+        'sig_alice_uninterrupted_v1'
+      );
+      const tokenAV2Refreshed = buildSyntheticJwt(
+        { sub: USER_A.id, jti: 'alice-uninterrupted-v2', exp: futureExp },
+        'sig_alice_uninterrupted_v2'
+      );
+
+      const sessionAV1 = buildAuthSession({
+        user: USER_A,
+        accessToken: tokenAV1Initial,
+        refreshToken: 'rt-alice-uninterrupted-v1',
+        expiresAt: pastExp,
+      });
+      const sessionAV2 = buildAuthSession({
+        user: USER_A,
+        accessToken: tokenAV2Refreshed,
+        refreshToken: 'rt-alice-uninterrupted-v2',
+        expiresAt: futureExp,
+      });
+
+      let currentSession: AuthSession | null = sessionAV1;
+      let authListener:
+        | ((event: string, session: AuthSession | null) => void)
+        | null = null;
+
+      const deferredInitialRead1 = createDeferred<SupabaseAuthResponseLike>();
+      const deferredInitialRead2 = createDeferred<SupabaseAuthResponseLike>();
+      const deferredInitialRead3 = createDeferred<SupabaseAuthResponseLike>();
+      const deferredRefresh = createDeferred<SupabaseAuthResponseLike>();
+      let getSessionCalls = 0;
+
+      const supabaseMock = {
+        auth: {
+          getSession: jest.fn(() => {
+            getSessionCalls += 1;
+            if (getSessionCalls === 1) {
+              return deferredInitialRead1.promise;
+            }
+            if (getSessionCalls === 2) {
+              return deferredInitialRead2.promise;
+            }
+            if (getSessionCalls === 3) {
+              return deferredInitialRead3.promise;
+            }
+            return Promise.resolve({
+              data: { session: currentSession },
+              error: null,
+            });
+          }),
+          refreshSession: jest.fn(() => deferredRefresh.promise),
+          signInWithPassword: jest.fn(),
+          signOut: jest.fn(),
+          onAuthStateChange: jest.fn((cb) => {
+            authListener = cb;
+            return { data: { subscription: { unsubscribe: jest.fn() } } };
+          }),
+        },
+      } as unknown as SupabaseClient & SupabaseAuthClientLike;
+
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        <AuthProvider initialSession={sessionAV1} supabaseClient={supabaseMock}>
+          {children}
+        </AuthProvider>
+      );
+
+      const { result } = await renderHook(() => useAuth(), { wrapper });
+      expect(result.current.user?.id).toBe(USER_A.id);
+
+      const fetchMock = createSuccessFetchMock();
+      globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+      // 3 solicitudes concurrentes entran en su lectura inicial getSession()
+      const recipesReq = recommendRecipes(VALID_RECIPE_REQUEST, {
+        authClient: supabaseMock,
+      });
+      const scannerReq = analyzeIngredientsImage(VALID_IMAGE, {
+        authClient: supabaseMock,
+      });
+      const mealPlanReq = generateMealPlan(VALID_MEAL_PLAN_REQUEST, {
+        authClient: supabaseMock,
+      });
+      await flushMicrotasks();
+      expect(getSessionCalls).toBe(3);
+
+      // Rotación normal de la misma sesión ininterrumpida (TOKEN_REFRESHED) mientras getSession() está pendiente:
+      // NO es una transición invalidante de epoch.
+      currentSession = sessionAV2;
+      await act(async () => {
+        authListener?.('TOKEN_REFRESHED', sessionAV2);
+      });
+
+      // Caso A: La primera lectura getSession() ya recibe directamente la sesión rotada sessionAV2
+      deferredInitialRead1.resolve({
+        data: { session: sessionAV2 },
+        error: null,
+      });
+
+      // Caso B: Las otras dos lecturas getSession() traían snapshot previo sessionAV1 y comparten single-flight refresh
+      deferredInitialRead2.resolve({
+        data: { session: sessionAV1 },
+        error: null,
+      });
+      deferredInitialRead3.resolve({
+        data: { session: sessionAV1 },
+        error: null,
+      });
+      await flushMicrotasks();
+
+      expect(supabaseMock.auth.refreshSession).toHaveBeenCalledTimes(1);
+
+      deferredRefresh.resolve({
+        data: { session: sessionAV2 },
+        error: null,
+      });
+
+      const [recipes, scanned, mealPlan] = await Promise.all([
+        recipesReq,
+        scannerReq,
+        mealPlanReq,
+      ]);
+
+      expect(recipes).toHaveLength(1);
+      expect(scanned).toHaveLength(1);
+      expect(mealPlan.days).toHaveLength(3);
+      expect(supabaseMock.auth.refreshSession).toHaveBeenCalledTimes(1);
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+
+      // Todas las llamadas transmitieron exclusivamente el token fresco y jamás el token obsoleto
+      for (const [, init] of fetchMock.mock.calls) {
+        expect(init.headers.Authorization).toBe(`Bearer ${tokenAV2Refreshed}`);
+        expect(init.headers.Authorization).not.toContain(tokenAV1Initial);
+      }
+    });
+
+    it('garantiza que jamás se transmita ningún encabezado Authorization obsoleto ante múltiples transiciones superpuestas durante getSession()', async () => {
+      const pastExp = Math.floor(Date.now() / 1000) - 30;
+      const futureExp = Math.floor(Date.now() / 1000) + 3600;
+
+      const staleTokenA1 = buildSyntheticJwt(
+        { sub: USER_A.id, jti: 'stale-a1-never-transmit', exp: futureExp },
+        'sig_stale_a1'
+      );
+      const staleTokenA1Expired = buildSyntheticJwt(
+        { sub: USER_A.id, jti: 'stale-a1-exp-never-transmit', exp: pastExp },
+        'sig_stale_a1_exp'
+      );
+      const staleTokenA2 = buildSyntheticJwt(
+        { sub: USER_A.id, jti: 'stale-a2-never-transmit', exp: futureExp },
+        'sig_stale_a2'
+      );
+      const finalActiveTokenA3 = buildSyntheticJwt(
+        { sub: USER_A.id, jti: 'active-a3-only-allowed', exp: futureExp },
+        'sig_active_a3'
+      );
+
+      const sessionA1 = buildAuthSession({
+        user: USER_A,
+        accessToken: staleTokenA1,
+        refreshToken: 'rt-stale-a1',
+        expiresAt: futureExp,
+      });
+      const sessionA1Expired = buildAuthSession({
+        user: USER_A,
+        accessToken: staleTokenA1Expired,
+        refreshToken: 'rt-stale-a1-exp',
+        expiresAt: pastExp,
+      });
+      const sessionA2 = buildAuthSession({
+        user: USER_A,
+        accessToken: staleTokenA2,
+        refreshToken: 'rt-stale-a2',
+        expiresAt: futureExp,
+      });
+      const sessionA3 = buildAuthSession({
+        user: USER_A,
+        accessToken: finalActiveTokenA3,
+        refreshToken: 'rt-active-a3',
+        expiresAt: futureExp,
+      });
+
+      let currentSession: AuthSession | null = sessionA1;
+      let authListener:
+        | ((event: string, session: AuthSession | null) => void)
+        | null = null;
+
+      const deferredReadA1 = createDeferred<SupabaseAuthResponseLike>();
+      const deferredReadA1Exp = createDeferred<SupabaseAuthResponseLike>();
+      const deferredReadA2 = createDeferred<SupabaseAuthResponseLike>();
+      let readIndex = 0;
+
+      const refreshSpy = jest.fn();
+
+      const supabaseMock = {
+        auth: {
+          getSession: jest.fn(() => {
+            readIndex += 1;
+            if (readIndex === 1) {
+              return deferredReadA1.promise;
+            }
+            if (readIndex === 2) {
+              return deferredReadA1Exp.promise;
+            }
+            if (readIndex === 3) {
+              return deferredReadA2.promise;
+            }
+            return Promise.resolve({
+              data: { session: currentSession },
+              error: null,
+            });
+          }),
+          refreshSession: refreshSpy,
+          signOut: jest.fn(async () => {
+            currentSession = null;
+            authListener?.('SIGNED_OUT', null);
+            return { error: null };
+          }),
+          signInWithPassword: jest.fn(async () => {
+            authListener?.('SIGNED_IN', currentSession);
+            return {
+              data: { user: USER_A, session: currentSession },
+              error: null,
+            };
+          }),
+          onAuthStateChange: jest.fn((cb) => {
+            authListener = cb;
+            return { data: { subscription: { unsubscribe: jest.fn() } } };
+          }),
+        },
+      } as unknown as SupabaseClient & SupabaseAuthClientLike;
+
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        <AuthProvider initialSession={sessionA1} supabaseClient={supabaseMock}>
+          {children}
+        </AuthProvider>
+      );
+
+      const { result } = await renderHook(() => useAuth(), { wrapper });
+
+      const fetchMock = createSuccessFetchMock();
+      globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+      // Generación 1: dos peticiones quedan bloqueadas en getSession() (una vigente y otra expirada)
+      const gen1Recipes = recommendRecipes(VALID_RECIPE_REQUEST, {
+        authClient: supabaseMock,
+      });
+      const gen1Scanner = analyzeIngredientsImage(VALID_IMAGE, {
+        authClient: supabaseMock,
+      });
+      await flushMicrotasks();
+
+      // Transición 1: Alice cierra sesión y reingresa con sessionA2
+      await act(async () => {
+        await result.current.signOut();
+      });
+      currentSession = sessionA2;
+      await act(async () => {
+        await result.current.signIn('alice@foodai.app', 'claveSeguraAlice123');
+      });
+
+      // Generación 2: una petición queda bloqueada en getSession()
+      const gen2MealPlan = generateMealPlan(VALID_MEAL_PLAN_REQUEST, {
+        authClient: supabaseMock,
+      });
+      await flushMicrotasks();
+
+      // Transición 2: Alice vuelve a cerrar sesión y reingresa con sessionA3
+      await act(async () => {
+        await result.current.signOut();
+      });
+      currentSession = sessionA3;
+      await act(async () => {
+        await result.current.signIn('alice@foodai.app', 'claveSeguraAlice123');
+      });
+
+      // Generación 3 (activa): Alice lanza las 3 llamadas protegidas bajo sessionA3
+      const activePromises = Promise.all([
+        recommendRecipes(VALID_RECIPE_REQUEST, { authClient: supabaseMock }),
+        analyzeIngredientsImage(VALID_IMAGE, { authClient: supabaseMock }),
+        generateMealPlan(VALID_MEAL_PLAN_REQUEST, { authClient: supabaseMock }),
+      ]);
+
+      // Resuelven fuera de orden las tres lecturas getSession() obsoletas de generaciones anteriores
+      deferredReadA2.resolve({ data: { session: sessionA2 }, error: null });
+      deferredReadA1.resolve({ data: { session: sessionA1 }, error: null });
+      deferredReadA1Exp.resolve({
+        data: { session: sessionA1Expired },
+        error: null,
+      });
+
+      const staleOutcomes = await Promise.allSettled([
+        gen1Recipes,
+        gen1Scanner,
+        gen2MealPlan,
+      ]);
+      for (const outcome of staleOutcomes) {
+        expect(outcome.status).toBe('rejected');
+        if (outcome.status === 'rejected') {
+          expect(outcome.reason).toMatchObject({
+            code: AUTH_ERROR_CODES.AUTH_TOKEN_REQUIRED,
+            status: 401,
+            isAuthError: true,
+          });
+        }
+      }
+
+      // La sesión expirada obsoleta de Generación 1 ni siquiera intentó ejecutar refreshSession
+      expect(refreshSpy).not.toHaveBeenCalled();
+
+      const [activeRecipes, activeScanned, activePlan] = await activePromises;
+      expect(activeRecipes).toHaveLength(1);
+      expect(activeScanned).toHaveLength(1);
+      expect(activePlan.days).toHaveLength(3);
+
+      // Exactamente 3 peticiones HTTP reales (solo Generación 3) y CERO encabezados Authorization obsoletos
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+      for (const [, init] of fetchMock.mock.calls) {
+        expect(init.headers.Authorization).toBe(`Bearer ${finalActiveTokenA3}`);
+        expect(init.headers.Authorization).not.toContain(staleTokenA1);
+        expect(init.headers.Authorization).not.toContain(staleTokenA1Expired);
+        expect(init.headers.Authorization).not.toContain(staleTokenA2);
+      }
     });
   });
 });

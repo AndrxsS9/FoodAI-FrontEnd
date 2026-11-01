@@ -20,6 +20,7 @@ describe('scannerApi', () => {
         session: {
           access_token: mockAccessToken,
           expires_at: Math.floor(Date.now() / 1000) + 3600,
+          user: { id: 'mock-user-scanner-api' },
         } as any,
       },
       error: null,

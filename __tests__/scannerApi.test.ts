@@ -4,18 +4,32 @@ import {
   validateBackendDetectedIngredient,
   validateDetectedIngredientsResponse,
 } from '../src/services/api/scannerApi';
+import { supabase } from '../src/services/supabase/client';
 import { SelectedImage } from '../src/types/scanner';
 
 describe('scannerApi', () => {
   const originalFetch = globalThis.fetch;
+  const mockAccessToken = 'mock-supabase-jwt-scanner-api';
 
   beforeEach(() => {
     process.env.EXPO_PUBLIC_API_BASE_URL = 'http://localhost:3000';
+    jest.restoreAllMocks();
     jest.clearAllMocks();
+    jest.spyOn(supabase.auth, 'getSession').mockImplementation(async () => ({
+      data: {
+        session: {
+          access_token: mockAccessToken,
+          expires_at: Math.floor(Date.now() / 1000) + 3600,
+          user: { id: 'mock-user-scanner-api' },
+        } as any,
+      },
+      error: null,
+    }));
   });
 
   afterEach(() => {
     globalThis.fetch = originalFetch;
+    jest.restoreAllMocks();
   });
 
   const mockImage: SelectedImage = {
@@ -125,11 +139,13 @@ describe('scannerApi', () => {
 
       let capturedUrl = '';
       let capturedMethod = '';
+      let capturedHeaders: Record<string, string> = {};
       let capturedBody: any = null;
 
       globalThis.fetch = jest.fn().mockImplementation((url, init) => {
         capturedUrl = url;
         capturedMethod = init.method;
+        capturedHeaders = init.headers;
         capturedBody = init.body;
         return Promise.resolve({
           ok: true,
@@ -144,6 +160,9 @@ describe('scannerApi', () => {
 
       expect(capturedUrl).toBe('http://localhost:3000/api/ingredients/analyze');
       expect(capturedMethod).toBe('POST');
+      expect(capturedHeaders.Authorization).toBe(`Bearer ${mockAccessToken}`);
+      expect(capturedHeaders.Accept).toBe('application/json');
+      expect(capturedHeaders['Content-Type']).toBeUndefined();
       expect(capturedBody).toBeInstanceOf(FormData);
       expect(result).toHaveLength(2);
       expect(result[0].name).toBe('Tomate');

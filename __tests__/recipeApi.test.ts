@@ -22,17 +22,30 @@ import {
   validateBackendRecipe,
   validateBackendRecipes,
 } from '../src/services/api/recipeApi';
+import { supabase } from '../src/services/supabase/client';
 import { RecommendRecipesRequest } from '../src/types/recipe';
 
 describe('Cliente de API de Recetas (recipeApi)', () => {
   const originalFetch = (globalThis as any).fetch;
+  const mockAccessToken = 'mock-supabase-jwt-recipe-api';
 
   beforeEach(() => {
     process.env.EXPO_PUBLIC_API_BASE_URL = 'http://localhost:3000';
+    jest.spyOn(supabase.auth, 'getSession').mockImplementation(async () => ({
+      data: {
+        session: {
+          access_token: mockAccessToken,
+          expires_at: Math.floor(Date.now() / 1000) + 3600,
+          user: { id: 'mock-user-recipe-api' },
+        } as any,
+      },
+      error: null,
+    }));
   });
 
   afterEach(() => {
     (globalThis as any).fetch = originalFetch;
+    jest.restoreAllMocks();
     jest.clearAllMocks();
   });
 
@@ -175,6 +188,7 @@ describe('Cliente de API de Recetas (recipeApi)', () => {
       expect(options.method).toBe('POST');
       expect(options.headers['Content-Type']).toBe('application/json');
       expect(options.headers['Accept']).toBe('application/json');
+      expect(options.headers['Authorization']).toBe(`Bearer ${mockAccessToken}`);
 
       const parsedBody = JSON.parse(options.body);
       expect(parsedBody.pantry.length).toBe(2);

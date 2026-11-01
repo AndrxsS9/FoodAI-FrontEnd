@@ -18,6 +18,12 @@ import {
   buildApiUrl,
 } from './apiConfig';
 import {
+  ApiAuthError,
+  SupabaseAuthClientLike,
+  getSupabaseAuthHeaders,
+  resolveHttpAuthError,
+} from './authHeaders';
+import {
   BACKEND_RECIPE_UNITS,
   BackendRecipe,
   BackendRecipeIngredient,
@@ -35,7 +41,8 @@ export class RecipeApiError extends Error {
     public readonly isNetworkError: boolean = false,
     public readonly isTimeout: boolean = false,
     public readonly isRateLimit: boolean = false,
-    public readonly isValidationError: boolean = false
+    public readonly isValidationError: boolean = false,
+    public readonly isAuthError: boolean = false
   ) {
     super(message);
     this.name = 'RecipeApiError';
@@ -47,6 +54,7 @@ export interface RecipeApiOptions {
   signal?: AbortSignal;
   timeoutMs?: number;
   baseUrl?: string;
+  authClient?: SupabaseAuthClientLike;
 }
 
 export interface HealthCheckResult {
@@ -538,11 +546,17 @@ export async function recommendRecipes(
   }
 
   try {
+    const authHeaders = await getSupabaseAuthHeaders({
+      authClient: options?.authClient,
+      signal: controller.signal,
+    });
+
     const response = await fetch(targetUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Accept: 'application/json',
+        ...authHeaders,
       },
       body: JSON.stringify(request),
       signal: controller.signal,
@@ -563,6 +577,21 @@ export async function recommendRecipes(
 
       if (isInterrupted) {
         throw parseError;
+      }
+
+      if (response.status === 401) {
+        const fallbackAuth = resolveHttpAuthError(401, null)!;
+        throw new RecipeApiError(
+          fallbackAuth.message,
+          fallbackAuth.code,
+          fallbackAuth.status,
+          undefined,
+          false,
+          false,
+          false,
+          false,
+          fallbackAuth.isAuthError
+        );
       }
 
       throw new RecipeApiError(
@@ -594,6 +623,22 @@ export async function recommendRecipes(
     const errorEnvelope = payload?.error as { code?: string; message?: string; details?: unknown } | undefined;
     const errorCode = errorEnvelope?.code || `HTTP_${response.status}`;
     const serverMessage = errorEnvelope?.message;
+
+    // Errores 401 y 503 de autenticación / verificación de sesión
+    const authHttpError = resolveHttpAuthError(response.status, errorEnvelope);
+    if (authHttpError) {
+      throw new RecipeApiError(
+        authHttpError.message,
+        authHttpError.code,
+        authHttpError.status,
+        undefined,
+        false,
+        false,
+        false,
+        false,
+        authHttpError.isAuthError
+      );
+    }
 
     // Errores 400: Validación Zod del backend
     if (response.status === 400) {
@@ -651,6 +696,20 @@ export async function recommendRecipes(
   } catch (error) {
     if (error instanceof RecipeApiError) {
       throw error;
+    }
+
+    if (error instanceof ApiAuthError) {
+      throw new RecipeApiError(
+        error.message,
+        error.code,
+        error.status,
+        undefined,
+        false,
+        false,
+        false,
+        false,
+        error.isAuthError
+      );
     }
 
     // Detección de Abort / Timeout

@@ -17,6 +17,12 @@ import {
   buildApiUrl,
 } from './apiConfig';
 import {
+  ApiAuthError,
+  SupabaseAuthClientLike,
+  getSupabaseAuthHeaders,
+  resolveHttpAuthError,
+} from './authHeaders';
+import {
   BackendDetectedIngredient,
   BackendIngredientUnit,
   SelectedImage,
@@ -41,7 +47,8 @@ export class ScannerApiError extends Error {
     public readonly isNetworkError: boolean = false,
     public readonly isTimeout: boolean = false,
     public readonly isRateLimit: boolean = false,
-    public readonly isValidationError: boolean = false
+    public readonly isValidationError: boolean = false,
+    public readonly isAuthError: boolean = false
   ) {
     super(message);
     this.name = 'ScannerApiError';
@@ -53,6 +60,7 @@ export interface ScannerApiOptions {
   signal?: AbortSignal;
   timeoutMs?: number;
   baseUrl?: string;
+  authClient?: SupabaseAuthClientLike;
 }
 
 /**
@@ -191,6 +199,11 @@ export async function analyzeIngredientsImage(
   }
 
   try {
+    const authHeaders = await getSupabaseAuthHeaders({
+      authClient: options?.authClient,
+      signal: controller.signal,
+    });
+
     const formData = await createAnalyzeFormData(image);
 
     // NOTA CLAVE: No incluir 'Content-Type' manual para permitir que fetch configure el límite (boundary) multipart
@@ -198,6 +211,7 @@ export async function analyzeIngredientsImage(
       method: 'POST',
       headers: {
         Accept: 'application/json',
+        ...authHeaders,
       },
       body: formData,
       signal: controller.signal,
@@ -215,6 +229,21 @@ export async function analyzeIngredientsImage(
 
       if (isInterrupted) {
         throw parseError;
+      }
+
+      if (response.status === 401) {
+        const fallbackAuth = resolveHttpAuthError(401, null)!;
+        throw new ScannerApiError(
+          fallbackAuth.message,
+          fallbackAuth.code,
+          fallbackAuth.status,
+          undefined,
+          false,
+          false,
+          false,
+          false,
+          fallbackAuth.isAuthError
+        );
       }
 
       throw new ScannerApiError(
@@ -246,6 +275,22 @@ export async function analyzeIngredientsImage(
     const errorCode = errorEnvelope?.code || `HTTP_${response.status}`;
     const serverMessage = errorEnvelope?.message;
 
+    // Errores 401 y 503 de autenticación / verificación de sesión
+    const authHttpError = resolveHttpAuthError(response.status, errorEnvelope);
+    if (authHttpError) {
+      throw new ScannerApiError(
+        authHttpError.message,
+        authHttpError.code,
+        authHttpError.status,
+        undefined,
+        false,
+        false,
+        false,
+        false,
+        authHttpError.isAuthError
+      );
+    }
+
     if (response.status === 400) {
       let finalMessage = serverMessage || 'La imagen enviada no es válida.';
       if (errorCode === 'IMAGE_REQUIRED') {
@@ -270,7 +315,7 @@ export async function analyzeIngredientsImage(
       throw new ScannerApiError(
         serverMessage ||
           'Has alcanzado el límite de solicitudes de análisis de alimentos. Intenta de nuevo más tarde.',
-        'GEMINI_RATE_LIMIT',
+        errorEnvelope?.code || 'GEMINI_RATE_LIMIT',
         429,
         undefined,
         false,
@@ -295,7 +340,7 @@ export async function analyzeIngredientsImage(
       throw new ScannerApiError(
         serverMessage ||
           'El servicio de inteligencia artificial está temporalmente ocupado. Por favor intenta en unos minutos.',
-        'GEMINI_UNAVAILABLE',
+        errorEnvelope?.code || 'GEMINI_UNAVAILABLE',
         503
       );
     }
@@ -317,6 +362,20 @@ export async function analyzeIngredientsImage(
   } catch (error) {
     if (error instanceof ScannerApiError) {
       throw error;
+    }
+
+    if (error instanceof ApiAuthError) {
+      throw new ScannerApiError(
+        error.message,
+        error.code,
+        error.status,
+        undefined,
+        false,
+        false,
+        false,
+        false,
+        error.isAuthError
+      );
     }
 
     const isExternal = Boolean(externalSignal?.aborted);

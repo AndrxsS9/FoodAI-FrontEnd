@@ -297,7 +297,10 @@ export async function optimizeImageIfNeeded(image: SelectedImage): Promise<Selec
       fileSize: calculatedSize ?? undefined,
     };
   } catch (err) {
-    console.warn('[FoodAI:imageUtils] No se pudo optimizar la imagen con ImageManipulator:', err);
+    // Privacidad: no registrar el error crudo, su mensaje nativo puede incluir la URI privada del archivo
+    console.warn('[FoodAI:imageUtils] No se pudo optimizar la imagen con ImageManipulator.', {
+      errorName: err instanceof Error ? err.name : typeof err,
+    });
     return image;
   }
 }

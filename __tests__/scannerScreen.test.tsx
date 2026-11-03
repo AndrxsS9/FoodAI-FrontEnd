@@ -7,7 +7,7 @@ import { TypographyProvider } from '../src/theme';
 import { PantryProvider } from '../src/context/PantryContext';
 import { PantryStorageAdapter } from '../src/services/storage/pantryStorage';
 import { CreateIngredientInput, Ingredient, UpdateIngredientInput } from '../src/types/pantry';
-import { scannerApi } from '../src/services/api/scannerApi';
+import { scannerApi, ScannerApiError } from '../src/services/api/scannerApi';
 
 jest.setTimeout(30000);
 
@@ -244,6 +244,54 @@ describe('ScannerScreen', () => {
       });
       expect(await findByText(/Fallo de conexión con el backend/)).toBeTruthy();
       expect(getByTestId('scanner-retry-analysis-button')).toBeTruthy();
+    });
+
+    it('shows the preparation error and a safe diagnostic code instead of a network outage', async () => {
+      const preparationError = new ScannerApiError(
+        'No se pudo preparar la foto para enviarla al análisis. Vuelve a tomarla o selecciónala de nuevo desde la galería.',
+        'IMAGE_PREPARATION_FAILED'
+      );
+      preparationError.diagnostic = { stage: 'prepare', platform: 'android', errorName: 'TypeError' };
+      (scannerApi.analyzeIngredientsImage as jest.Mock).mockRejectedValueOnce(preparationError);
+
+      const { getByTestId, findByText, queryByText } = await renderScannerScreen();
+
+      await fireEvent.press(getByTestId('scanner-gallery-button'));
+      await waitFor(() => expect(getByTestId('scanner-preview-state')).toBeTruthy());
+      await fireEvent.press(getByTestId('scanner-analyze-button'));
+
+      await waitFor(() => expect(getByTestId('scanner-error-state')).toBeTruthy());
+      expect(await findByText(/No se pudo preparar la foto/)).toBeTruthy();
+      expect(queryByText(/No se pudo conectar con el servidor/)).toBeNull();
+      expect(getByTestId('scanner-error-diagnostic').props.children).toEqual([
+        'Código de diagnóstico: ',
+        'IMAGE_PREPARATION_FAILED (prepare)',
+      ]);
+    });
+
+    it('shows the upload-stage diagnostic code for transport failures', async () => {
+      const networkError = new ScannerApiError(
+        'No se pudo enviar la foto al servidor FoodAI. Revisa tu conexión a internet e intenta nuevamente.',
+        'NETWORK_ERROR',
+        0,
+        undefined,
+        true
+      );
+      networkError.diagnostic = { stage: 'upload', platform: 'android', errorName: 'TypeError' };
+      (scannerApi.analyzeIngredientsImage as jest.Mock).mockRejectedValueOnce(networkError);
+
+      const { getByTestId, findByText } = await renderScannerScreen();
+
+      await fireEvent.press(getByTestId('scanner-gallery-button'));
+      await waitFor(() => expect(getByTestId('scanner-preview-state')).toBeTruthy());
+      await fireEvent.press(getByTestId('scanner-analyze-button'));
+
+      await waitFor(() => expect(getByTestId('scanner-error-state')).toBeTruthy());
+      expect(await findByText(/No se pudo enviar la foto/)).toBeTruthy();
+      expect(getByTestId('scanner-error-diagnostic').props.children).toEqual([
+        'Código de diagnóstico: ',
+        'NETWORK_ERROR (upload)',
+      ]);
     });
 
     it('prevents duplicate submissions on rapid clicks', async () => {

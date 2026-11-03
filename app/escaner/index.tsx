@@ -58,6 +58,8 @@ export default function ScannerScreen() {
   const [selectedImage, setSelectedImage] = useState<SelectedImage | null>(null);
   const [scannedItems, setScannedItems] = useState<ScannedIngredientItem[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // Código de diagnóstico seguro (sin tokens ni URIs) para validar fallas en dispositivo físico
+  const [errorDiagnostic, setErrorDiagnostic] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [analysisProgressText, setAnalysisProgressText] = useState(
     'Preparando imagen...'
@@ -74,6 +76,7 @@ export default function ScannerScreen() {
   const processSelectedAsset = async (asset: ImagePicker.ImagePickerAsset) => {
     if (!isMountedRef.current) return;
     setErrorMessage(null);
+    setErrorDiagnostic(null);
     const mimeType = asset.mimeType || inferMimeTypeFromUri(asset.uri);
     const candidateValidation = validateImageCandidate({
       uri: asset.uri,
@@ -233,7 +236,10 @@ export default function ScannerScreen() {
 
     setStep('analyzing');
     setErrorMessage(null);
+    setErrorDiagnostic(null);
     setAnalysisProgressText('Verificando y optimizando imagen...');
+
+    let analysisStage: 'prepare' | 'analyze' = 'prepare';
 
     try {
       // Pipeline estricto: validar formato, optimizar y comprobar tamaño final <= 8 MB
@@ -249,6 +255,7 @@ export default function ScannerScreen() {
       }
 
       setAnalysisProgressText('Analizando alimentos con IA...');
+      analysisStage = 'analyze';
       const detected = await scannerApi.analyzeIngredientsImage(uploadReady, {
         signal: controller.signal,
       });
@@ -295,13 +302,18 @@ export default function ScannerScreen() {
 
       let msg =
         'No se pudo completar el análisis de los alimentos. Intenta nuevamente.';
+      let diagnostic: string | null = null;
       if (err instanceof ScannerApiError) {
         msg = err.message;
+        diagnostic = err.diagnostic ? `${err.code} (${err.diagnostic.stage})` : err.code;
       } else if (err instanceof Error) {
         msg = err.message;
+        // Los errores locales de validación/optimización de la imagen ocurren antes de cualquier envío
+        diagnostic = analysisStage === 'prepare' ? 'IMAGE_VALIDATION_FAILED (prepare)' : null;
       }
 
       setErrorMessage(msg);
+      setErrorDiagnostic(diagnostic);
       setStep('error');
     } finally {
       // ÚNICAMENTE la petición activa puede limpiar las referencias y el cerrojo
@@ -1049,6 +1061,15 @@ export default function ScannerScreen() {
                   'Ocurrió un problema de comunicación o la imagen no pudo ser interpretada correctamente por el servidor de IA.'}
               </Text>
 
+              {errorDiagnostic && (
+                <Text
+                  testID="scanner-error-diagnostic"
+                  style={[styles.errorStateDiagnostic, typography.labelSm]}
+                >
+                  Código de diagnóstico: {errorDiagnostic}
+                </Text>
+              )}
+
               <View style={styles.errorStateButtons}>
                 {selectedImage && (
                   <Button
@@ -1433,6 +1454,10 @@ const createStyles = (colors: AppColors) =>
       color: colors.textPrimary,
       textAlign: 'center',
       lineHeight: 22,
+    },
+    errorStateDiagnostic: {
+      color: colors.textSecondary,
+      textAlign: 'center',
     },
     errorStateButtons: {
       width: '100%',

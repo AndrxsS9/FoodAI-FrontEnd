@@ -11,6 +11,7 @@
  * 5. Protección de privacidad (sin logging de imágenes ni datos sensibles).
  * 6. Política anti-reintentos automáticos silenciosos para proteger la cuota de IA.
  */
+import { Platform } from 'react-native';
 import {
   API_ENDPOINTS,
   DEFAULT_AI_SCANNER_TIMEOUT_MS,
@@ -38,7 +39,31 @@ export const ALLOWED_BACKEND_UNITS: BackendIngredientUnit[] = [
   'desconocida',
 ];
 
+/**
+ * Etapa del flujo de análisis en la que ocurrió la falla:
+ * - auth: obtención de la sesión de Supabase.
+ * - prepare: construcción local del FormData con la imagen (nunca es un problema de red).
+ * - upload: transporte HTTP (fetch) hasta recibir encabezados de respuesta.
+ * - response: lectura y validación de la respuesta del backend.
+ */
+export type ScannerErrorStage = 'auth' | 'prepare' | 'upload' | 'response';
+
+/**
+ * Diagnóstico seguro para soporte. NUNCA incluye tokens, encabezados, URIs de archivos,
+ * bytes/base64 de la imagen ni mensajes nativos crudos (pueden contener rutas privadas).
+ */
+export interface ScannerErrorDiagnostic {
+  stage: ScannerErrorStage;
+  platform: string;
+  errorName?: string;
+  httpStatus?: number;
+  mimeType?: string;
+  imageSizeKb?: number;
+}
+
 export class ScannerApiError extends Error {
+  public diagnostic?: ScannerErrorDiagnostic;
+
   constructor(
     message: string,
     public readonly code: string = 'UNKNOWN_API_ERROR',
@@ -147,6 +172,35 @@ export function validateDetectedIngredientsResponse(rawArray: unknown): BackendD
   return rawArray.map((item, idx) => validateBackendDetectedIngredient(item, idx));
 }
 
+function buildScannerDiagnostic(
+  stage: ScannerErrorStage,
+  image: SelectedImage,
+  error: unknown,
+  httpStatus?: number
+): ScannerErrorDiagnostic {
+  return {
+    stage,
+    platform: Platform.OS,
+    errorName: error instanceof Error ? error.name : typeof error,
+    httpStatus: httpStatus && httpStatus > 0 ? httpStatus : undefined,
+    mimeType: image.mimeType,
+    imageSizeKb:
+      typeof image.fileSize === 'number' ? Math.round(image.fileSize / 1024) : undefined,
+  };
+}
+
+/**
+ * Registra metadatos no sensibles de la falla (visibles en `adb logcat -s ReactNativeJS`).
+ * Se usa console.info para no disparar LogBox en desarrollo ante errores HTTP esperados.
+ */
+function reportScannerFailure(error: ScannerApiError): void {
+  console.info('[FoodAI:scanner] Falló el análisis de imagen', {
+    code: error.code,
+    status: error.status,
+    ...error.diagnostic,
+  });
+}
+
 /**
  * Envía una imagen al backend para ser analizada por Gemini y retorna los ingredientes detectados.
  */
@@ -198,15 +252,81 @@ export async function analyzeIngredientsImage(
     externalSignal.addEventListener('abort', onExternalAbort, { once: true });
   }
 
+  let stage: ScannerErrorStage = 'auth';
+
+  const toScannerApiError = (error: unknown): ScannerApiError => {
+    if (error instanceof ScannerApiError) {
+      return error;
+    }
+
+    if (error instanceof ApiAuthError) {
+      return new ScannerApiError(
+        error.message,
+        error.code,
+        error.status,
+        undefined,
+        false,
+        false,
+        false,
+        false,
+        error.isAuthError
+      );
+    }
+
+    const isExternal = Boolean(externalSignal?.aborted);
+    const isTimeout = isTimedOut && !isExternal;
+    const isAbort =
+      (error instanceof Error && error.name === 'AbortError') ||
+      isTimedOut ||
+      isExternal ||
+      controller.signal.aborted;
+
+    if (isAbort) {
+      const msg = isExternal
+        ? 'El análisis de imagen fue cancelado.'
+        : `El análisis de la imagen superó el tiempo límite de espera (${Math.round(
+            timeoutMs / 1000
+          )}s). Verifica tu conexión o intenta nuevamente.`;
+
+      return new ScannerApiError(
+        msg,
+        isExternal ? 'REQUEST_ABORTED' : 'REQUEST_TIMEOUT',
+        0,
+        undefined,
+        false,
+        isTimeout
+      );
+    }
+
+    if (stage === 'prepare') {
+      return new ScannerApiError(
+        'No se pudo preparar la foto para enviarla al análisis. Vuelve a tomarla o selecciónala de nuevo desde la galería.',
+        'IMAGE_PREPARATION_FAILED'
+      );
+    }
+
+    // Rechazo de fetch (TypeError "Network request failed"): el transporte nativo no completó la subida
+    return new ScannerApiError(
+      'No se pudo enviar la foto al servidor FoodAI. Revisa tu conexión a internet e intenta nuevamente.',
+      'NETWORK_ERROR',
+      0,
+      undefined,
+      true
+    );
+  };
+
   try {
     const authHeaders = await getSupabaseAuthHeaders({
       authClient: options?.authClient,
       signal: controller.signal,
     });
 
+    // Un fallo al preparar la imagen localmente NUNCA debe reportarse como caída de red o del servidor
+    stage = 'prepare';
     const formData = await createAnalyzeFormData(image);
 
     // NOTA CLAVE: No incluir 'Content-Type' manual para permitir que fetch configure el límite (boundary) multipart
+    stage = 'upload';
     const response = await fetch(targetUrl, {
       method: 'POST',
       headers: {
@@ -217,6 +337,7 @@ export async function analyzeIngredientsImage(
       signal: controller.signal,
     });
 
+    stage = 'response';
     let rawJson: unknown;
     try {
       rawJson = await response.json();
@@ -231,27 +352,18 @@ export async function analyzeIngredientsImage(
         throw parseError;
       }
 
-      if (response.status === 401) {
-        const fallbackAuth = resolveHttpAuthError(401, null)!;
+      if (response.ok) {
         throw new ScannerApiError(
-          fallbackAuth.message,
-          fallbackAuth.code,
-          fallbackAuth.status,
-          undefined,
-          false,
-          false,
-          false,
-          false,
-          fallbackAuth.isAuthError
+          'El servidor respondió con un formato de datos no válido (no es JSON válido).',
+          'MALFORMED_JSON',
+          response.status,
+          parseError
         );
       }
 
-      throw new ScannerApiError(
-        'El servidor respondió con un formato de datos no válido (no es JSON válido).',
-        'MALFORMED_JSON',
-        response.status,
-        parseError
-      );
+      // Cuerpo no JSON en una respuesta de error (ej. página HTML de un proxy 413/502/503/504):
+      // se clasifica por código HTTP en lugar de reportarse como JSON inválido.
+      rawJson = null;
     }
 
     const payload = rawJson as Record<string, unknown> | null;
@@ -288,6 +400,19 @@ export async function analyzeIngredientsImage(
         false,
         false,
         authHttpError.isAuthError
+      );
+    }
+
+    if (response.status === 413) {
+      throw new ScannerApiError(
+        'La imagen supera el tamaño máximo permitido de 8 MB. Toma la foto nuevamente o elige una imagen más liviana.',
+        errorEnvelope?.code || 'IMAGE_TOO_LARGE',
+        413,
+        undefined,
+        false,
+        false,
+        false,
+        true
       );
     }
 
@@ -360,56 +485,15 @@ export async function analyzeIngredientsImage(
       response.status
     );
   } catch (error) {
-    if (error instanceof ScannerApiError) {
-      throw error;
+    const scannerError = toScannerApiError(error);
+
+    // La cancelación deliberada del usuario no es una falla y no se registra
+    if (scannerError.code !== 'REQUEST_ABORTED') {
+      scannerError.diagnostic ??= buildScannerDiagnostic(stage, image, error, scannerError.status);
+      reportScannerFailure(scannerError);
     }
 
-    if (error instanceof ApiAuthError) {
-      throw new ScannerApiError(
-        error.message,
-        error.code,
-        error.status,
-        undefined,
-        false,
-        false,
-        false,
-        false,
-        error.isAuthError
-      );
-    }
-
-    const isExternal = Boolean(externalSignal?.aborted);
-    const isTimeout = isTimedOut && !isExternal;
-    const isAbort =
-      (error instanceof Error && error.name === 'AbortError') ||
-      isTimedOut ||
-      isExternal ||
-      controller.signal.aborted;
-
-    if (isAbort) {
-      const msg = isExternal
-        ? 'El análisis de imagen fue cancelado.'
-        : `El análisis de la imagen superó el tiempo límite de espera (${Math.round(
-            timeoutMs / 1000
-          )}s). Verifica tu conexión o intenta nuevamente.`;
-
-      throw new ScannerApiError(
-        msg,
-        isExternal ? 'REQUEST_ABORTED' : 'REQUEST_TIMEOUT',
-        0,
-        undefined,
-        false,
-        isTimeout
-      );
-    }
-
-    throw new ScannerApiError(
-      'No se pudo conectar con el servidor FoodAI. Verifica que el backend esté ejecutándose y que la red funcione correctamente.',
-      'NETWORK_ERROR',
-      0,
-      undefined,
-      true
-    );
+    throw scannerError;
   } finally {
     clearTimeout(timer);
     if (externalSignal) {

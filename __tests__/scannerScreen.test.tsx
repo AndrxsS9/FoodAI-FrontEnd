@@ -1,5 +1,6 @@
 import React from 'react';
 import { render, fireEvent, waitFor, act, cleanup } from '@testing-library/react-native';
+import { StyleSheet } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import ScannerScreen from '../app/escaner/index';
@@ -7,7 +8,7 @@ import { TypographyProvider } from '../src/theme';
 import { PantryProvider } from '../src/context/PantryContext';
 import { PantryStorageAdapter } from '../src/services/storage/pantryStorage';
 import { CreateIngredientInput, Ingredient, UpdateIngredientInput } from '../src/types/pantry';
-import { scannerApi } from '../src/services/api/scannerApi';
+import { scannerApi, ScannerApiError } from '../src/services/api/scannerApi';
 
 jest.setTimeout(30000);
 
@@ -246,6 +247,54 @@ describe('ScannerScreen', () => {
       expect(getByTestId('scanner-retry-analysis-button')).toBeTruthy();
     });
 
+    it('shows the preparation error and a safe diagnostic code instead of a network outage', async () => {
+      const preparationError = new ScannerApiError(
+        'No se pudo preparar la foto para enviarla al análisis. Vuelve a tomarla o selecciónala de nuevo desde la galería.',
+        'IMAGE_PREPARATION_FAILED'
+      );
+      preparationError.diagnostic = { stage: 'prepare', platform: 'android', errorName: 'TypeError' };
+      (scannerApi.analyzeIngredientsImage as jest.Mock).mockRejectedValueOnce(preparationError);
+
+      const { getByTestId, findByText, queryByText } = await renderScannerScreen();
+
+      await fireEvent.press(getByTestId('scanner-gallery-button'));
+      await waitFor(() => expect(getByTestId('scanner-preview-state')).toBeTruthy());
+      await fireEvent.press(getByTestId('scanner-analyze-button'));
+
+      await waitFor(() => expect(getByTestId('scanner-error-state')).toBeTruthy());
+      expect(await findByText(/No se pudo preparar la foto/)).toBeTruthy();
+      expect(queryByText(/No se pudo conectar con el servidor/)).toBeNull();
+      expect(getByTestId('scanner-error-diagnostic').props.children).toEqual([
+        'Código de diagnóstico: ',
+        'IMAGE_PREPARATION_FAILED (prepare)',
+      ]);
+    });
+
+    it('shows the upload-stage diagnostic code for transport failures', async () => {
+      const networkError = new ScannerApiError(
+        'No se pudo enviar la foto al servidor FoodAI. Revisa tu conexión a internet e intenta nuevamente.',
+        'NETWORK_ERROR',
+        0,
+        undefined,
+        true
+      );
+      networkError.diagnostic = { stage: 'upload', platform: 'android', errorName: 'TypeError' };
+      (scannerApi.analyzeIngredientsImage as jest.Mock).mockRejectedValueOnce(networkError);
+
+      const { getByTestId, findByText } = await renderScannerScreen();
+
+      await fireEvent.press(getByTestId('scanner-gallery-button'));
+      await waitFor(() => expect(getByTestId('scanner-preview-state')).toBeTruthy());
+      await fireEvent.press(getByTestId('scanner-analyze-button'));
+
+      await waitFor(() => expect(getByTestId('scanner-error-state')).toBeTruthy());
+      expect(await findByText(/No se pudo enviar la foto/)).toBeTruthy();
+      expect(getByTestId('scanner-error-diagnostic').props.children).toEqual([
+        'Código de diagnóstico: ',
+        'NETWORK_ERROR (upload)',
+      ]);
+    });
+
     it('prevents duplicate submissions on rapid clicks', async () => {
       let resolveAnalysis: (value: unknown) => void = () => {};
       (scannerApi.analyzeIngredientsImage as jest.Mock).mockImplementation(
@@ -428,6 +477,30 @@ describe('ScannerScreen', () => {
       },
       15000
     );
+
+    it('keeps the review header readable and its selection toggles accessible', async () => {
+      (scannerApi.analyzeIngredientsImage as jest.Mock).mockResolvedValueOnce([
+        { name: 'Salchicha', quantity: 6, unit: 'unidad', needsReview: false },
+        { name: 'Tomate', quantity: 3, unit: 'unidad', needsReview: false },
+      ]);
+
+      const screen = await renderScannerScreen();
+      await advanceToReview(screen);
+
+      const headingStyle = StyleSheet.flatten(screen.getByTestId('scanner-review-heading').props.style);
+      expect(headingStyle.flexShrink).toBe(1);
+      expect(headingStyle.flexGrow).toBe(1);
+
+      for (const testID of ['scanner-select-all-button', 'scanner-deselect-all-button']) {
+        const toggle = screen.getByTestId(testID);
+        expect(toggle.props.accessibilityRole).toBe('button');
+        expect(StyleSheet.flatten(toggle.props.style).minHeight).toBeGreaterThanOrEqual(44);
+      }
+
+      expect(screen.getAllByTestId(/^detected-card-/)).toHaveLength(2);
+      expect(screen.getAllByTestId(/^detected-unit-section-/)).toHaveLength(2);
+      expect(screen.getAllByTestId(/^detected-quantity-section-/)).toHaveLength(2);
+    });
 
     it(
       'supports excluding an ingredient before saving',

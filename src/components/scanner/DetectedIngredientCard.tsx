@@ -6,7 +6,6 @@
 import React, { useState } from 'react';
 import {
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -18,6 +17,7 @@ import {
   INGREDIENT_CATEGORIES,
   INGREDIENT_UNITS,
   INGREDIENT_UNIT_LABELS,
+  INGREDIENT_UNIT_NAMES,
   IngredientCategory,
   IngredientUnit,
 } from '../../types/pantry';
@@ -34,6 +34,9 @@ import {
   useAppTheme,
   useThemeStyles,
 } from '../../theme';
+
+/** Área táctil mínima cómoda para controles interactivos (44 pt / dp). */
+export const MIN_TOUCH_TARGET = 44;
 
 export interface DetectedIngredientCardProps {
   item: ScannedIngredientItem;
@@ -74,6 +77,9 @@ export function DetectedIngredientCard({
       typeof item.quantity !== 'number' ||
       item.quantity <= 0 ||
       isNaN(item.quantity));
+  const isPossibleDuplicate = item.duplicateMatch?.matchType === 'possible';
+  // Tono cálido del tema (legible en claro y oscuro) para avisos de revisión y posibles duplicados
+  const warningTone = colors.demoBadgeText;
 
   const handleQuantityTextChange = (text: string) => {
     setQuantityInput(text);
@@ -107,12 +113,13 @@ export function DetectedIngredientCard({
           accessibilityState={{ checked: item.isSelected }}
           accessibilityLabel={`Seleccionar ingrediente ${item.name}`}
           onPress={() => onToggleSelect(item.id)}
-          style={[styles.checkbox, item.isSelected && styles.checkboxActive]}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          style={styles.checkboxTouchArea}
         >
-          {item.isSelected && (
-            <MaterialIcons name="check" size={16} color={colors.onPrimary} />
-          )}
+          <View style={[styles.checkbox, item.isSelected && styles.checkboxActive]}>
+            {item.isSelected && (
+              <MaterialIcons name="check" size={16} color={colors.onPrimary} />
+            )}
+          </View>
         </Pressable>
 
         <View style={styles.nameContainer}>
@@ -133,7 +140,6 @@ export function DetectedIngredientCard({
           accessibilityLabel={`Excluir ${item.name}`}
           onPress={() => onRemove(item.id)}
           style={styles.removeButton}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
           <MaterialIcons name="delete-outline" size={22} color={colors.outline} />
         </Pressable>
@@ -165,7 +171,7 @@ export function DetectedIngredientCard({
 
         {item.needsReview && (
           <View style={styles.reviewBadge} testID={`detected-review-badge-${item.id}`}>
-            <MaterialIcons name="help-outline" size={14} color="#8A5E00" />
+            <MaterialIcons name="help-outline" size={14} color={warningTone} />
             <Text style={[styles.reviewBadgeText, typography.labelSm]}>
               {item.quantity === null ? 'Cantidad requerida' : 'Confirmar datos'}
             </Text>
@@ -176,87 +182,110 @@ export function DetectedIngredientCard({
           <View
             style={[
               styles.duplicateBadge,
-              item.duplicateMatch.matchType === 'possible' && styles.duplicateBadgePossible,
+              isPossibleDuplicate && styles.duplicateBadgePossible,
             ]}
             testID={`detected-duplicate-badge-${item.id}`}
           >
             <MaterialIcons
-              name={item.duplicateMatch.matchType === 'possible' ? 'help-outline' : 'sync'}
+              name={isPossibleDuplicate ? 'help-outline' : 'sync'}
               size={14}
-              color={item.duplicateMatch.matchType === 'possible' ? '#8A5E00' : colors.primary}
+              color={isPossibleDuplicate ? warningTone : colors.primary}
             />
             <Text
               style={[
                 styles.duplicateBadgeText,
                 typography.labelSm,
-                item.duplicateMatch.matchType === 'possible' && { color: '#8A5E00' },
+                isPossibleDuplicate && { color: warningTone },
               ]}
             >
-              {item.duplicateMatch.matchType === 'possible' ? '¿En despensa?' : 'En despensa'}
+              {isPossibleDuplicate ? '¿En despensa?' : 'En despensa'}
             </Text>
           </View>
         )}
       </View>
 
-      {/* Quantity & Unit Row */}
-      <View style={styles.quantityRow}>
-        <View style={styles.quantityFieldGroup}>
-          <Text style={[styles.fieldLabel, typography.labelSm]}>
-            CANTIDAD {item.quantity === null ? '*' : '(ESTIMADA)'}
-          </Text>
-          <View
+      {/* Sección de cantidad: etiqueta legible en una línea, estado y campo a lo ancho */}
+      <View style={styles.fieldSection} testID={`detected-quantity-section-${item.id}`}>
+        <View style={styles.fieldLabelRow}>
+          <Text style={[styles.fieldLabel, typography.labelMd]}>Cantidad</Text>
+          <Text
+            testID={`detected-quantity-hint-${item.id}`}
             style={[
-              styles.quantityInputContainer,
-              hasQuantityError && styles.quantityInputContainerError,
+              styles.fieldHint,
+              typography.labelSm,
+              item.quantity === null && styles.fieldHintRequired,
             ]}
           >
-            <TextInput
-              testID={`detected-quantity-input-${item.id}`}
-              style={[styles.quantityInput, typography.bodyMd]}
-              value={quantityInput}
-              onChangeText={handleQuantityTextChange}
-              placeholder="Ej. 2"
-              placeholderTextColor={colors.outline}
-              keyboardType="decimal-pad"
-              accessibilityLabel={`Cantidad para ${item.name}`}
-            />
-          </View>
+            {item.quantity === null ? 'Obligatoria' : 'Estimada'}
+          </Text>
         </View>
-
-        <View style={styles.unitFieldGroup}>
-          <Text style={[styles.fieldLabel, typography.labelSm]}>UNIDAD</Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.unitScroll}
+        <View
+          style={[
+            styles.quantityInputContainer,
+            hasQuantityError && styles.quantityInputContainerError,
+          ]}
+        >
+          <TextInput
+            testID={`detected-quantity-input-${item.id}`}
+            style={[styles.quantityInput, typography.bodyMd]}
+            value={quantityInput}
+            onChangeText={handleQuantityTextChange}
+            placeholder="Ej. 2"
+            placeholderTextColor={colors.outline}
+            keyboardType="decimal-pad"
+            accessibilityLabel={`Cantidad para ${item.name}`}
+          />
+          <Text
+            testID={`detected-quantity-unit-suffix-${item.id}`}
+            style={[styles.quantityUnitSuffix, typography.bodySm]}
+            numberOfLines={1}
+            importantForAccessibility="no"
           >
-            {INGREDIENT_UNITS.map((u) => {
-              const isSelected = item.unit === u;
-              return (
-                <Pressable
-                  key={u}
-                  testID={`detected-unit-${item.id}-${u}`}
+            {INGREDIENT_UNIT_NAMES[item.unit]}
+          </Text>
+        </View>
+      </View>
+
+      {/* Sección de unidad: opciones en cuadrícula adaptable, sin desplazamiento horizontal oculto */}
+      <View style={styles.fieldSection} testID={`detected-unit-section-${item.id}`}>
+        <Text style={[styles.fieldLabel, typography.labelMd]}>Unidad</Text>
+        <View
+          style={styles.unitOptionsWrap}
+          testID={`detected-unit-options-${item.id}`}
+          accessibilityRole="radiogroup"
+          accessibilityLabel={`Unidad de medida para ${item.name}`}
+        >
+          {INGREDIENT_UNITS.map((u) => {
+            const isSelected = item.unit === u;
+            return (
+              <Pressable
+                key={u}
+                testID={`detected-unit-${item.id}-${u}`}
+                style={({ pressed }) => [
+                  styles.unitChip,
+                  isSelected && styles.unitChipSelected,
+                  pressed && !isSelected && styles.unitChipPressed,
+                ]}
+                onPress={() => onChangeUnit(item.id, u)}
+                accessibilityRole="button"
+                accessibilityLabel={`Unidad ${INGREDIENT_UNIT_NAMES[u]}`}
+                accessibilityState={{ selected: isSelected }}
+              >
+                {isSelected && (
+                  <MaterialIcons name="check" size={14} color={colors.onPrimary} />
+                )}
+                <Text
                   style={[
-                    styles.unitChip,
-                    isSelected && styles.unitChipSelected,
+                    styles.unitChipText,
+                    typography.labelMd,
+                    isSelected && styles.unitChipTextSelected,
                   ]}
-                  onPress={() => onChangeUnit(item.id, u)}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Unidad ${INGREDIENT_UNIT_LABELS[u]}`}
                 >
-                  <Text
-                    style={[
-                      styles.unitChipText,
-                      typography.labelSm,
-                      isSelected && styles.unitChipTextSelected,
-                    ]}
-                  >
-                    {INGREDIENT_UNIT_LABELS[u]}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </ScrollView>
+                  {INGREDIENT_UNIT_LABELS[u]}
+                </Text>
+              </Pressable>
+            );
+          })}
         </View>
       </View>
 
@@ -275,14 +304,14 @@ export function DetectedIngredientCard({
         <View style={styles.duplicateSection} testID={`detected-duplicate-box-${item.id}`}>
           <View style={styles.duplicateInfoRow}>
             <MaterialIcons
-              name={item.duplicateMatch.matchType === 'possible' ? 'help-outline' : 'info-outline'}
+              name={isPossibleDuplicate ? 'help-outline' : 'info-outline'}
               size={18}
-              color={item.duplicateMatch.matchType === 'possible' ? '#8A5E00' : colors.primary}
+              color={isPossibleDuplicate ? warningTone : colors.primary}
             />
             <Text style={[styles.duplicateText, typography.bodySm]}>
-              {item.duplicateMatch.matchType === 'possible' ? (
+              {isPossibleDuplicate ? (
                 <>
-                  <Text style={{ fontWeight: '700', color: '#8A5E00' }}>Posible coincidencia: </Text>
+                  <Text style={{ fontWeight: '700', color: warningTone }}>Posible coincidencia: </Text>
                   Tienes{' '}
                   <Text style={{ fontWeight: '700' }}>
                     {item.duplicateMatch.currentQuantity}{' '}
@@ -305,7 +334,7 @@ export function DetectedIngredientCard({
 
           {!isCompatibleWithDuplicate && (
             <View style={styles.incompatibleNotice} testID={`detected-incompatible-notice-${item.id}`}>
-              <MaterialIcons name="info" size={14} color="#8A5E00" />
+              <MaterialIcons name="info" size={14} color={warningTone} />
               <Text style={[styles.incompatibleNoticeText, typography.bodySm]}>
                 Unidades no compatibles ({INGREDIENT_UNIT_LABELS[item.unit]} y {INGREDIENT_UNIT_LABELS[item.duplicateMatch.unit]}). No se pueden sumar directamente.
               </Text>
@@ -391,10 +420,12 @@ export function DetectedIngredientCard({
 
       {/* Expandable Category Customization */}
       <Pressable
+        testID={`detected-category-toggle-${item.id}`}
         style={styles.expandDetailsButton}
         onPress={() => setIsEditingDetails(!isEditingDetails)}
         accessibilityRole="button"
         accessibilityLabel="Cambiar categoría de alimento"
+        accessibilityState={{ expanded: isEditingDetails }}
       >
         <Text style={[styles.expandDetailsText, typography.labelSm]}>
           {isEditingDetails ? 'Ocultar categorías' : 'Cambiar categoría'}
@@ -408,9 +439,7 @@ export function DetectedIngredientCard({
 
       {isEditingDetails && (
         <View style={styles.categoryPickerContainer} testID={`detected-category-picker-${item.id}`}>
-          <Text style={[styles.fieldLabel, typography.labelSm]}>
-            SELECCIONA LA CATEGORÍA:
-          </Text>
+          <Text style={[styles.fieldLabel, typography.labelMd]}>Selecciona la categoría</Text>
           <View style={styles.categoryChipsWrap}>
             {INGREDIENT_CATEGORIES.map((cat) => {
               const isSelected = item.category === cat;
@@ -429,6 +458,7 @@ export function DetectedIngredientCard({
                   onPress={() => onChangeCategory(item.id, cat)}
                   accessibilityRole="button"
                   accessibilityLabel={`Categoría ${cat}`}
+                  accessibilityState={{ selected: isSelected }}
                 >
                   <MaterialIcons
                     name={cfg.icon as any}
@@ -459,8 +489,10 @@ const createStyles = (colors: AppColors) =>
     cardContainer: {
       backgroundColor: colors.surface,
       borderRadius: radius.lg,
+      borderWidth: 1,
+      borderColor: colors.border,
       padding: spacing.md,
-      gap: spacing.sm,
+      gap: spacing.md,
       shadowColor: colors.cardShadow,
       shadowOffset: { width: 0, height: 1 },
       shadowOpacity: 0.05,
@@ -478,7 +510,14 @@ const createStyles = (colors: AppColors) =>
     headerRow: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: spacing.sm,
+      gap: spacing.xs,
+      marginHorizontal: -spacing.xs,
+    },
+    checkboxTouchArea: {
+      width: MIN_TOUCH_TARGET,
+      height: MIN_TOUCH_TARGET,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
     checkbox: {
       width: 24,
@@ -496,16 +535,22 @@ const createStyles = (colors: AppColors) =>
     },
     nameContainer: {
       flex: 1,
+      minWidth: 0,
     },
     nameInput: {
       color: colors.textPrimary,
       fontWeight: '700',
-      paddingVertical: 2,
+      minHeight: MIN_TOUCH_TARGET,
+      paddingVertical: spacing.xs,
       borderBottomWidth: 1,
-      borderBottomColor: 'transparent',
+      borderBottomColor: colors.border,
     },
     removeButton: {
-      padding: 4,
+      width: MIN_TOUCH_TARGET,
+      height: MIN_TOUCH_TARGET,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: radius.full,
     },
     badgesRow: {
       flexDirection: 'row',
@@ -517,8 +562,8 @@ const createStyles = (colors: AppColors) =>
       flexDirection: 'row',
       alignItems: 'center',
       gap: 4,
-      paddingHorizontal: 8,
-      paddingVertical: 2,
+      paddingHorizontal: spacing.sm,
+      paddingVertical: 4,
       borderRadius: radius.full,
     },
     categoryPillText: {
@@ -529,8 +574,8 @@ const createStyles = (colors: AppColors) =>
       alignItems: 'center',
       gap: 4,
       backgroundColor: colors.demoBadgeBackground,
-      paddingHorizontal: 8,
-      paddingVertical: 2,
+      paddingHorizontal: spacing.sm,
+      paddingVertical: 4,
       borderRadius: radius.full,
     },
     reviewBadgeText: {
@@ -542,8 +587,8 @@ const createStyles = (colors: AppColors) =>
       alignItems: 'center',
       gap: 4,
       backgroundColor: colors.surfaceContainerLow,
-      paddingHorizontal: 8,
-      paddingVertical: 2,
+      paddingHorizontal: spacing.sm,
+      paddingVertical: 4,
       borderRadius: radius.full,
     },
     duplicateBadgePossible: {
@@ -553,76 +598,102 @@ const createStyles = (colors: AppColors) =>
       color: colors.primary,
       fontWeight: '700',
     },
-    quantityRow: {
+    fieldSection: {
+      gap: spacing.xs,
+    },
+    fieldLabelRow: {
       flexDirection: 'row',
-      alignItems: 'flex-start',
-      gap: spacing.md,
-      marginTop: spacing.xs,
-    },
-    quantityFieldGroup: {
-      width: 110,
-      gap: 4,
-    },
-    unitFieldGroup: {
-      flex: 1,
-      gap: 4,
-      overflow: 'hidden',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      flexWrap: 'wrap',
+      gap: spacing.xs,
     },
     fieldLabel: {
-      color: colors.outline,
-      fontWeight: '600',
-      letterSpacing: 0.5,
+      color: colors.textSecondary,
+    },
+    fieldHint: {
+      color: colors.textSecondary,
+      backgroundColor: colors.surfaceContainer,
+      paddingHorizontal: spacing.sm,
+      paddingVertical: 2,
+      borderRadius: radius.full,
+      overflow: 'hidden',
+    },
+    fieldHintRequired: {
+      color: colors.error,
+      backgroundColor: colors.errorContainer,
     },
     quantityInputContainer: {
-      height: 40,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      minHeight: 48,
       borderWidth: 1,
       borderColor: colors.border,
       borderRadius: radius.md,
       backgroundColor: colors.surfaceContainerLow,
-      justifyContent: 'center',
-      paddingHorizontal: spacing.sm,
+      paddingHorizontal: spacing.md,
     },
     quantityInputContainerError: {
       borderColor: colors.error,
       backgroundColor: colors.errorContainer,
     },
     quantityInput: {
+      flex: 1,
+      minWidth: 0,
+      minHeight: 46,
+      paddingVertical: spacing.xs,
       color: colors.textPrimary,
       fontWeight: '600',
     },
-    unitScroll: {
+    quantityUnitSuffix: {
+      flexShrink: 1,
+      maxWidth: '55%',
+      color: colors.textSecondary,
+      textAlign: 'right',
+    },
+    unitOptionsWrap: {
       flexDirection: 'row',
-      gap: spacing.xs,
-      paddingVertical: 2,
+      flexWrap: 'wrap',
+      gap: spacing.sm,
     },
     unitChip: {
-      paddingHorizontal: 10,
-      height: 36,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 4,
+      minWidth: 56,
+      minHeight: MIN_TOUCH_TARGET,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.xs,
       borderRadius: radius.full,
       borderWidth: 1,
       borderColor: colors.border,
       backgroundColor: colors.surfaceContainerLow,
-      alignItems: 'center',
-      justifyContent: 'center',
     },
     unitChipSelected: {
       backgroundColor: colors.primary,
       borderColor: colors.primary,
     },
+    unitChipPressed: {
+      backgroundColor: colors.surfaceContainerHigh,
+    },
     unitChipText: {
       color: colors.textPrimary,
-      fontWeight: '600',
     },
     unitChipTextSelected: {
       color: colors.onPrimary,
+      fontWeight: '700',
     },
     errorNotice: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: spacing.xs,
       backgroundColor: colors.errorContainer,
-      padding: spacing.xs,
-      borderRadius: radius.sm,
+      paddingVertical: spacing.xs,
+      paddingHorizontal: spacing.sm,
+      borderRadius: radius.md,
+      marginTop: -spacing.xs,
     },
     errorNoticeText: {
       color: colors.error,
@@ -648,16 +719,20 @@ const createStyles = (colors: AppColors) =>
     },
     actionButtonsRow: {
       flexDirection: 'row',
+      flexWrap: 'wrap',
       gap: spacing.xs,
       marginTop: 4,
     },
     actionOptionButton: {
-      flex: 1,
+      flexGrow: 1,
+      flexBasis: 140,
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
       gap: 4,
-      paddingVertical: 6,
+      minHeight: MIN_TOUCH_TARGET,
+      paddingVertical: spacing.xs,
+      paddingHorizontal: spacing.sm,
       borderRadius: radius.sm,
       borderWidth: 1,
       borderColor: colors.border,
@@ -693,37 +768,35 @@ const createStyles = (colors: AppColors) =>
     incompatibleNoticeText: {
       color: colors.textSecondary,
       flex: 1,
-      fontSize: 12,
-      lineHeight: 16,
     },
     expandDetailsButton: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
       gap: 4,
-      paddingVertical: 4,
+      minHeight: MIN_TOUCH_TARGET,
+      borderTopWidth: 1,
+      borderTopColor: colors.borderLight,
     },
     expandDetailsText: {
       color: colors.primary,
       fontWeight: '600',
     },
     categoryPickerContainer: {
-      gap: spacing.xs,
-      paddingTop: spacing.xs,
-      borderTopWidth: 1,
-      borderTopColor: colors.borderLight,
+      gap: spacing.sm,
     },
     categoryChipsWrap: {
       flexDirection: 'row',
       flexWrap: 'wrap',
-      gap: spacing.xs,
+      gap: spacing.sm,
     },
     categorySelectChip: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 4,
-      paddingHorizontal: 8,
-      paddingVertical: 4,
+      gap: 6,
+      minHeight: MIN_TOUCH_TARGET,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.xs,
       borderRadius: radius.full,
       borderWidth: 1,
       borderColor: colors.border,

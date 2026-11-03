@@ -1,5 +1,6 @@
 import React from 'react';
 import { render, fireEvent, waitFor, act, cleanup } from '@testing-library/react-native';
+import { StyleSheet } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import ScannerScreen from '../app/escaner/index';
@@ -476,6 +477,30 @@ describe('ScannerScreen', () => {
       },
       15000
     );
+
+    it('keeps the review header readable and its selection toggles accessible', async () => {
+      (scannerApi.analyzeIngredientsImage as jest.Mock).mockResolvedValueOnce([
+        { name: 'Salchicha', quantity: 6, unit: 'unidad', needsReview: false },
+        { name: 'Tomate', quantity: 3, unit: 'unidad', needsReview: false },
+      ]);
+
+      const screen = await renderScannerScreen();
+      await advanceToReview(screen);
+
+      const headingStyle = StyleSheet.flatten(screen.getByTestId('scanner-review-heading').props.style);
+      expect(headingStyle.flexShrink).toBe(1);
+      expect(headingStyle.flexGrow).toBe(1);
+
+      for (const testID of ['scanner-select-all-button', 'scanner-deselect-all-button']) {
+        const toggle = screen.getByTestId(testID);
+        expect(toggle.props.accessibilityRole).toBe('button');
+        expect(StyleSheet.flatten(toggle.props.style).minHeight).toBeGreaterThanOrEqual(44);
+      }
+
+      expect(screen.getAllByTestId(/^detected-card-/)).toHaveLength(2);
+      expect(screen.getAllByTestId(/^detected-unit-section-/)).toHaveLength(2);
+      expect(screen.getAllByTestId(/^detected-quantity-section-/)).toHaveLength(2);
+    });
 
     it(
       'supports excluding an ingredient before saving',

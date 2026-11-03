@@ -832,7 +832,7 @@ export default function ScannerScreen() {
           <View style={styles.reviewContainer} testID="scanner-review-state">
             {/* Header informativo */}
             <View style={styles.reviewTopSummary}>
-              <View>
+              <View style={styles.reviewHeadingBlock} testID="scanner-review-heading">
                 <Text style={[styles.reviewHeading, typography.headlineMd]}>
                   {scannedItems.length} alimento{scannedItems.length === 1 ? '' : 's'} detectado{scannedItems.length === 1 ? '' : 's'}
                 </Text>
@@ -845,17 +845,23 @@ export default function ScannerScreen() {
                 <Pressable
                   testID="scanner-select-all-button"
                   onPress={() => handleSelectAll(true)}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  style={styles.selectToggleButton}
+                  accessibilityRole="button"
+                  accessibilityLabel="Seleccionar todos los alimentos detectados"
                 >
                   <Text style={[styles.toggleText, typography.labelSm]}>
                     Todos
                   </Text>
                 </Pressable>
-                <Text style={styles.toggleDivider}>|</Text>
+                <Text style={styles.toggleDivider} importantForAccessibility="no">
+                  |
+                </Text>
                 <Pressable
                   testID="scanner-deselect-all-button"
                   onPress={() => handleSelectAll(false)}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  style={styles.selectToggleButton}
+                  accessibilityRole="button"
+                  accessibilityLabel="Quitar la selección de todos los alimentos"
                 >
                   <Text style={[styles.toggleText, typography.labelSm]}>
                     Ninguno
@@ -1351,8 +1357,16 @@ const createStyles = (colors: AppColors) =>
     },
     reviewTopSummary: {
       flexDirection: 'row',
+      flexWrap: 'wrap',
       justifyContent: 'space-between',
       alignItems: 'flex-end',
+      columnGap: spacing.sm,
+    },
+    reviewHeadingBlock: {
+      flexGrow: 1,
+      flexShrink: 1,
+      flexBasis: 200,
+      gap: 2,
     },
     reviewHeading: {
       color: colors.textPrimary,
@@ -1364,7 +1378,13 @@ const createStyles = (colors: AppColors) =>
     selectToggleRow: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 6,
+      gap: 2,
+      marginRight: -spacing.sm,
+    },
+    selectToggleButton: {
+      minHeight: 44,
+      paddingHorizontal: spacing.sm,
+      justifyContent: 'center',
     },
     toggleText: {
       color: colors.primary,
@@ -1387,7 +1407,7 @@ const createStyles = (colors: AppColors) =>
       lineHeight: 18,
     },
     cardsList: {
-      gap: spacing.sm,
+      gap: spacing.md,
     },
     reviewBottomActions: {
       gap: spacing.xs,

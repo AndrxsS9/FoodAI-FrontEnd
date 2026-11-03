@@ -25,7 +25,11 @@ import * as ImagePicker from 'expo-image-picker';
 import { Button, Card, Header } from '../../src/components/common';
 import { DetectedIngredientCard } from '../../src/components/scanner';
 import { usePantry } from '../../src/context/PantryContext';
-import { scannerApi, ScannerApiError } from '../../src/services/api/scannerApi';
+import {
+  formatScannerDiagnostic,
+  scannerApi,
+  ScannerApiError,
+} from '../../src/services/api/scannerApi';
 import { AppColors, radius, spacing, useAppTheme, useThemeStyles, useTypography } from '../../src/theme';
 import { IngredientCategory, IngredientUnit } from '../../src/types/pantry';
 import {
@@ -305,7 +309,7 @@ export default function ScannerScreen() {
       let diagnostic: string | null = null;
       if (err instanceof ScannerApiError) {
         msg = err.message;
-        diagnostic = err.diagnostic ? `${err.code} (${err.diagnostic.stage})` : err.code;
+        diagnostic = formatScannerDiagnostic(err);
       } else if (err instanceof Error) {
         msg = err.message;
         // Los errores locales de validación/optimización de la imagen ocurren antes de cualquier envío

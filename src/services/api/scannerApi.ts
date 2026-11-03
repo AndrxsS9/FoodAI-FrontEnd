@@ -10,7 +10,9 @@
  * 4. Tipado estricto de errores: red, validación (400), rate limit (429), timeouts y servidor (500-504).
  * 5. Protección de privacidad (sin logging de imágenes ni datos sensibles).
  * 6. Política anti-reintentos automáticos silenciosos para proteger la cuota de IA.
+ * 7. Subida multipart nativa en Android con expo-file-system (UploadTask); fetch + FormData en iOS y Web.
  */
+import { File as ExpoFile, UploadTask, UploadType } from 'expo-file-system';
 import { Platform } from 'react-native';
 import {
   API_ENDPOINTS,
@@ -49,12 +51,35 @@ export const ALLOWED_BACKEND_UNITS: BackendIngredientUnit[] = [
 export type ScannerErrorStage = 'auth' | 'prepare' | 'upload' | 'response';
 
 /**
+ * Mecanismo de transporte usado para subir la imagen:
+ * - expo-file-system: UploadTask nativo (solo Android).
+ * - fetch: FormData de React Native / navegador (iOS y Web).
+ */
+export type ScannerUploadTransport = 'expo-file-system' | 'fetch';
+
+/**
+ * Categoría de una falla de transporte derivada del mensaje del error, sin conservarlo.
+ */
+export type ScannerUploadFailureKind =
+  | 'rn_fetch_failed'
+  | 'timeout'
+  | 'tls'
+  | 'dns'
+  | 'stream'
+  | 'connection'
+  | 'file'
+  | 'other';
+
+/**
  * Diagnóstico seguro para soporte. NUNCA incluye tokens, encabezados, URIs de archivos,
  * bytes/base64 de la imagen ni mensajes nativos crudos (pueden contener rutas privadas).
  */
 export interface ScannerErrorDiagnostic {
   stage: ScannerErrorStage;
   platform: string;
+  transport?: ScannerUploadTransport;
+  failureKind?: ScannerUploadFailureKind;
+  nativeErrorCode?: string;
   errorName?: string;
   httpStatus?: number;
   mimeType?: string;
@@ -172,8 +197,54 @@ export function validateDetectedIngredientsResponse(rawArray: unknown): BackendD
   return rawArray.map((item, idx) => validateBackendDetectedIngredient(item, idx));
 }
 
+/**
+ * Categoriza la causa de una falla local o de transporte a partir del mensaje del error,
+ * SIN conservarlo: el mensaje nativo puede incluir la URL o la ruta privada del archivo.
+ */
+export function classifyUploadFailure(error: unknown): ScannerUploadFailureKind | undefined {
+  if (!(error instanceof Error) || error instanceof ScannerApiError || error instanceof ApiAuthError) {
+    return undefined;
+  }
+
+  const message = error.message.toLowerCase();
+  if (message.includes('network request failed')) return 'rn_fetch_failed';
+  if (
+    /does not exist|no such file|enoent|permission for accessing the file|could not retrieve file/.test(
+      message
+    )
+  ) {
+    return 'file';
+  }
+  if (/timed? ?out|timeout/.test(message)) return 'timeout';
+  if (/ssl|tls|certificate|handshake/.test(message)) return 'tls';
+  if (/unable to resolve host|unknownhost|no address associated/.test(message)) return 'dns';
+  if (/unexpected end of stream|stream was reset|protocol/.test(message)) return 'stream';
+  if (/failed to connect|connection (reset|refused|abort|closed)|broken pipe|software caused/.test(message)) {
+    return 'connection';
+  }
+  return 'other';
+}
+
+function getNativeErrorCode(error: unknown): string | undefined {
+  const code = (error as { code?: unknown } | null)?.code;
+  return typeof code === 'string' && /^ERR_[A-Z0-9_]+$/.test(code) ? code : undefined;
+}
+
+/**
+ * Resume el diagnóstico para mostrarlo en pantalla, ej. "NETWORK_ERROR (upload · expo-file-system · tls)".
+ */
+export function formatScannerDiagnostic(error: ScannerApiError): string {
+  const details = [
+    error.diagnostic?.stage,
+    error.diagnostic?.transport,
+    error.diagnostic?.failureKind,
+  ].filter(Boolean);
+  return details.length > 0 ? `${error.code} (${details.join(' · ')})` : error.code;
+}
+
 function buildScannerDiagnostic(
   stage: ScannerErrorStage,
+  transport: ScannerUploadTransport,
   image: SelectedImage,
   error: unknown,
   httpStatus?: number
@@ -181,6 +252,9 @@ function buildScannerDiagnostic(
   return {
     stage,
     platform: Platform.OS,
+    transport,
+    failureKind: classifyUploadFailure(error),
+    nativeErrorCode: getNativeErrorCode(error),
     errorName: error instanceof Error ? error.name : typeof error,
     httpStatus: httpStatus && httpStatus > 0 ? httpStatus : undefined,
     mimeType: image.mimeType,
@@ -199,6 +273,63 @@ function reportScannerFailure(error: ScannerApiError): void {
     status: error.status,
     ...error.diagnostic,
   });
+}
+
+/**
+ * Respuesta HTTP mínima común a fetch y a la subida nativa de expo-file-system.
+ */
+interface ScannerHttpResponse {
+  ok: boolean;
+  status: number;
+  json: () => Promise<unknown>;
+}
+
+/**
+ * Referencia al archivo local optimizado para la subida nativa. Si ya no existe, es un problema
+ * de preparación de la imagen y no de red.
+ */
+function resolveNativeUploadFile(image: SelectedImage): ExpoFile {
+  const file = new ExpoFile(image.uri);
+  if (!file.exists) {
+    const error = new Error('El archivo de imagen preparado no está disponible.');
+    error.name = 'ImageFileUnavailableError';
+    throw error;
+  }
+  return file;
+}
+
+/**
+ * Subida multipart nativa en Android con expo-file-system (UploadTask + OkHttp).
+ * A diferencia de FormData + fetch de React Native, el cuerpo se relee desde el archivo en cada
+ * escritura y los errores nativos conservan su causa. Una sola llamada a uploadAsync() por análisis:
+ * no se agregan reintentos de aplicación que puedan duplicar solicitudes a Gemini.
+ */
+async function uploadWithExpoFileSystem(
+  file: ExpoFile,
+  url: string,
+  image: SelectedImage,
+  headers: Record<string, string>,
+  signal: AbortSignal
+): Promise<ScannerHttpResponse> {
+  const task = new UploadTask(file, url, {
+    httpMethod: 'POST',
+    uploadType: UploadType.MULTIPART,
+    fieldName: 'image',
+    mimeType: image.mimeType || 'image/jpeg',
+    headers,
+    signal,
+  });
+
+  try {
+    const result = await task.uploadAsync();
+    return {
+      ok: result.status >= 200 && result.status < 300,
+      status: result.status,
+      json: async () => JSON.parse(result.body),
+    };
+  } finally {
+    task.release();
+  }
 }
 
 /**
@@ -253,6 +384,8 @@ export async function analyzeIngredientsImage(
   }
 
   let stage: ScannerErrorStage = 'auth';
+  // Solo Android usa la subida nativa; iOS y Web conservan fetch + FormData sin cambios
+  const transport: ScannerUploadTransport = Platform.OS === 'android' ? 'expo-file-system' : 'fetch';
 
   const toScannerApiError = (error: unknown): ScannerApiError => {
     if (error instanceof ScannerApiError) {
@@ -298,14 +431,15 @@ export async function analyzeIngredientsImage(
       );
     }
 
-    if (stage === 'prepare') {
+    // Un archivo local ilegible o inexistente es un problema de preparación aunque lo detecte el transporte nativo
+    if (stage === 'prepare' || classifyUploadFailure(error) === 'file') {
       return new ScannerApiError(
         'No se pudo preparar la foto para enviarla al análisis. Vuelve a tomarla o selecciónala de nuevo desde la galería.',
         'IMAGE_PREPARATION_FAILED'
       );
     }
 
-    // Rechazo de fetch (TypeError "Network request failed"): el transporte nativo no completó la subida
+    // Rechazo del transporte (fetch "Network request failed" o UploadTask nativo): la subida no se completó
     return new ScannerApiError(
       'No se pudo enviar la foto al servidor FoodAI. Revisa tu conexión a internet e intenta nuevamente.',
       'NETWORK_ERROR',
@@ -321,21 +455,39 @@ export async function analyzeIngredientsImage(
       signal: controller.signal,
     });
 
-    // Un fallo al preparar la imagen localmente NUNCA debe reportarse como caída de red o del servidor
-    stage = 'prepare';
-    const formData = await createAnalyzeFormData(image);
+    // NOTA CLAVE: No incluir 'Content-Type' manual; el transporte define el límite (boundary) multipart
+    const requestHeaders: Record<string, string> = {
+      Accept: 'application/json',
+      ...authHeaders,
+    };
 
-    // NOTA CLAVE: No incluir 'Content-Type' manual para permitir que fetch configure el límite (boundary) multipart
-    stage = 'upload';
-    const response = await fetch(targetUrl, {
-      method: 'POST',
-      headers: {
-        Accept: 'application/json',
-        ...authHeaders,
-      },
-      body: formData,
-      signal: controller.signal,
-    });
+    let response: ScannerHttpResponse;
+
+    if (transport === 'expo-file-system') {
+      // Un fallo al preparar la imagen localmente NUNCA debe reportarse como caída de red o del servidor
+      stage = 'prepare';
+      const file = resolveNativeUploadFile(image);
+
+      stage = 'upload';
+      response = await uploadWithExpoFileSystem(
+        file,
+        targetUrl,
+        image,
+        requestHeaders,
+        controller.signal
+      );
+    } else {
+      stage = 'prepare';
+      const formData = await createAnalyzeFormData(image);
+
+      stage = 'upload';
+      response = await fetch(targetUrl, {
+        method: 'POST',
+        headers: requestHeaders,
+        body: formData,
+        signal: controller.signal,
+      });
+    }
 
     stage = 'response';
     let rawJson: unknown;
@@ -489,7 +641,13 @@ export async function analyzeIngredientsImage(
 
     // La cancelación deliberada del usuario no es una falla y no se registra
     if (scannerError.code !== 'REQUEST_ABORTED') {
-      scannerError.diagnostic ??= buildScannerDiagnostic(stage, image, error, scannerError.status);
+      scannerError.diagnostic ??= buildScannerDiagnostic(
+        stage,
+        transport,
+        image,
+        error,
+        scannerError.status
+      );
       reportScannerFailure(scannerError);
     }
 

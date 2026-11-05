@@ -480,6 +480,194 @@ describe('Inicio · Recomendación del día real y personalizada', () => {
     });
   });
 
+  describe('Primera generación fallida desde modo demo (regresión)', () => {
+    const generated = [
+      backendRecipe({
+        name: 'Arroz con huevo',
+        availableIngredients: [u('Arroz'), u('Huevo')],
+        missingIngredients: [u('Cebolla', 1200)],
+        estimatedMissingCost: 1200,
+        budgetRemaining: 18800,
+      }),
+    ];
+
+    const failingApi = (message = 'El servicio de IA no respondió.') =>
+      ({
+        recommendRecipes: jest.fn().mockRejectedValue(new Error(message)),
+        checkBackendHealth: jest.fn(),
+      }) as any;
+
+    const generateIgnoringError = async () => {
+      // Simula la acción explícita del usuario en /recetas (flujo existente)
+      await act(async () => {
+        await recipeCtx.generateRecipes().catch(() => {});
+      });
+    };
+
+    it('muestra el error real en lugar del estado demo genérico', async () => {
+      const api = failingApi();
+      // Proveedor real con su valor por defecto: arranca en modo demo
+      const { getByTestId, getByText, queryByTestId, queryByText } = await renderHome({ api });
+      expect(getByTestId('home-recommendation-demo-state')).toBeTruthy();
+
+      await generateIgnoringError();
+
+      // Precondición del escenario: el contexto sigue en demo pero con error
+      expect(recipeCtx.isDemoMode).toBe(true);
+      expect(recipeCtx.error).toBe('El servicio de IA no respondió.');
+
+      expect(getByTestId('home-recommendation-error-state')).toBeTruthy();
+      expect(getByText('No se pudo generar tu recomendación')).toBeTruthy();
+      expect(getByText('El servicio de IA no respondió.')).toBeTruthy();
+      expect(queryByTestId('home-recommendation-demo-state')).toBeNull();
+      // Nunca se presentan recetas de ejemplo ni costos como recomendación
+      expect(queryByTestId('home-recommended-recipe-card')).toBeNull();
+      expect(queryByText('Arroz con pollo y verduras')).toBeNull();
+      expect(queryByText(/conveniente/)).toBeNull();
+      expect(queryByTestId('home-recommendation-cost')).toBeNull();
+
+      fireEvent.press(getByTestId('home-recommendation-generate-button'));
+      expect(mockPush).toHaveBeenCalledWith('/recetas');
+      expect(api.recommendRecipes).toHaveBeenCalledTimes(1);
+    });
+
+    it('el estado de error no provoca nuevas llamadas a Gemini al re-renderizar ni al pulsar el CTA', async () => {
+      const api = failingApi();
+      const { getByTestId, rerenderHome } = await renderHome({ api });
+
+      await generateIgnoringError();
+      expect(getByTestId('home-recommendation-error-state')).toBeTruthy();
+
+      await rerenderHome();
+      await rerenderHome();
+      await act(async () => {
+        fireEvent.press(getByTestId('home-recommendation-generate-button'));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+
+      expect(api.recommendRecipes).toHaveBeenCalledTimes(1);
+    });
+
+    it('un reintento exitoso limpia el error y muestra la recomendación real', async () => {
+      const api = {
+        recommendRecipes: jest
+          .fn()
+          .mockRejectedValueOnce(new Error('El servicio de IA no respondió.'))
+          .mockResolvedValueOnce(generated),
+        checkBackendHealth: jest.fn(),
+      } as any;
+      const { getByTestId, getByText, queryByTestId, queryByText } = await renderHome({ api });
+
+      await generateIgnoringError();
+      expect(getByTestId('home-recommendation-error-state')).toBeTruthy();
+
+      await generateIgnoringError();
+
+      await waitFor(() => expect(getByTestId('home-recommended-recipe-card')).toBeTruthy());
+      expect(recipeCtx.error).toBeNull();
+      expect(recipeCtx.isDemoMode).toBe(false);
+      expect(getByText('Arroz con huevo')).toBeTruthy();
+      expect(getByText('$1.200')).toBeTruthy();
+      expect(queryByTestId('home-recommendation-error-state')).toBeNull();
+      expect(queryByTestId('home-recommendation-demo-state')).toBeNull();
+      expect(queryByText('El servicio de IA no respondió.')).toBeNull();
+      expect(api.recommendRecipes).toHaveBeenCalledTimes(2);
+    });
+
+    it('volver explícitamente a modo demo limpia el error y restaura el estado demo', async () => {
+      const api = failingApi();
+      const { getByTestId, queryByTestId } = await renderHome({ api });
+
+      await generateIgnoringError();
+      expect(getByTestId('home-recommendation-error-state')).toBeTruthy();
+
+      await act(async () => {
+        recipeCtx.setDemoMode(true);
+      });
+
+      expect(getByTestId('home-recommendation-demo-state')).toBeTruthy();
+      expect(queryByTestId('home-recommendation-error-state')).toBeNull();
+    });
+
+    it('la despensa vacía conserva prioridad sobre el error EMPTY_PANTRY', async () => {
+      const api = createMockApi(generated);
+      const { getByTestId, queryByTestId } = await renderHome({ api, ingredients: [] });
+
+      await generateIgnoringError();
+
+      expect(recipeCtx.errorCode).toBe('EMPTY_PANTRY');
+      expect(getByTestId('home-recommendation-empty-pantry')).toBeTruthy();
+      expect(queryByTestId('home-recommendation-error-state')).toBeNull();
+      expect(api.recommendRecipes).not.toHaveBeenCalled();
+    });
+
+    it('la carga de la despensa conserva prioridad sobre el error', async () => {
+      const neverResolving: PantryStorageAdapter = {
+        getIngredients: () => new Promise(() => {}),
+      } as unknown as PantryStorageAdapter;
+      const api = failingApi();
+      const { getByTestId, queryByTestId } = await renderHome({ api, pantryStorage: neverResolving });
+
+      await generateIgnoringError();
+
+      expect(recipeCtx.error).not.toBeNull();
+      expect(getByTestId('home-recommendation-loading')).toBeTruthy();
+      expect(queryByTestId('home-recommendation-error-state')).toBeNull();
+    });
+
+    it('una regeneración fallida tras cambiar la despensa mantiene el estado obsoleto sin costos antiguos', async () => {
+      const api = {
+        recommendRecipes: jest
+          .fn()
+          .mockResolvedValueOnce(generated)
+          .mockRejectedValueOnce(new Error('El servicio de IA no respondió.')),
+        checkBackendHealth: jest.fn(),
+      } as any;
+      const { getByTestId, queryByTestId, queryByText } = await renderHome({ api });
+
+      await generateIgnoringError();
+      await waitFor(() => expect(getByTestId('home-recommended-recipe-card')).toBeTruthy());
+
+      await act(async () => {
+        await pantryCtx.addIngredient({
+          name: 'Cebolla',
+          quantity: 1,
+          unit: 'unidad',
+          category: 'Verduras y frutas',
+        });
+      });
+      await waitFor(() => expect(getByTestId('home-recommendation-stale-state')).toBeTruthy());
+
+      await generateIgnoringError();
+
+      expect(recipeCtx.error).toBe('El servicio de IA no respondió.');
+      expect(getByTestId('home-recommendation-stale-state')).toBeTruthy();
+      expect(queryByTestId('home-recommended-recipe-card')).toBeNull();
+      expect(queryByText('$1.200')).toBeNull();
+      expect(api.recommendRecipes).toHaveBeenCalledTimes(2);
+    });
+
+    it('una regeneración fallida sin cambios conserva la recomendación real vigente', async () => {
+      const api = {
+        recommendRecipes: jest
+          .fn()
+          .mockResolvedValueOnce(generated)
+          .mockRejectedValueOnce(new Error('El servicio de IA no respondió.')),
+        checkBackendHealth: jest.fn(),
+      } as any;
+      const { getByTestId, queryByTestId } = await renderHome({ api });
+
+      await generateIgnoringError();
+      await waitFor(() => expect(getByTestId('home-recommended-recipe-card')).toBeTruthy());
+
+      await generateIgnoringError();
+
+      expect(recipeCtx.error).toBe('El servicio de IA no respondió.');
+      expect(getByTestId('home-recommended-recipe-card')).toBeTruthy();
+      expect(queryByTestId('home-recommendation-error-state')).toBeNull();
+    });
+  });
+
   describe('Sin llamadas automáticas a Gemini desde Inicio', () => {
     const scenarios: { label: string; options: RenderOptions; ctaTestID: string }[] = [
       { label: 'modo demo', options: {}, ctaTestID: 'home-recommendation-generate-button' },

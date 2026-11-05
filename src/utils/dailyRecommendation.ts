@@ -191,7 +191,12 @@ export interface DailyRecommendationInput {
 
 /**
  * Resuelve qué debe mostrar la sección. Prioridad:
- * cargando despensa → generando → despensa vacía → demo → obsoleta → lista → error → sin recetas.
+ * cargando despensa → generando → despensa vacía → demo (error si la generación falló)
+ * → obsoleta → lista → error → sin recetas.
+ *
+ * En modo demo nunca hay recetas reales que recomendar. Si la primera generación
+ * real falla, RecipeContext conserva `isDemoMode === true` y expone `error`; en ese
+ * caso se muestra el error real en lugar del estado demo genérico.
  * Nunca dispara generaciones: solo describe el estado actual.
  */
 export function resolveDailyRecommendationState(
@@ -200,7 +205,9 @@ export function resolveDailyRecommendationState(
   if (input.isPantryLoading) return { kind: 'loading-pantry' };
   if (input.isGenerating) return { kind: 'generating' };
   if (input.pantryCount <= 0) return { kind: 'empty-pantry' };
-  if (input.isDemoMode) return { kind: 'demo' };
+  if (input.isDemoMode) {
+    return input.error ? { kind: 'error', message: input.error } : { kind: 'demo' };
+  }
 
   const pick = selectDailyRecommendation(input.recipes, {
     urgentIngredientNames: input.urgentIngredientNames,

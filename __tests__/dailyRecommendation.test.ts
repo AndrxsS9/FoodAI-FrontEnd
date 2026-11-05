@@ -242,6 +242,43 @@ describe('resolveDailyRecommendationState', () => {
     expect(state.kind).toBe('demo');
   });
 
+  describe('primera generación fallida (modo demo + error)', () => {
+    const demoWithError: DailyRecommendationInput = {
+      ...base,
+      isDemoMode: true,
+      recipes: getDemoRecipes(20000, 2),
+      error: 'El servicio de IA no respondió.',
+    };
+
+    it('muestra el error real en lugar del estado demo genérico', () => {
+      expect(resolveDailyRecommendationState(demoWithError)).toEqual({
+        kind: 'error',
+        message: 'El servicio de IA no respondió.',
+      });
+    });
+
+    it('nunca expone recetas como lista en modo demo, aunque el arreglo contenga recetas reales', () => {
+      const state = resolveDailyRecommendationState({ ...demoWithError, recipes: [real] });
+      expect(state.kind).toBe('error');
+      expect(resolveDailyRecommendationState({ ...demoWithError, recipes: [real], error: null }).kind).toBe('demo');
+    });
+
+    it('conserva la prioridad de carga de despensa, generación en curso y despensa vacía', () => {
+      expect(resolveDailyRecommendationState({ ...demoWithError, isPantryLoading: true }).kind).toBe('loading-pantry');
+      expect(resolveDailyRecommendationState({ ...demoWithError, isGenerating: true }).kind).toBe('generating');
+      expect(resolveDailyRecommendationState({ ...demoWithError, pantryCount: 0 }).kind).toBe('empty-pantry');
+    });
+
+    it('sin error el modo demo se mantiene', () => {
+      expect(resolveDailyRecommendationState({ ...demoWithError, error: null }).kind).toBe('demo');
+      expect(resolveDailyRecommendationState({ ...demoWithError, error: '' }).kind).toBe('demo');
+    });
+  });
+
+  it('error con recetas reales obsoletas mantiene el estado obsoleto (sin costos antiguos)', () => {
+    expect(resolveDailyRecommendationState({ ...base, isStale: true, error: 'Fallo' }).kind).toBe('stale');
+  });
+
   it('recetas obsoletas no se presentan como vigentes', () => {
     expect(resolveDailyRecommendationState({ ...base, isStale: true }).kind).toBe('stale');
   });

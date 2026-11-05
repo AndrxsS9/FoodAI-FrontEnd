@@ -345,13 +345,14 @@ describe('FoodAI Phase 2C - Recipe Discovery, Details & Cooking Mode Tests', () 
   });
 
   describe('2. Navegación cruzada: Inicio y Despensa hacia Recetas', () => {
-    it('navega desde el Inicio a /recetas/demo-rec-1 al presionar Ver receta en la recomendación diaria', async () => {
-      const { getByTestId } = await renderWithProviders(<HomeScreen />);
+    it('en modo demo, Inicio no ofrece la receta de ejemplo como recomendación y su CTA lleva a /recetas', async () => {
+      const { getByTestId, queryByTestId } = await renderWithProviders(<HomeScreen />);
 
-      const viewRecipeBtn = getByTestId('home-view-recipe-button');
-      fireEvent.press(viewRecipeBtn);
+      expect(queryByTestId('home-view-recipe-button')).toBeNull();
+      fireEvent.press(getByTestId('home-recommendation-generate-button'));
 
-      expect(mockPush).toHaveBeenCalledWith('/recetas/demo-rec-1');
+      expect(mockPush).toHaveBeenCalledWith('/recetas');
+      expect(mockPush).not.toHaveBeenCalledWith('/recetas/demo-rec-1');
     });
 
     it('conecta la sugerencia culinaria en Despensa con la pantalla de descubrimiento /recetas', async () => {
@@ -639,24 +640,39 @@ describe('FoodAI Phase 2C - Recipe Discovery, Details & Cooking Mode Tests', () 
   });
 
   describe('6. Consistencia entre Inicio y Detalle de Receta (ISSUE 1)', () => {
-    it('muestra el mismo nombre, tiempo, costo, conveniencia y porciones en Inicio y navega al CTA exacto', async () => {
-      // 1. Renderizar Inicio con 2 comensales y presupuesto estándar
+    it('muestra el mismo nombre, tiempo, costo, conveniencia y porciones de la receta real en Inicio y navega al CTA exacto', async () => {
+      const realRecipe: ClientRecipe = {
+        id: 'arroz-real',
+        name: 'Arroz real con pollo',
+        description: 'Generada por IA con tu despensa.',
+        totalMinutes: 30,
+        servings: 2,
+        ingredients: [],
+        steps: ['Cocinar'],
+        availableIngredients: [{ name: 'Pollo', quantity: 300, unit: 'g' }],
+        missingIngredients: [{ name: 'Arroz', quantity: 200, unit: 'g', estimatedCost: 5800 }],
+        estimatedMissingCost: 5800,
+        budgetRemaining: 14200,
+        withinBudget: true,
+        convenience: '94% conveniente',
+        reason: 'Aprovecha tu pollo.',
+        isDemoFixture: false,
+      };
       const home = await renderWithProviders(<HomeScreen />, {
         initialBudgetPreferences: { budget: 20000, servings: 2 },
+        initialRecipes: [realRecipe],
+        initialIsDemoMode: false,
       });
 
-      // Validar datos de recomendación en Inicio
-      expect(home.getByText('Arroz con pollo y verduras')).toBeTruthy();
+      expect(home.getByText('Arroz real con pollo')).toBeTruthy();
       expect(home.getByText('30 min')).toBeTruthy();
       expect(home.getByText('2 personas')).toBeTruthy();
       expect(home.getByText('$5.800')).toBeTruthy();
       expect(home.getByText('94% conveniente')).toBeTruthy();
-      expect(home.getByTestId('home-recipe-demo-badge')).toBeTruthy();
+      expect(home.queryByTestId('home-recipe-demo-badge')).toBeNull();
 
-      // Navegar a la receta desde el CTA
-      const viewButton = home.getByTestId('home-view-recipe-button');
-      fireEvent.press(viewButton);
-      expect(mockPush).toHaveBeenCalledWith('/recetas/demo-rec-1');
+      fireEvent.press(home.getByTestId('home-view-recipe-button'));
+      expect(mockPush).toHaveBeenCalledWith('/recetas/arroz-real');
     });
 
     it('el Detalle de Receta refleja los mismos datos autoritativos que Inicio', async () => {
@@ -675,17 +691,37 @@ describe('FoodAI Phase 2C - Recipe Discovery, Details & Cooking Mode Tests', () 
       expect(detail.getByText('94% conveniente')).toBeTruthy();
     });
 
-    it('la tarjeta de Inicio reacciona a cambios en presupuesto y comensales', async () => {
-      // 4 comensales escala el costo proporcionalmente (5800 * 4 / 2 = 11600)
-      const { getByText } = await renderWithProviders(<HomeScreen />, {
+    it('la tarjeta de Inicio muestra el costo autoritativo del backend sin recalcularlo localmente', async () => {
+      const realRecipe: ClientRecipe = {
+        id: 'sopa-real',
+        name: 'Sopa real',
+        description: 'Generada para 4 personas.',
+        totalMinutes: 40,
+        servings: 4,
+        ingredients: [],
+        steps: ['Hervir'],
+        availableIngredients: [{ name: 'Tomate', quantity: 2, unit: 'unidad' }],
+        missingIngredients: [{ name: 'Papa', quantity: 4, unit: 'unidad', estimatedCost: 3100 }],
+        estimatedMissingCost: 3100,
+        budgetRemaining: 31900,
+        withinBudget: true,
+        convenience: 80,
+        reason: '',
+        isDemoFixture: false,
+      };
+      const { getByText, queryByText } = await renderWithProviders(<HomeScreen />, {
         initialBudgetPreferences: { budget: 35000, servings: 4 },
+        initialRecipes: [realRecipe],
+        initialIsDemoMode: false,
       });
 
       await waitFor(() => {
-        expect(getByText('Arroz con pollo y verduras')).toBeTruthy();
+        expect(getByText('Sopa real')).toBeTruthy();
         expect(getByText('4 personas')).toBeTruthy();
-        expect(getByText('$11.600')).toBeTruthy();
+        expect(getByText('$3.100')).toBeTruthy();
       });
+      // No se escala ni se reestima el costo devuelto por el backend
+      expect(queryByText('$6.200')).toBeNull();
     });
 
     it('no muestra etiquetas ni datos demo cuando se inyectan recetas reales', async () => {
@@ -747,8 +783,8 @@ describe('FoodAI Phase 2C - Recipe Discovery, Details & Cooking Mode Tests', () 
       expect(queryByTestId('home-recommended-recipe-card')).toBeNull();
       expect(queryByTestId('demo-data-banner')).toBeNull();
 
-      const exploreBtn = getByTestId('home-explore-recipes-button');
-      fireEvent.press(exploreBtn);
+      const generateBtn = getByTestId('home-recommendation-generate-button');
+      fireEvent.press(generateBtn);
       expect(mockPush).toHaveBeenCalledWith('/recetas');
     });
   });
@@ -1031,12 +1067,24 @@ describe('FoodAI Phase 2C - Recipe Discovery, Details & Cooking Mode Tests', () 
       // imageUrl es undefined deliberadamente
     };
 
-    it('Home renderiza imagen de demostración en modo demo y NO el fallback neutral', async () => {
-      const { queryByTestId, getByTestId } = await renderWithProviders(<HomeScreen />);
+    it('Home renderiza la imagen remota segura de una receta real y NO el fallback neutral', async () => {
+      const { queryByTestId, getByTestId } = await renderWithProviders(<HomeScreen />, {
+        initialIsDemoMode: false,
+        initialRecipes: [
+          { ...realRecipeWithoutImage, imageUrl: 'https://images.foodai.example.com/tofu.jpg' },
+        ],
+      });
 
       expect(getByTestId('home-recommended-recipe-card')).toBeTruthy();
-      // En modo demo las recetas tienen imageUrl válida, por lo que no debe mostrar el fallback
       expect(queryByTestId('home-recipe-fallback-image')).toBeNull();
+    });
+
+    it('Home en modo demo no renderiza la tarjeta ni la imagen de la receta de ejemplo', async () => {
+      const { queryByTestId, getByTestId } = await renderWithProviders(<HomeScreen />);
+
+      expect(getByTestId('home-recommendation-demo-state')).toBeTruthy();
+      expect(queryByTestId('home-recommended-recipe-card')).toBeNull();
+      expect(queryByTestId('home-recipe-image')).toBeNull();
     });
 
     it('Home renderiza el fallback neutral FoodAI cuando una receta real carece de imagen', async () => {

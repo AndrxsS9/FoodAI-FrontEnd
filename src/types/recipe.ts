@@ -1,4 +1,6 @@
 import type { ImageSourcePropType } from 'react-native';
+import type { RecipeImageKey } from './recipeImage';
+import { resolveRecipeImageKey } from '../utils/recipeImageMatcher';
 
 /**
  * FoodAI - Modelos, contratos de API y tipos del dominio de recetas (Fase 2C).
@@ -167,6 +169,11 @@ export interface ClientRecipe {
   generationId?: string;
   /** Imagen opcional de UI */
   imageUrl?: ImageSourcePropType | string | null;
+  /**
+   * Categoría estable del catálogo local de imágenes de referencia (texto, persistible).
+   * Nunca se persiste el identificador numérico de Metro. `null` = sin categoría fiable.
+   */
+  imageKey?: RecipeImageKey | null;
 }
 
 // ==========================================
@@ -448,6 +455,7 @@ export function normalizeBackendRecipe(
     convenience: convenienceDisplay,
     reason: raw.reason ? String(raw.reason).trim() : '',
     imageUrl: safeImageUrl,
+    imageKey: resolveRecipeImageKey({ name: safeName, ingredients }),
     isDemoFixture: false,
   };
 }

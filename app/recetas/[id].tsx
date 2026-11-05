@@ -22,6 +22,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Button, Card } from '../../src/components/common';
 import { RecipeImage } from '../../src/components/recipe/RecipeImage';
+import { getRecipeImageSource } from '../../src/utils/recipeImageCatalog';
 import { usePantry } from '../../src/context/PantryContext';
 import { useRecipes } from '../../src/context/RecipeContext';
 import { useMealPlanSafe } from '../../src/context/MealPlanContext';
@@ -54,6 +55,9 @@ export default function RecipeDetailScreen() {
     }
     return getRecipeById(recipeId) || plannedRecipe;
   }, [params.fromPlan, plannedRecipe, getRecipeById, recipeId]);
+
+  // Imagen: foto de demo, imagen de referencia del catálogo local o respaldo neutro
+  const recipeImage = useMemo(() => getRecipeImageSource(recipe), [recipe]);
 
   // Estado local para checklist interactivo de ingredientes disponibles
   const [checkedIngredients, setCheckedIngredients] = useState<Record<string, boolean>>({});
@@ -197,7 +201,8 @@ export default function RecipeDetailScreen() {
         {/* 3. Hero Visual & Título */}
         <View style={styles.heroWrapper}>
           <RecipeImage
-            source={recipe.imageUrl}
+            source={recipeImage.source}
+            referenceLabel={recipeImage.referenceLabel}
             recipeName={recipe.name}
             isDemo={recipe.isDemoFixture}
             containerStyle={styles.heroImageContainer}

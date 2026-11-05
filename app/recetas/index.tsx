@@ -21,6 +21,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Button, Card, Chip, Input, Stepper } from '../../src/components/common';
 import { RecipeImage } from '../../src/components/recipe/RecipeImage';
+import { getRecipeImageSource } from '../../src/utils/recipeImageCatalog';
 import { usePantry } from '../../src/context/PantryContext';
 import { useBudget } from '../../src/context/BudgetContext';
 import { useRecipes } from '../../src/context/RecipeContext';
@@ -574,6 +575,7 @@ function RecipeCardItem({ recipe, isDominant, onPress }: RecipeCardItemProps) {
   const styles = useThemeStyles(createStyles);
   const availableCount = recipe.availableIngredients.length;
   const totalIngredientsCount = recipe.ingredients.length;
+  const image = useMemo(() => getRecipeImageSource(recipe), [recipe]);
 
   return (
     <Card
@@ -583,7 +585,8 @@ function RecipeCardItem({ recipe, isDominant, onPress }: RecipeCardItemProps) {
     >
       {/* Imagen o cabecera visual de respaldo con RecipeImage */}
       <RecipeImage
-        source={recipe.imageUrl}
+        source={image.source}
+        referenceLabel={image.referenceLabel}
         recipeName={recipe.name}
         isDemo={recipe.isDemoFixture}
         containerStyle={styles.imageWrapper}

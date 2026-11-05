@@ -1067,7 +1067,9 @@ describe('FoodAI Phase 2C - Recipe Discovery, Details & Cooking Mode Tests', () 
       // imageUrl es undefined deliberadamente
     };
 
-    it('Home renderiza la imagen remota segura de una receta real y NO el fallback neutral', async () => {
+    it('Home NO carga URLs remotas de recetas reales en el MVP aunque sean HTTPS (Bloque 3A)', async () => {
+      // Antes del Bloque 3A se cargaba la URL remota. Ahora las imágenes remotas están
+      // desactivadas (REMOTE_RECIPE_IMAGES_ENABLED = false): HTTPS no prueba relevancia ni licencia.
       const { queryByTestId, getByTestId } = await renderWithProviders(<HomeScreen />, {
         initialIsDemoMode: false,
         initialRecipes: [
@@ -1076,7 +1078,8 @@ describe('FoodAI Phase 2C - Recipe Discovery, Details & Cooking Mode Tests', () 
       });
 
       expect(getByTestId('home-recommended-recipe-card')).toBeTruthy();
-      expect(queryByTestId('home-recipe-fallback-image')).toBeNull();
+      expect(getByTestId('home-recipe-fallback-image')).toBeTruthy();
+      expect(queryByTestId('home-recipe-image-img')).toBeNull();
     });
 
     it('Home en modo demo no renderiza la tarjeta ni la imagen de la receta de ejemplo', async () => {

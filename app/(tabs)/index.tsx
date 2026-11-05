@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
+  ActivityIndicator,
   Image,
   Pressable,
   ScrollView,
@@ -17,6 +18,10 @@ import { useBudget } from '../../src/context/BudgetContext';
 import { useRecipes } from '../../src/context/RecipeContext';
 import { DEMO_DASHBOARD_DATA } from '../../src/fixtures/demoDashboardData';
 import { formatCopCurrency } from '../../src/types/recipe';
+import {
+  hasBackendConvenienceScore,
+  resolveDailyRecommendationState,
+} from '../../src/utils/dailyRecommendation';
 import {
   AppColors,
   radius,
@@ -85,9 +90,82 @@ export default function HomeScreen() {
     }
   };
 
-  const { summary } = usePantry();
-  const { recipes, isDemoMode, selectRecipe } = useRecipes();
-  const recommendedRecipe = recipes.length > 0 ? recipes[0] : null;
+  const { summary, isLoading: isPantryLoading } = usePantry();
+  const {
+    recipes,
+    isDemoMode,
+    isGenerating,
+    isStale,
+    error: recipeError,
+    selectRecipe,
+  } = useRecipes();
+
+  // Recomendación del día: selección pura y determinista sobre recetas REALES.
+  // Solo describe el estado actual; nunca dispara generaciones con IA desde Inicio.
+  const urgentIngredientNames = useMemo(
+    () => summary.urgentIngredients.map((item) => item.name),
+    [summary.urgentIngredients]
+  );
+  const recommendation = useMemo(
+    () =>
+      resolveDailyRecommendationState({
+        isPantryLoading,
+        pantryCount: summary.totalCount,
+        isDemoMode,
+        isGenerating,
+        isStale,
+        recipes,
+        error: recipeError,
+        urgentIngredientNames,
+      }),
+    [
+      isPantryLoading,
+      summary.totalCount,
+      isDemoMode,
+      isGenerating,
+      isStale,
+      recipes,
+      recipeError,
+      urgentIngredientNames,
+    ]
+  );
+  const recommendedRecipe = recommendation.kind === 'ready' ? recommendation.pick.recipe : null;
+  const recommendedScore = recommendation.kind === 'ready' ? recommendation.pick.score : null;
+  const candidateCount = recommendation.kind === 'ready' ? recommendation.pick.candidateCount : 0;
+
+  const goToRecipeGeneration = () => router.push('/recetas' as any);
+  const goToPantry = () => router.push('/(tabs)/despensa');
+
+  const renderStateCard = (config: {
+    testID: string;
+    icon: React.ComponentProps<typeof MaterialIcons>['name'];
+    title: string;
+    message: string;
+    actionTestID: string;
+    actionTitle: string;
+    actionIcon: React.ComponentProps<typeof MaterialIcons>['name'];
+    onAction: () => void;
+    actionHint: string;
+  }) => (
+    <Card variant="outlined" style={styles.emptyRecipeCard} testID={config.testID}>
+      <View style={styles.emptyRecipeIconBox}>
+        <MaterialIcons name={config.icon} size={32} color={colors.outline} />
+      </View>
+      <Text style={[styles.emptyRecipeTitle, typography.headlineMd]} accessibilityRole="header">
+        {config.title}
+      </Text>
+      <Text style={[styles.emptyRecipeText, typography.bodySm]}>{config.message}</Text>
+      <Button
+        testID={config.actionTestID}
+        title={config.actionTitle}
+        variant="primary"
+        size="md"
+        onPress={config.onAction}
+        accessibilityHint={config.actionHint}
+        leftIcon={<MaterialIcons name={config.actionIcon} size={18} color={colors.onPrimary} />}
+      />
+    </Card>
+  );
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
@@ -390,8 +468,8 @@ export default function HomeScreen() {
           </View>
         </Card>
 
-        {/* 4. Recommendation of the Day (Autoritativo desde RecipeContext) */}
-        <View style={styles.recommendationSection}>
+        {/* 4. Recommendation of the Day (selección real y determinista sobre RecipeContext) */}
+        <View style={styles.recommendationSection} testID="home-recommendation-section">
           <View style={styles.sectionHeaderRow}>
             <View style={styles.sectionTitleCol}>
               <View style={styles.sectionTitleRow}>
@@ -400,20 +478,86 @@ export default function HomeScreen() {
                   Recomendación del día
                 </Text>
               </View>
-              <Text style={[styles.sectionSubtitle, typography.labelSm]}>
-                Optimizado a tu despensa
-              </Text>
-            </View>
-            {recommendedRecipe?.isDemoFixture && (
-              <View style={styles.demoBadge} testID="home-recipe-demo-badge">
-                <Text style={[styles.demoBadgeText, typography.labelSm]}>
-                  Receta de ejemplo
+              {recommendedRecipe && (
+                <Text style={[styles.sectionSubtitle, typography.labelSm]}>
+                  Según tu despensa y presupuesto actuales
                 </Text>
-              </View>
-            )}
+              )}
+            </View>
           </View>
 
-          {recommendedRecipe ? (
+          {recommendation.kind === 'loading-pantry' || recommendation.kind === 'generating' ? (
+            <Card
+              variant="outlined"
+              style={styles.emptyRecipeCard}
+              testID={
+                recommendation.kind === 'generating'
+                  ? 'home-recommendation-generating'
+                  : 'home-recommendation-loading'
+              }
+            >
+              <ActivityIndicator size="small" color={colors.primary} />
+              <Text
+                style={[styles.emptyRecipeText, typography.bodySm]}
+                accessibilityLiveRegion="polite"
+              >
+                {recommendation.kind === 'generating'
+                  ? 'Generando recomendaciones con tu despensa actual...'
+                  : 'Cargando tu despensa...'}
+              </Text>
+            </Card>
+          ) : recommendation.kind === 'empty-pantry' ? (
+            renderStateCard({
+              testID: 'home-recommendation-empty-pantry',
+              icon: 'kitchen',
+              title: 'Tu despensa está vacía',
+              message:
+                'Registra o escanea tus alimentos para recibir una recomendación basada en lo que realmente tienes.',
+              actionTestID: 'home-recommendation-go-pantry-button',
+              actionTitle: 'Ir a mi despensa',
+              actionIcon: 'add-circle-outline',
+              onAction: goToPantry,
+              actionHint: 'Abre la pantalla de despensa para registrar ingredientes',
+            })
+          ) : recommendation.kind === 'demo' ? (
+            renderStateCard({
+              testID: 'home-recommendation-demo-state',
+              icon: 'auto-awesome',
+              title: 'Aún no tienes una recomendación personalizada',
+              message:
+                'Genera recetas con IA a partir de tu despensa y presupuesto. Las recetas de ejemplo no se muestran aquí porque no están calculadas para ti.',
+              actionTestID: 'home-recommendation-generate-button',
+              actionTitle: 'Generar recomendaciones',
+              actionIcon: 'restaurant-menu',
+              onAction: goToRecipeGeneration,
+              actionHint: 'Abre Recetas, donde puedes generar recomendaciones con IA',
+            })
+          ) : recommendation.kind === 'stale' ? (
+            renderStateCard({
+              testID: 'home-recommendation-stale-state',
+              icon: 'update',
+              title: 'Tu despensa o preferencias cambiaron',
+              message:
+                'La recomendación anterior se calculó con otra despensa, presupuesto, número de personas o tiempo. Actualízala para ver costos vigentes.',
+              actionTestID: 'home-recommendation-refresh-button',
+              actionTitle: 'Actualizar recomendación',
+              actionIcon: 'refresh',
+              onAction: goToRecipeGeneration,
+              actionHint: 'Abre Recetas para volver a generar recomendaciones con tus datos actuales',
+            })
+          ) : recommendation.kind === 'error' ? (
+            renderStateCard({
+              testID: 'home-recommendation-error-state',
+              icon: 'error-outline',
+              title: 'No se pudo generar tu recomendación',
+              message: recommendation.message,
+              actionTestID: 'home-recommendation-generate-button',
+              actionTitle: 'Ir a Recetas para reintentar',
+              actionIcon: 'restaurant-menu',
+              onAction: goToRecipeGeneration,
+              actionHint: 'Abre Recetas, donde puedes reintentar la generación',
+            })
+          ) : recommendedRecipe && recommendedScore ? (
             <Card
               variant="elevated"
               style={styles.recipeCard}
@@ -428,19 +572,21 @@ export default function HomeScreen() {
                 testID="home-recipe-image"
                 borderRadius={0}
               >
-                {/* Score pill */}
-                <View
-                  style={styles.convenienceBadge}
-                  accessibilityRole="text"
-                  accessibilityLabel={`Afinidad estimada${recommendedRecipe.isDemoFixture ? ' de ejemplo' : ''}: ${recommendedRecipe.convenience}`}
-                >
-                  <MaterialIcons name="verified" size={16} color={colors.tertiaryContainer} importantForAccessibility="no" accessibilityElementsHidden={true} />
-                  <Text style={[styles.convenienceText, typography.labelSm]}>
-                    {typeof recommendedRecipe.convenience === 'number'
-                      ? `${recommendedRecipe.convenience}% conveniente`
-                      : recommendedRecipe.convenience}
-                  </Text>
-                </View>
+                {/* Score pill: solo se muestra el puntaje real devuelto por el backend */}
+                {hasBackendConvenienceScore(recommendedRecipe.convenience) && (
+                  <View
+                    style={styles.convenienceBadge}
+                    accessibilityRole="text"
+                    accessibilityLabel={`Afinidad estimada por IA: ${recommendedRecipe.convenience}`}
+                  >
+                    <MaterialIcons name="verified" size={16} color={colors.tertiaryContainer} importantForAccessibility="no" accessibilityElementsHidden={true} />
+                    <Text style={[styles.convenienceText, typography.labelSm]}>
+                      {typeof recommendedRecipe.convenience === 'number'
+                        ? `${recommendedRecipe.convenience}% conveniente`
+                        : recommendedRecipe.convenience}
+                    </Text>
+                  </View>
+                )}
 
                 {/* Time & Servings pills */}
                 <View style={styles.recipeMetaRow}>
@@ -470,15 +616,58 @@ export default function HomeScreen() {
 
                 {/* Value metrics */}
                 <View style={styles.recipeHighlights}>
-                  <View style={[styles.highlightRow, styles.highlightRowPrimary]}>
-                    <MaterialIcons name="savings" size={20} color={colors.primary} />
-                    <Text style={[styles.highlightText, typography.bodySm]}>
-                      Solo necesitas aproximadamente{' '}
-                      <Text style={[styles.highlightBold, { color: colors.primary }]}>
-                        {formatCopCurrency(recommendedRecipe.estimatedMissingCost, false)}
+                  {recommendedScore.availableCount + recommendedScore.missingCount > 0 && (
+                    <View
+                      style={[styles.highlightRow, styles.highlightRowNeutral]}
+                      testID="home-recommendation-coverage"
+                    >
+                      <MaterialIcons name="kitchen" size={20} color={colors.primary} />
+                      <Text style={[styles.highlightText, typography.bodySm]}>
+                        Ya tienes {recommendedScore.availableCount} de{' '}
+                        {recommendedScore.availableCount + recommendedScore.missingCount} ingredientes
                       </Text>
-                    </Text>
-                  </View>
+                    </View>
+                  )}
+
+                  {recommendedScore.missingCount === 0 &&
+                  recommendedRecipe.estimatedMissingCost === 0 ? (
+                    <View
+                      style={[styles.highlightRow, styles.highlightRowPrimary]}
+                      testID="home-recommendation-cost"
+                    >
+                      <MaterialIcons name="savings" size={20} color={colors.primary} />
+                      <Text style={[styles.highlightText, typography.bodySm]}>
+                        No necesitas comprar ingredientes adicionales
+                      </Text>
+                    </View>
+                  ) : recommendedRecipe.withinBudget ? (
+                    <View
+                      style={[styles.highlightRow, styles.highlightRowPrimary]}
+                      testID="home-recommendation-cost"
+                    >
+                      <MaterialIcons name="savings" size={20} color={colors.primary} />
+                      <Text style={[styles.highlightText, typography.bodySm]}>
+                        Solo necesitas aproximadamente{' '}
+                        <Text style={[styles.highlightBold, { color: colors.primary }]}>
+                          {formatCopCurrency(recommendedRecipe.estimatedMissingCost, false)}
+                        </Text>
+                      </Text>
+                    </View>
+                  ) : (
+                    <View
+                      style={[styles.highlightRow, styles.highlightRowWarning]}
+                      testID="home-recommendation-cost"
+                    >
+                      <MaterialIcons name="warning-amber" size={20} color={colors.onErrorContainer} />
+                      <Text style={[styles.highlightText, typography.bodySm]}>
+                        Compra estimada de{' '}
+                        <Text style={styles.highlightBold}>
+                          {formatCopCurrency(recommendedRecipe.estimatedMissingCost, false)}
+                        </Text>
+                        : supera tu presupuesto
+                      </Text>
+                    </View>
+                  )}
 
                   {recommendedRecipe.reason ? (
                     <View style={[styles.highlightRow, styles.highlightRowSecondary]}>
@@ -490,6 +679,16 @@ export default function HomeScreen() {
                   ) : null}
                 </View>
 
+                {candidateCount > 1 && (
+                  <Text
+                    style={[styles.rankNote, typography.labelSm]}
+                    testID="home-recommendation-rank-note"
+                  >
+                    Elegida entre tus {candidateCount} recetas generadas según presupuesto,
+                    ingredientes que ya tienes y costo de lo que falta.
+                  </Text>
+                )}
+
                 <Button
                   testID="home-view-recipe-button"
                   title="Ver receta"
@@ -500,36 +699,25 @@ export default function HomeScreen() {
                     selectRecipe(recommendedRecipe);
                     router.push(`/recetas/${recommendedRecipe.id}` as any);
                   }}
-                  accessibilityLabel={`Ver receta de ${recommendedRecipe.name}${recommendedRecipe.isDemoFixture ? ' (ejemplo)' : ''}`}
+                  accessibilityLabel={`Ver receta de ${recommendedRecipe.name}`}
                   accessibilityHint="Muestra los pasos detallados de la receta"
                   rightIcon={<MaterialIcons name="arrow-forward" size={18} color={colors.onPrimary} />}
                 />
               </View>
             </Card>
           ) : (
-            <Card
-              variant="outlined"
-              style={styles.emptyRecipeCard}
-              testID="home-empty-recipe-state"
-            >
-              <View style={styles.emptyRecipeIconBox}>
-                <MaterialIcons name="menu-book" size={32} color={colors.outline} />
-              </View>
-              <Text style={[styles.emptyRecipeTitle, typography.headlineMd]}>
-                Sin recomendaciones disponibles
-              </Text>
-              <Text style={[styles.emptyRecipeText, typography.bodySm]}>
-                No hay recetas disponibles para tu despensa o presupuesto actual. Explora el catálogo o ajusta tus preferencias.
-              </Text>
-              <Button
-                testID="home-explore-recipes-button"
-                title="Explorar recetas"
-                variant="primary"
-                size="md"
-                onPress={() => router.push('/recetas' as any)}
-                leftIcon={<MaterialIcons name="restaurant-menu" size={18} color={colors.onPrimary} />}
-              />
-            </Card>
+            renderStateCard({
+              testID: 'home-empty-recipe-state',
+              icon: 'menu-book',
+              title: 'Sin recomendaciones disponibles',
+              message:
+                'Aún no hay recetas generadas para tu despensa y presupuesto actuales. Genera recomendaciones con IA desde Recetas.',
+              actionTestID: 'home-recommendation-generate-button',
+              actionTitle: 'Generar recomendaciones',
+              actionIcon: 'restaurant-menu',
+              onAction: goToRecipeGeneration,
+              actionHint: 'Abre Recetas, donde puedes generar recomendaciones con IA',
+            })
           )}
         </View>
       </ScrollView>
@@ -1142,6 +1330,15 @@ const createStyles = (colors: AppColors) =>
   },
   highlightRowSecondary: {
     backgroundColor: colors.secondaryFixed,
+  },
+  highlightRowNeutral: {
+    backgroundColor: colors.surfaceContainerLow,
+  },
+  highlightRowWarning: {
+    backgroundColor: colors.errorContainer,
+  },
+  rankNote: {
+    color: colors.textSecondary,
   },
   highlightText: {
     color: colors.textPrimary,

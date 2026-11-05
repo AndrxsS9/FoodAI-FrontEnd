@@ -177,7 +177,7 @@ describe('Phase 2A: Navigation & Mobile Screens (Google Stitch)', () => {
 
   describe('Home Screen (2. Inicio - Stitch #7ca48a7c29fb4461b3d41c5eca804385)', () => {
     it('renders brand header, demo notice, greeting, and all 4 Stitch dashboard sections', async () => {
-      const { getByText, getByTestId } = await renderWithProviders(<HomeScreen />);
+      const { getByText, getByTestId, queryByText } = await renderWithProviders(<HomeScreen />);
 
       // Top brand header
       expect(getByText('RECETARIO POR PRESUPUESTO')).toBeTruthy();
@@ -212,16 +212,16 @@ describe('Phase 2A: Navigation & Mobile Screens (Google Stitch)', () => {
       expect(getByText(/20\.000/)).toBeTruthy();
       expect(getByText('Ajustar')).toBeTruthy();
 
-      // Card 4: Daily recommendation (Autoritativo desde RecipeContext)
+      // Card 4: Daily recommendation. En modo demo NO se presenta una receta de
+      // ejemplo como recomendación personalizada; se ofrece generar recomendaciones reales.
       expect(getByText('Recomendación del día')).toBeTruthy();
-      expect(getByText('Optimizado a tu despensa')).toBeTruthy();
-      expect(getByText('Arroz con pollo y verduras')).toBeTruthy();
-      expect(getByText('94% conveniente')).toBeTruthy();
-      expect(getByText('30 min')).toBeTruthy();
-      expect(getByText('2 personas')).toBeTruthy();
-      expect(getByText(/Solo necesitas aproximadamente/)).toBeTruthy();
-      expect(getByText(/Aprovecha alimentos urgentes/)).toBeTruthy();
-      expect(getByText('Ver receta')).toBeTruthy();
+      expect(getByTestId('home-recommendation-demo-state')).toBeTruthy();
+      expect(getByText('Aún no tienes una recomendación personalizada')).toBeTruthy();
+      expect(getByText('Generar recomendaciones')).toBeTruthy();
+      expect(queryByText('Optimizado a tu despensa')).toBeNull();
+      expect(queryByText('Arroz con pollo y verduras')).toBeNull();
+      expect(queryByText('94% conveniente')).toBeNull();
+      expect(queryByText('Ver receta')).toBeNull();
     });
 
     it('navigates to profile when avatar is clicked', async () => {

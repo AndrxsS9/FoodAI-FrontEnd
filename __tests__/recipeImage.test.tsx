@@ -26,7 +26,7 @@
 
 import React from 'react';
 import { Text, View } from 'react-native';
-import { render, fireEvent, act } from '@testing-library/react-native';
+import { render, fireEvent, act, cleanup } from '@testing-library/react-native';
 import {
   RecipeImage,
   resolveRecipeImageSource,
@@ -464,5 +464,55 @@ describe('RecipeImage — Componente Visual y Accesibilidad de Overlays', () => 
         }),
       ])
     );
+  });
+});
+
+describe('RecipeImage — modo referencia (Bloque 3A)', () => {
+  const renderImage = (ui: React.ReactElement) =>
+    render(<TypographyProvider usingFallback={true}>{ui}</TypographyProvider>);
+
+  it('si la imagen de referencia falla al cargar, muestra el respaldo neutro sin insignia', async () => {
+    const { getByTestId, queryByTestId } = await renderImage(
+      <RecipeImage source={{ testUri: 'x' } as any} referenceLabel="Sopa" recipeName="Sopa" testID="img" />
+    );
+    expect(getByTestId('img-reference-badge', { includeHiddenElements: true })).toBeTruthy();
+    await act(async () => {
+      fireEvent(getByTestId('img-img'), 'error');
+    });
+    expect(queryByTestId('img-reference-badge', { includeHiddenElements: true })).toBeNull();
+    expect(getByTestId('img-fallback')).toBeTruthy();
+  });
+
+  it('la insignia no duplica la lectura del lector de pantalla', async () => {
+    const { getByTestId } = await renderImage(
+      <RecipeImage source={{ testUri: 'x' } as any} referenceLabel="Sopa" recipeName="Sopa" testID="img" />
+    );
+    const badge = getByTestId('img-reference-badge', { includeHiddenElements: true });
+    expect(badge.props.importantForAccessibility).toBe('no-hide-descendants');
+    expect(badge.props.accessibilityElementsHidden).toBe(true);
+  });
+
+  it('sin referenceLabel conserva la etiqueta original de foto', async () => {
+    const { getByLabelText, queryByTestId } = await renderImage(
+      <RecipeImage source={{ testUri: 'x' } as any} recipeName="Sopa" testID="img" />
+    );
+    expect(getByLabelText('Foto del plato: Sopa')).toBeTruthy();
+    expect(queryByTestId('img-reference-badge', { includeHiddenElements: true })).toBeNull();
+  });
+
+  it('acepta assets empaquetados de Web (mismo origen) y rechaza los remotos con la misma forma', async () => {
+    const local = await renderImage(
+      <RecipeImage
+        source={{ uri: '/assets/assets/images/recipes/soup.abc.webp', width: 1600, height: 900 } as any}
+        recipeName="Sopa"
+        testID="web"
+      />
+    );
+    expect(local.getByTestId('web-img')).toBeTruthy();
+    cleanup();
+    const remote = await renderImage(
+      <RecipeImage source={{ uri: '//evil.example.com/a.webp', width: 1, height: 1 } as any} recipeName="Sopa" testID="web" />
+    );
+    expect(remote.getByTestId('web-fallback')).toBeTruthy();
   });
 });

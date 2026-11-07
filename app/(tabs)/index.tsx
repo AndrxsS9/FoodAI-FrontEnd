@@ -13,6 +13,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Button, Card, Chip, Input } from '../../src/components/common';
 import { RecipeImage } from '../../src/components/recipe/RecipeImage';
+import { getRecipeImageSource } from '../../src/utils/recipeImageCatalog';
 import { usePantry } from '../../src/context/PantryContext';
 import { useBudget } from '../../src/context/BudgetContext';
 import { useRecipes } from '../../src/context/RecipeContext';
@@ -132,6 +133,10 @@ export default function HomeScreen() {
   const recommendedRecipe = recommendation.kind === 'ready' ? recommendation.pick.recipe : null;
   const recommendedScore = recommendation.kind === 'ready' ? recommendation.pick.score : null;
   const candidateCount = recommendation.kind === 'ready' ? recommendation.pick.candidateCount : 0;
+  const recommendedImage = useMemo(
+    () => getRecipeImageSource(recommendedRecipe),
+    [recommendedRecipe]
+  );
 
   const goToRecipeGeneration = () => router.push('/recetas' as any);
   const goToPantry = () => router.push('/(tabs)/despensa');
@@ -564,7 +569,8 @@ export default function HomeScreen() {
               testID="home-recommended-recipe-card"
             >
               <RecipeImage
-                source={recommendedRecipe.imageUrl}
+                source={recommendedImage.source}
+                referenceLabel={recommendedImage.referenceLabel}
                 recipeName={recommendedRecipe.name}
                 isDemo={recommendedRecipe.isDemoFixture}
                 containerStyle={styles.recipeImageWrapper}

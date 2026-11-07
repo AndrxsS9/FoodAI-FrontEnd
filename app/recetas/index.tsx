@@ -21,6 +21,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Button, Card, Chip, Input, Stepper } from '../../src/components/common';
 import { RecipeImage } from '../../src/components/recipe/RecipeImage';
+import { getRecipeImageSource } from '../../src/utils/recipeImageCatalog';
 import { usePantry } from '../../src/context/PantryContext';
 import { useBudget } from '../../src/context/BudgetContext';
 import { useRecipes } from '../../src/context/RecipeContext';
@@ -52,7 +53,6 @@ export default function RecipeDiscoveryScreen() {
     isGenerating,
     isStale,
     error,
-    refreshRecipes,
     generateRecipes,
     clearError,
   } = useRecipes();
@@ -140,14 +140,6 @@ export default function RecipeDiscoveryScreen() {
       await generateRecipes();
     } catch {
       // El error queda expuesto en RecipeContext y se renderiza en la UI
-    }
-  };
-
-  const handleRetry = () => {
-    if (isDemoMode) {
-      refreshRecipes();
-    } else {
-      handleGenerateRecipes();
     }
   };
 
@@ -504,20 +496,23 @@ export default function RecipeDiscoveryScreen() {
                 : 'Buscando las mejores recetas para tu despensa...'}
             </Text>
           </View>
-        ) : error && recipes.length === 0 ? (
-          <Card variant="outlined" style={styles.errorCard} testID="recipes-error-state">
-            <MaterialIcons name="error-outline" size={36} color={colors.error} />
-            <Text style={[styles.errorTitle, typography.headlineMd]}>
-              No pudimos cargar las recetas
+        ) : recipes.length === 0 ? (
+          /* Usuario real sin recetas generadas todavía: no es un problema de filtros.
+             Si la generación falló, el error y "Reintentar" ya se muestran en la tarjeta de
+             error de API (4.4); no se duplica aquí. */
+          <Card
+            variant="outlined"
+            style={styles.emptyCard}
+            testID="recipes-no-generated-state"
+          >
+            <MaterialIcons name="restaurant-menu" size={40} color={colors.outline} />
+            <Text style={[styles.emptyTitle, typography.headlineMd]}>
+              Aún no has generado recetas
             </Text>
-            <Text style={[styles.errorDesc, typography.bodySm]}>{error}</Text>
-            <Button
-              testID="recipes-retry-button"
-              title="Reintentar"
-              variant="primary"
-              size="md"
-              onPress={handleRetry}
-            />
+            <Text style={[styles.emptyDesc, typography.bodySm]}>
+              Usa “Generar recetas con IA” para obtener recomendaciones basadas en tu despensa y
+              presupuesto actuales.
+            </Text>
           </Card>
         ) : filteredRecipes.length === 0 ? (
           <Card
@@ -574,6 +569,7 @@ function RecipeCardItem({ recipe, isDominant, onPress }: RecipeCardItemProps) {
   const styles = useThemeStyles(createStyles);
   const availableCount = recipe.availableIngredients.length;
   const totalIngredientsCount = recipe.ingredients.length;
+  const image = useMemo(() => getRecipeImageSource(recipe), [recipe]);
 
   return (
     <Card
@@ -583,7 +579,8 @@ function RecipeCardItem({ recipe, isDominant, onPress }: RecipeCardItemProps) {
     >
       {/* Imagen o cabecera visual de respaldo con RecipeImage */}
       <RecipeImage
-        source={recipe.imageUrl}
+        source={image.source}
+        referenceLabel={image.referenceLabel}
         recipeName={recipe.name}
         isDemo={recipe.isDemoFixture}
         containerStyle={styles.imageWrapper}

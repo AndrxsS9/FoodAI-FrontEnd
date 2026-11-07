@@ -33,6 +33,7 @@ import { spacing } from '../../theme/spacing';
 import { useTypography } from '../../theme/typography';
 import { useAppTheme, useThemeStyles } from '../../context/ThemeContext';
 import { isSecureRemoteImageUrl } from '../../types/recipe';
+import { isBundledWebAssetSource } from '../../types/recipeImage';
 
 export { isSecureRemoteImageUrl } from '../../types/recipe';
 
@@ -92,6 +93,10 @@ export function resolveRecipeImageSource(
     if ('default' in source) {
       return resolveRecipeImageSource((source as any).default);
     }
+    // Asset empaquetado en Web ({ uri: '/assets/...', width, height }): mismo origen, nunca remoto
+    if (isBundledWebAssetSource(source)) {
+      return source as ImageSourcePropType;
+    }
     if ('uri' in source && typeof (source as any).uri === 'string') {
       const uri = (source as any).uri.trim();
       if (isSecureRemoteImageUrl(uri)) {
@@ -131,6 +136,12 @@ export interface RecipeImageProps {
   fallbackTestID?: string;
   /** Etiqueta de accesibilidad personalizada */
   accessibilityLabel?: string;
+  /**
+   * Categoría de una imagen de REFERENCIA (p. ej. "Sopa"). Cuando se indica y la
+   * imagen se muestra, se agrega una insignia visible "Imagen de referencia" y la
+   * etiqueta accesible aclara que no es una foto del plato generado.
+   */
+  referenceLabel?: string | null;
   /** Componentes hijos superpuestos (badges, degradados, títulos) */
   children?: React.ReactNode;
 }
@@ -149,6 +160,7 @@ export const RecipeImage = memo(function RecipeImage({
   testID,
   fallbackTestID,
   accessibilityLabel,
+  referenceLabel,
   children,
 }: RecipeImageProps) {
   const typography = useTypography();
@@ -214,9 +226,12 @@ export const RecipeImage = memo(function RecipeImage({
     );
   }
 
+  const isReference = typeof referenceLabel === 'string' && referenceLabel.trim().length > 0;
   const imageLabel =
     accessibilityLabel ||
-    `Foto del plato${isDemo ? ' de ejemplo' : ''}: ${recipeName || 'Receta'}`;
+    (isReference
+      ? `Imagen de referencia de la categoría ${referenceLabel!.trim()} para ${recipeName || 'la receta'}. No es una foto del plato generado.`
+      : `Foto del plato${isDemo ? ' de ejemplo' : ''}: ${recipeName || 'Receta'}`);
 
   return (
     <View
@@ -248,6 +263,20 @@ export const RecipeImage = memo(function RecipeImage({
           accessibilityElementsHidden={true}
         >
           <ActivityIndicator size="small" color={colors.primary} />
+        </View>
+      )}
+
+      {isReference && (
+        // Visible para todos; oculta a lectores de pantalla porque la etiqueta de la imagen ya lo indica
+        <View
+          style={styles.referenceBadge}
+          testID={testID ? `${testID}-reference-badge` : 'recipe-reference-badge'}
+          accessible={false}
+          importantForAccessibility="no-hide-descendants"
+          accessibilityElementsHidden={true}
+        >
+          <MaterialIcons name="image" size={12} color={colors.textPrimary} />
+          <Text style={[styles.referenceBadgeText, typography.labelSm]}>Imagen de referencia</Text>
         </View>
       )}
 
@@ -302,6 +331,24 @@ const createStyles = (colors: AppColors) =>
     },
     demoPillText: {
       color: colors.demoBadgeText,
+      fontSize: 10,
+      fontWeight: '700',
+    },
+    referenceBadge: {
+      position: 'absolute',
+      top: spacing.sm,
+      left: spacing.sm,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      backgroundColor: colors.surfaceContainerHighest,
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+      borderRadius: radius.full,
+      opacity: 0.94,
+    },
+    referenceBadgeText: {
+      color: colors.textPrimary,
       fontSize: 10,
       fontWeight: '700',
     },

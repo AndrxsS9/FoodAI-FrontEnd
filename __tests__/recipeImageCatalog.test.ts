@@ -1,29 +1,39 @@
 /**
- * Bloque 3A - Integridad del catálogo local, resolución compartida de la imagen de
- * una receta y estabilidad de los planes de comidas persistidos.
+ * Bloques 3A/3C - Integridad del catálogo local (16 assets reales), compuerta de
+ * aprobación humana, resolución compartida de la imagen de una receta y estabilidad
+ * de los planes de comidas persistidos.
+ *
+ * Las aprobaciones que aparecen en este archivo son SIMULACIONES de prueba para
+ * verificar el camino de activación; nunca se registran en el código de la app.
  */
 // El proyecto no incluye @types/node: se tipan solo las funciones de Node que usa esta prueba.
 declare const __dirname: string;
 const fs = require('fs') as {
   existsSync(p: string): boolean;
   readdirSync(p: string): string[];
-  readFileSync(p: string, encoding: 'utf8'): string;
+  readFileSync(p: string, encoding?: 'utf8'): any;
 };
 const path = require('path') as {
   resolve(...parts: string[]): string;
   join(...parts: string[]): string;
   basename(p: string): string;
 };
+const crypto = require('crypto') as {
+  createHash(alg: string): { update(data: unknown): { digest(enc: 'hex'): string } };
+};
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import {
-  APPROVED_RECIPE_IMAGE_ASSETS,
-  ApprovedRecipeImageAsset,
+  RECIPE_IMAGE_APPROVALS,
+  RECIPE_IMAGE_ASSET_RECORDS,
   RECIPE_IMAGE_CATALOG,
   REMOTE_RECIPE_IMAGES_ENABLED,
+  RecipeImageApproval,
+  RecipeImageAssetRecord,
   buildRecipeImageCatalog,
   getRecipeImageSource,
-  isCompleteRecipeImageLicense,
+  isCompleteRecipeImageApproval,
+  isValidRecipeImageAssetRecord,
 } from '../src/utils/recipeImageCatalog';
 import {
   RECIPE_IMAGE_CATEGORY_LABELS,
@@ -31,7 +41,6 @@ import {
   RecipeImageKey,
   isBundledImageSource,
   isBundledWebAssetSource,
-  isRecipeImageKey,
   recipeImageAssetPath,
 } from '../src/types/recipeImage';
 import { BackendRecipe, ClientRecipe, normalizeBackendRecipe } from '../src/types/recipe';
@@ -40,25 +49,31 @@ import { AsyncStorageMealPlanAdapter } from '../src/services/storage/mealPlanSto
 import { BASE_DEMO_RECIPES, getDemoRecipes } from '../src/fixtures/demoRecipes';
 
 const ROOT = path.resolve(__dirname, '..');
+const MAX_BYTES = 150 * 1024;
 
-const LICENSE = {
-  kind: 'original' as const,
-  author: 'Estudio de pruebas',
-  licenseName: 'Fixture de pruebas (no es un asset real)',
-  sourceReference: 'TEST-ONLY',
-  acquiredOn: '2026-11-05',
-  approvedBy: 'Suite de pruebas',
-  attributionRequired: false,
+const recordOf = (key: RecipeImageKey): RecipeImageAssetRecord => {
+  const record = RECIPE_IMAGE_ASSET_RECORDS.find((r) => r.key === key);
+  if (!record) throw new Error(`Sin registro para ${key}`);
+  return record;
 };
 
-/** Asset simulado SOLO para pruebas: no existe ni se registra en la app. */
-const fakeAsset = (key: RecipeImageKey, overrides: Partial<ApprovedRecipeImageAsset> = {}) => ({
-  key,
-  file: recipeImageAssetPath(key),
-  source: { testUri: `test-only-${key}` } as any,
-  license: LICENSE,
-  ...overrides,
-});
+/** Aprobación SIMULADA (solo pruebas) ligada al SHA-256 real del registro. */
+const SIMULATED_APPROVER = 'SIMULACIÓN DE PRUEBA (no es una aprobación real)';
+const simulatedApprovals = (keys: readonly RecipeImageKey[]) =>
+  Object.fromEntries(
+    keys.map((k) => [k, { approvedBy: SIMULATED_APPROVER, approvedOn: '2026-11-05', sha256: recordOf(k).sha256 }])
+  ) as Partial<Record<RecipeImageKey, RecipeImageApproval>>;
+const realCatalog = (keys: readonly RecipeImageKey[]) =>
+  buildRecipeImageCatalog(RECIPE_IMAGE_ASSET_RECORDS, simulatedApprovals(keys));
+
+/** Lee cabecera WebP (RIFF/WEBP + 'VP8 ') y devuelve dimensiones del bitstream con pérdida. */
+function readWebpInfo(bytes: Uint8Array) {
+  const ascii = (a: number, b: number) => String.fromCharCode(...Array.from(bytes.slice(a, b)));
+  const chunk = ascii(12, 16);
+  const width = (bytes[26] | (bytes[27] << 8)) & 0x3fff;
+  const height = (bytes[28] | (bytes[29] << 8)) & 0x3fff;
+  return { riff: ascii(0, 4), webp: ascii(8, 12), chunk, width, height };
+}
 
 const realRecipe = (overrides: Partial<ClientRecipe> = {}): ClientRecipe => ({
   id: 'sopa-de-lentejas',
@@ -94,64 +109,209 @@ const backendRecipe = (name: string, ingredients: string[] = []): BackendRecipe 
   reason: 'Razón',
 });
 
-describe('Integridad de assets aprobados', () => {
-  it('cada asset registrado existe en disco, es WebP, usa la ruta canónica y tiene licencia completa', () => {
-    for (const asset of APPROVED_RECIPE_IMAGE_ASSETS) {
-      expect(isRecipeImageKey(asset.key)).toBe(true);
-      expect(asset.file).toBe(recipeImageAssetPath(asset.key));
-      expect(asset.file.endsWith('.webp')).toBe(true);
-      expect(fs.existsSync(path.join(ROOT, asset.file))).toBe(true);
-      expect(isCompleteRecipeImageLicense(asset.license)).toBe(true);
-    }
-    // Todo asset registrado debe sobrevivir a la validación del catálogo
-    expect(RECIPE_IMAGE_CATALOG.size).toBe(APPROVED_RECIPE_IMAGE_ASSETS.length);
+/** Un nombre de receta real por categoría (todas las claves del catálogo). */
+const SAMPLE_NAME_BY_KEY: Record<RecipeImageKey, string> = {
+  soup: 'Sopa de lentejas',
+  'cream-soup': 'Crema de ahuyama',
+  salad: 'Ensalada de atún',
+  'rice-dish': 'Arroz con pollo',
+  pasta: 'Pasta con tomate',
+  eggs: 'Huevos pericos',
+  chicken: 'Pollo al horno',
+  'beef-stew': 'Carne guisada',
+  fish: 'Tilapia al horno',
+  legumes: 'Lentejas guisadas',
+  arepa: 'Arepa con queso',
+  sandwich: 'Sándwich de pollo',
+  potatoes: 'Papas al horno',
+  'sauteed-vegetables': 'Verduras salteadas',
+  dessert: 'Arroz con leche',
+  beverage: 'Jugo de mora',
+};
+
+describe('Integridad de los 16 assets registrados', () => {
+  it('existe exactamente un registro por cada una de las 16 claves', () => {
+    const keys = RECIPE_IMAGE_ASSET_RECORDS.map((r) => r.key);
+    expect(keys).toHaveLength(RECIPE_IMAGE_KEYS.length);
+    expect(new Set(keys)).toEqual(new Set(RECIPE_IMAGE_KEYS));
   });
 
-  it('no hay archivos de imagen sin registrar ni WebP huérfanos en assets/images/recipes', () => {
-    const dir = path.join(ROOT, 'assets/images/recipes');
-    const files = fs.existsSync(dir) ? fs.readdirSync(dir) : [];
-    const images = files.filter((f: string) => /\.(webp|png|jpe?g|gif)$/i.test(f));
-    const registered = new Set(APPROVED_RECIPE_IMAGE_ASSETS.map((a) => path.basename(a.file)));
+  it.each(RECIPE_IMAGE_KEYS.map((k) => [k]))('%s: archivo real, WebP 1600x900 sin alfa, <= 150 KiB y SHA-256 verificado', (key) => {
+    const record = recordOf(key as RecipeImageKey);
+    expect(isValidRecipeImageAssetRecord(record)).toBe(true);
+    expect(record.file).toBe(recipeImageAssetPath(record.key));
+
+    const abs = path.join(ROOT, record.file);
+    expect(fs.existsSync(abs)).toBe(true);
+    const bytes: Uint8Array = fs.readFileSync(abs);
+    const info = readWebpInfo(bytes);
+    expect(info.riff).toBe('RIFF');
+    expect(info.webp).toBe('WEBP');
+    expect(info.chunk).toBe('VP8 '); // con pérdida simple: sin canal alfa
+    expect([info.width, info.height]).toEqual([1600, 900]);
+    expect(bytes.length).toBeLessThanOrEqual(MAX_BYTES);
+    expect(crypto.createHash('sha256').update(bytes).digest('hex')).toBe(record.sha256);
+  });
+
+  it('cada registro resuelve a su asset local empaquetado (require estático), nunca remoto', () => {
+    for (const record of RECIPE_IMAGE_ASSET_RECORDS) {
+      expect(isBundledImageSource(record.source)).toBe(true);
+      expect(JSON.stringify(record.source)).toContain(`recipes/${record.key}.webp`);
+      expect(JSON.stringify(record.source)).not.toMatch(/https?:/);
+    }
+  });
+
+  it('no hay imágenes sin registrar en assets/images/recipes', () => {
+    const files = fs.readdirSync(path.join(ROOT, 'assets/images/recipes'));
+    const images = files.filter((f: string) => /\.(webp|png|jpe?g|gif|avif)$/i.test(f));
+    const registered = new Set(RECIPE_IMAGE_ASSET_RECORDS.map((r) => path.basename(r.file)));
     for (const img of images) expect(registered.has(img)).toBe(true);
   });
 
-  it('el manifiesto documenta cada categoría con su archivo exacto', () => {
-    const manifest = fs.readFileSync(path.join(ROOT, 'assets/images/recipes/MANIFEST.md'), 'utf8');
-    for (const k of RECIPE_IMAGE_KEYS) {
-      expect(manifest).toContain(`\`${k}\``);
-      expect(manifest).toContain(`\`${k}.webp\``);
+  it('la procedencia documentada coincide con el origen real de cada archivo', () => {
+    // Origen real de cada archivo (Bloques 3A–3E).
+    const gemini = ['soup', 'cream-soup', 'salad'];
+    const collageBorderCorrected = [
+      'rice-dish', 'beef-stew', 'legumes', 'arepa', 'potatoes', 'sauteed-vegetables', 'dessert', 'beverage',
+    ];
+    const individualChatGpt = ['pasta', 'eggs', 'chicken', 'fish', 'sandwich'];
+    expect([...gemini, ...collageBorderCorrected, ...individualChatGpt].sort()).toEqual([...RECIPE_IMAGE_KEYS].sort());
+
+    for (const record of RECIPE_IMAGE_ASSET_RECORDS) {
+      expect(record.provenance.kind).toBe('ai-generated');
+      if (record.provenance.kind !== 'ai-generated') continue;
+      const { provider, workflow } = record.provenance;
+      if (gemini.includes(record.key)) {
+        expect(provider).toMatch(/Google Gemini/);
+        expect(workflow).not.toMatch(/collage|ChatGPT/);
+      } else if (collageBorderCorrected.includes(record.key)) {
+        expect(provider).toMatch(/OpenAI/);
+        expect(workflow).toMatch(/collage/);
+        expect(workflow).toMatch(/Corrección técnica \(Bloque 3D\)/);
+      } else {
+        expect(individualChatGpt).toContain(record.key);
+        expect(provider).toMatch(/OpenAI/);
+        expect(workflow).toMatch(/individualmente/);
+        expect(workflow).not.toMatch(/una única composición|recortada/);
+      }
     }
-    expect(manifest).toContain(`${APPROVED_RECIPE_IMAGE_ASSETS.length} de ${RECIPE_IMAGE_KEYS.length}`);
   });
 
   it('todas las categorías tienen etiqueta visible en español', () => {
     for (const k of RECIPE_IMAGE_KEYS) expect(RECIPE_IMAGE_CATEGORY_LABELS[k].trim().length).toBeGreaterThan(0);
   });
 
-  it('el catálogo de producción no usa la fuente de la foto demo como imagen de referencia', () => {
-    const demoSource = BASE_DEMO_RECIPES[0].imageUrl;
-    for (const asset of RECIPE_IMAGE_CATALOG.values()) expect(asset.source).not.toBe(demoSource);
+  it('ningún asset del catálogo reutiliza la foto de la receta demo', () => {
+    const demoSource = JSON.stringify(BASE_DEMO_RECIPES[0].imageUrl);
+    for (const record of RECIPE_IMAGE_ASSET_RECORDS) expect(JSON.stringify(record.source)).not.toBe(demoSource);
+  });
+});
+
+describe('Compuerta de aprobación humana', () => {
+  it('toda aprobación registrada es completa, real (sin marcadores) y coincide con el archivo actual', () => {
+    for (const [key, approval] of Object.entries(RECIPE_IMAGE_APPROVALS)) {
+      const record = recordOf(key as RecipeImageKey);
+      expect(isCompleteRecipeImageApproval(approval, record.sha256)).toBe(true);
+      expect(approval!.approvedBy).not.toMatch(/simul|prueba|test|placeholder|tbd|pendiente|equipo|team|<|>/i);
+    }
+  });
+
+  it('el catálogo de producción contiene exactamente las imágenes aprobadas (ninguna aprobación se descarta en silencio)', () => {
+    expect([...RECIPE_IMAGE_CATALOG.keys()].sort()).toEqual(Object.keys(RECIPE_IMAGE_APPROVALS).sort());
+  });
+
+  it('sin aprobación, una receta real usa el respaldo neutro aunque su archivo exista', () => {
+    const key = 'soup' as const;
+    if (RECIPE_IMAGE_APPROVALS[key]) return; // ya aprobada: cubierto por la prueba anterior
+    expect(fs.existsSync(path.join(ROOT, recordOf(key).file))).toBe(true);
+    expect(getRecipeImageSource(realRecipe())).toEqual({
+      kind: 'none',
+      source: null,
+      imageKey: 'soup',
+      referenceLabel: null,
+    });
+  });
+
+  it('el manifiesto refleja el estado real: archivos presentes y aprobados', () => {
+    const manifest: string = fs.readFileSync(path.join(ROOT, 'assets/images/recipes/MANIFEST.md'), 'utf8');
+    for (const k of RECIPE_IMAGE_KEYS) {
+      expect(manifest).toContain(`\`${k}\``);
+      expect(manifest).toContain(`\`${k}.webp\``);
+    }
+    const present = RECIPE_IMAGE_ASSET_RECORDS.filter((r) => fs.existsSync(path.join(ROOT, r.file))).length;
+    expect(manifest).toContain(`Archivos presentes y verificados técnicamente: ${present} de ${RECIPE_IMAGE_KEYS.length}`);
+    expect(manifest).toContain(
+      `Aprobados para producción: ${RECIPE_IMAGE_CATALOG.size} de ${RECIPE_IMAGE_KEYS.length}`
+    );
   });
 });
 
 describe('buildRecipeImageCatalog', () => {
-  it('acepta registros válidos', () => {
-    const catalog = buildRecipeImageCatalog([fakeAsset('soup')]);
-    expect(catalog.get('soup')?.file).toBe('assets/images/recipes/soup.webp');
+  const VALID_PROVENANCE = recordOf('soup').provenance;
+  const fakeRecord = (key: RecipeImageKey, overrides: Partial<RecipeImageAssetRecord> = {}) =>
+    ({
+      key,
+      file: recipeImageAssetPath(key),
+      source: { testUri: `test-only-${key}` } as any,
+      sha256: 'a'.repeat(64),
+      provenance: VALID_PROVENANCE,
+      ...overrides,
+    }) as RecipeImageAssetRecord;
+  const approval = (sha = 'a'.repeat(64), extra: Partial<RecipeImageApproval> = {}) => ({
+    approvedBy: SIMULATED_APPROVER,
+    approvedOn: '2026-11-05',
+    sha256: sha,
+    ...extra,
   });
 
-  it('descarta claves desconocidas, rutas no canónicas, fuentes remotas, licencias incompletas y duplicados', () => {
-    const catalog = buildRecipeImageCatalog([
-      fakeAsset('soup', { key: 'pizza' as any }),
-      fakeAsset('salad', { file: 'assets/images/recipes/otra.webp' }),
-      fakeAsset('pasta', { source: { uri: 'https://cdn.example.com/pasta.webp' } }),
-      fakeAsset('pasta', { source: 'https://cdn.example.com/pasta.webp' as any }),
-      fakeAsset('eggs', { license: { ...LICENSE, approvedBy: '' } }),
-      fakeAsset('fish', { license: { ...LICENSE, acquiredOn: 'ayer' } }),
-      fakeAsset('arepa', { license: { ...LICENSE, attributionRequired: true } }),
-      fakeAsset('chicken'),
-      fakeAsset('chicken', { source: { testUri: 'duplicado' } as any }),
-    ]);
+  it('con aprobación (simulada) para las 16 claves activa los 16 assets reales', () => {
+    const catalog = realCatalog(RECIPE_IMAGE_KEYS);
+    expect(catalog.size).toBe(16);
+    for (const k of RECIPE_IMAGE_KEYS) expect(catalog.get(k)!.source).toBe(recordOf(k).source);
+  });
+
+  it('sin aprobaciones el catálogo queda vacío', () => {
+    expect(buildRecipeImageCatalog(RECIPE_IMAGE_ASSET_RECORDS, {}).size).toBe(0);
+  });
+
+  it('una aprobación de un archivo distinto (SHA-256 desactualizado) no activa la imagen', () => {
+    const catalog = buildRecipeImageCatalog(RECIPE_IMAGE_ASSET_RECORDS, {
+      soup: approval('b'.repeat(64)),
+    });
+    expect(catalog.size).toBe(0);
+  });
+
+  it('descarta aprobaciones incompletas', () => {
+    const records = [fakeRecord('soup'), fakeRecord('salad'), fakeRecord('pasta'), fakeRecord('eggs')];
+    const catalog = buildRecipeImageCatalog(records, {
+      soup: approval(undefined, { approvedBy: '   ' }),
+      salad: approval(undefined, { approvedOn: 'ayer' }),
+      pasta: approval('no-es-un-hash'),
+      eggs: approval(),
+    });
+    expect([...catalog.keys()]).toEqual(['eggs']);
+  });
+
+  it('descarta registros inválidos: clave, ruta, fuente remota, procedencia incompleta y duplicados', () => {
+    const all = Object.fromEntries(RECIPE_IMAGE_KEYS.map((k) => [k, approval()]));
+    const catalog = buildRecipeImageCatalog(
+      [
+        fakeRecord('soup', { key: 'pizza' as any }),
+        fakeRecord('salad', { file: 'assets/images/recipes/otra.webp' }),
+        fakeRecord('pasta', { source: { uri: 'https://cdn.example.com/pasta.webp' } }),
+        fakeRecord('rice-dish', { source: 'https://cdn.example.com/arroz.webp' as any }),
+        fakeRecord('eggs', { provenance: { ...VALID_PROVENANCE, termsReference: 'http://inseguro.example.com' } as any }),
+        fakeRecord('fish', { provenance: { ...VALID_PROVENANCE, provider: '' } as any }),
+        fakeRecord('arepa', { provenance: { ...VALID_PROVENANCE, attributionRequired: true } as any }),
+        fakeRecord('legumes', {
+          provenance: { kind: 'licensed', author: 'X', licenseName: '', sourceReference: 'Y', attributionRequired: false },
+        }),
+        fakeRecord('beverage', { sha256: 'corto' }),
+        fakeRecord('chicken'),
+        fakeRecord('chicken', { source: { testUri: 'duplicado' } as any }),
+      ],
+      all
+    );
     expect([...catalog.keys()]).toEqual(['chicken']);
     expect((catalog.get('chicken')!.source as any).testUri).toBe('test-only-chicken');
   });
@@ -188,17 +348,29 @@ describe('Fuentes empaquetadas vs remotas', () => {
 });
 
 describe('getRecipeImageSource', () => {
-  const catalog = buildRecipeImageCatalog([fakeAsset('soup'), fakeAsset('rice-dish'), fakeAsset('dessert')]);
+  const catalog = realCatalog(['soup', 'rice-dish', 'dessert']);
 
   it('las imágenes remotas están desactivadas en el MVP', () => {
     expect(REMOTE_RECIPE_IMAGES_ENABLED).toBe(false);
   });
 
-  it('receta real con categoría disponible → imagen de referencia etiquetada', () => {
-    const result = getRecipeImageSource(realRecipe(), catalog);
-    expect(result).toEqual({
+  it('cada una de las 16 categorías resuelve su asset local real cuando está aprobada', () => {
+    const full = realCatalog(RECIPE_IMAGE_KEYS);
+    for (const key of RECIPE_IMAGE_KEYS) {
+      const result = getRecipeImageSource(realRecipe({ name: SAMPLE_NAME_BY_KEY[key], ingredients: [] }), full);
+      expect(result).toEqual({
+        kind: 'reference',
+        source: recordOf(key).source,
+        imageKey: key,
+        referenceLabel: RECIPE_IMAGE_CATEGORY_LABELS[key],
+      });
+    }
+  });
+
+  it('receta real con categoría aprobada → imagen de referencia etiquetada', () => {
+    expect(getRecipeImageSource(realRecipe(), catalog)).toEqual({
       kind: 'reference',
-      source: { testUri: 'test-only-soup' },
+      source: recordOf('soup').source,
       imageKey: 'soup',
       referenceLabel: 'Sopa',
     });
@@ -207,7 +379,8 @@ describe('getRecipeImageSource', () => {
   it('"arroz con leche" recibe la imagen de postre, nunca la de arroz salado', () => {
     const result = getRecipeImageSource(realRecipe({ name: 'Arroz con leche' }), catalog);
     expect(result.imageKey).toBe('dessert');
-    expect((result.source as any).testUri).toBe('test-only-dessert');
+    expect(result.source).toBe(recordOf('dessert').source);
+    expect(result.source).not.toBe(recordOf('rice-dish').source);
   });
 
   it('sin coincidencia fiable → respaldo neutro (source null)', () => {
@@ -215,13 +388,9 @@ describe('getRecipeImageSource', () => {
     expect(result).toEqual({ kind: 'none', source: null, imageKey: null, referenceLabel: null });
   });
 
-  it('categoría conocida pero sin asset aprobado → respaldo neutro conservando la clave', () => {
+  it('categoría conocida pero sin aprobación → respaldo neutro conservando la clave', () => {
     const result = getRecipeImageSource(realRecipe({ name: 'Pasta con tomate' }), catalog);
     expect(result).toEqual({ kind: 'none', source: null, imageKey: 'pasta', referenceLabel: null });
-  });
-
-  it('con el catálogo de producción actual (vacío) toda receta real usa el respaldo neutro', () => {
-    expect(getRecipeImageSource(realRecipe()).source).toBeNull();
   });
 
   it('ignora URLs remotas de recetas reales aunque sean HTTPS', () => {
@@ -235,7 +404,7 @@ describe('getRecipeImageSource', () => {
       catalog
     );
     expect(withCategory.kind).toBe('reference');
-    expect((withCategory.source as any).uri).toBeUndefined();
+    expect(withCategory.source).toBe(recordOf('soup').source);
   });
 
   it('ignora identificadores numéricos de Metro en recetas reales (p. ej. persistidos por error)', () => {
@@ -245,7 +414,7 @@ describe('getRecipeImageSource', () => {
 
   it('conserva la foto empaquetada de las recetas demo sin marcarla como referencia', () => {
     const demo = getDemoRecipes(20000, 2).find((r) => r.imageUrl)!;
-    const result = getRecipeImageSource(demo, catalog);
+    const result = getRecipeImageSource(demo, realCatalog(RECIPE_IMAGE_KEYS));
     expect(result.kind).toBe('demo-photo');
     expect(result.source).toBe(demo.imageUrl);
     expect(result.referenceLabel).toBeNull();
@@ -315,14 +484,17 @@ describe('Normalización y persistencia estable', () => {
       expect(typeof day.recipe.imageUrl === 'number').toBe(false);
       expect(day.recipe.imageKey === null || typeof day.recipe.imageKey === 'string').toBe(true);
     }
+    // El JSON persistido nunca contiene fuentes de assets ni rutas de imágenes del catálogo
+    expect(raw).not.toMatch(/recipes\/[a-z-]+\.webp|testUri/);
 
     const restored = await storage.getStoredMealPlan();
     expect(restored).not.toBeNull();
-    const catalog = buildRecipeImageCatalog([fakeAsset('soup'), fakeAsset('eggs')]);
+    const catalog = realCatalog(['soup', 'eggs']);
     const before = plan.days.map((d) => getRecipeImageSource(d.recipe, catalog));
     const after = restored!.plan.days.map((d) => getRecipeImageSource(d.recipe, catalog));
     expect(after).toEqual(before);
     expect(after.map((r) => r.kind)).toEqual(['reference', 'reference', 'none']);
+    expect(after[0].source).toBe(recordOf('soup').source);
   });
 
   it('planes persistidos antes del Bloque 3A (sin imageKey) siguen siendo válidos y obtienen la clave derivada', async () => {

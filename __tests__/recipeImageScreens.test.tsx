@@ -3,8 +3,9 @@
  * renderizado seguro, etiquetas visibles y accesibles, respaldo neutro, recetas demo,
  * ausencia de llamadas de red y regresión de navegación.
  *
- * El catálogo de producción está vacío (no hay assets aprobados), así que aquí se
- * inyecta un catálogo SOLO de pruebas con fuentes simuladas `{ testUri }`.
+ * El catálogo de producción está vacío hasta que exista aprobación humana. Aquí se
+ * activan los 16 assets REALES (require() estáticos) con una aprobación SIMULADA
+ * exclusiva de pruebas, para verificar el camino de activación de extremo a extremo.
  */
 import React from 'react';
 import { act, cleanup, fireEvent, render, within } from '@testing-library/react-native';
@@ -20,26 +21,19 @@ import { BudgetProvider } from '../src/context/BudgetContext';
 import { RecipeProvider } from '../src/context/RecipeContext';
 import { Ingredient } from '../src/types/pantry';
 import { ClientRecipe } from '../src/types/recipe';
+import { RECIPE_IMAGE_ASSET_RECORDS } from '../src/utils/recipeImageCatalog';
+import { RECIPE_IMAGE_CATEGORY_LABELS, RECIPE_IMAGE_KEYS, RecipeImageKey } from '../src/types/recipeImage';
 
 jest.mock('../src/utils/recipeImageCatalog', () => {
   const actual = jest.requireActual('../src/utils/recipeImageCatalog');
-  const license = {
-    kind: 'original',
-    author: 'Pruebas',
-    licenseName: 'Fixture de pruebas',
-    sourceReference: 'TEST-ONLY',
-    acquiredOn: '2026-11-05',
-    approvedBy: 'Pruebas',
-    attributionRequired: false,
-  };
-  const testCatalog = actual.buildRecipeImageCatalog(
-    ['soup', 'rice-dish', 'dessert'].map((key: string) => ({
-      key,
-      file: `assets/images/recipes/${key}.webp`,
-      source: { testUri: `test-only-${key}` },
-      license,
-    }))
+  // Aprobación SIMULADA (solo pruebas) de los 16 registros reales, ligada a su SHA-256.
+  const simulatedApprovals = Object.fromEntries(
+    actual.RECIPE_IMAGE_ASSET_RECORDS.map((r: { key: string; sha256: string }) => [
+      r.key,
+      { approvedBy: 'SIMULACIÓN DE PRUEBA (no es una aprobación real)', approvedOn: '2026-11-05', sha256: r.sha256 },
+    ])
   );
+  const testCatalog = actual.buildRecipeImageCatalog(actual.RECIPE_IMAGE_ASSET_RECORDS, simulatedApprovals);
   return {
     ...actual,
     RECIPE_IMAGE_CATALOG: testCatalog,
@@ -97,6 +91,8 @@ const REMOTE = recipe({
   imageUrl: 'https://images.example.com/remota.jpg',
 });
 
+const srcOf = (key: RecipeImageKey) => RECIPE_IMAGE_ASSET_RECORDS.find((r) => r.key === key)!.source;
+
 const SOUP_LABEL =
   'Imagen de referencia de la categoría Sopa para Sopa de lentejas. No es una foto del plato generado.';
 
@@ -150,7 +146,7 @@ describe('Inicio', () => {
     const { getByTestId, getByLabelText, queryByLabelText, getByText } = await renderScreen(<HomeScreen />, [SOUP]);
 
     const img = getByTestId('home-recipe-image-img');
-    expect(img.props.source).toEqual({ testUri: 'test-only-soup' });
+    expect(img.props.source).toEqual(srcOf('soup'));
     expect(getByLabelText(SOUP_LABEL)).toBeTruthy();
     expect(queryByLabelText(/Foto del plato/)).toBeNull();
     expect(getByTestId('home-recipe-image-reference-badge', { includeHiddenElements: true })).toBeTruthy();
@@ -181,11 +177,44 @@ describe('Recetas (descubrimiento)', () => {
       UNKNOWN,
     ]);
 
-    expect(getByTestId('recipe-image-sopa-de-lentejas-img').props.source).toEqual({ testUri: 'test-only-soup' });
-    expect(getByTestId('recipe-image-arroz-con-leche-img').props.source).toEqual({ testUri: 'test-only-dessert' });
+    expect(getByTestId('recipe-image-sopa-de-lentejas-img').props.source).toEqual(srcOf('soup'));
+    expect(getByTestId('recipe-image-arroz-con-leche-img').props.source).toEqual(srcOf('dessert'));
+    expect(getByTestId('recipe-image-arroz-con-leche-img').props.source).not.toEqual(srcOf('rice-dish'));
     expect(getByTestId('recipe-image-arroz-con-leche-img').props.accessibilityLabel).toContain('categoría Postre');
     expect(queryByTestId('recipe-image-plato-especial-img')).toBeNull();
     expect(getByTestId('recipe-fallback-image-plato-especial')).toBeTruthy();
+  });
+
+  it('las 16 categorías muestran su asset local real con insignia y etiqueta de referencia', async () => {
+    const NAMES: Record<RecipeImageKey, string> = {
+      soup: 'Sopa de lentejas',
+      'cream-soup': 'Crema de ahuyama',
+      salad: 'Ensalada de atún',
+      'rice-dish': 'Arroz con pollo',
+      pasta: 'Pasta con tomate',
+      eggs: 'Huevos pericos',
+      chicken: 'Pollo al horno',
+      'beef-stew': 'Carne guisada',
+      fish: 'Tilapia al horno',
+      legumes: 'Lentejas guisadas',
+      arepa: 'Arepa con queso',
+      sandwich: 'Sándwich de pollo',
+      potatoes: 'Papas al horno',
+      'sauteed-vegetables': 'Verduras salteadas',
+      dessert: 'Flan de caramelo',
+      beverage: 'Jugo de mora',
+    };
+    const recipes = RECIPE_IMAGE_KEYS.map((key) => recipe({ id: `r-${key}`, name: NAMES[key], ingredients: [] }));
+    const { getByTestId } = await renderScreen(<RecipeDiscoveryScreen />, recipes);
+
+    for (const key of RECIPE_IMAGE_KEYS) {
+      const img = getByTestId(`recipe-image-r-${key}-img`);
+      expect(img.props.source).toEqual(srcOf(key));
+      expect(img.props.accessibilityLabel).toBe(
+        `Imagen de referencia de la categoría ${RECIPE_IMAGE_CATEGORY_LABELS[key]} para ${NAMES[key]}. No es una foto del plato generado.`
+      );
+      expect(getByTestId(`recipe-image-r-${key}-reference-badge`, { includeHiddenElements: true })).toBeTruthy();
+    }
   });
 
   it('la tarjeta conserva la navegación al detalle', async () => {
@@ -203,7 +232,7 @@ describe('Detalle', () => {
   it('muestra la imagen de referencia con insignia y conserva el título superpuesto', async () => {
     mockSearchParams = { id: 'sopa-de-lentejas' };
     const { getByTestId, getByLabelText } = await renderScreen(<RecipeDetailScreen />, [SOUP]);
-    expect(getByTestId('recipe-detail-image-img').props.source).toEqual({ testUri: 'test-only-soup' });
+    expect(getByTestId('recipe-detail-image-img').props.source).toEqual(srcOf('soup'));
     expect(getByTestId('recipe-detail-image-reference-badge', { includeHiddenElements: true })).toBeTruthy();
     expect(getByLabelText(SOUP_LABEL)).toBeTruthy();
     expect(getByTestId('recipe-detail-title')).toBeTruthy();

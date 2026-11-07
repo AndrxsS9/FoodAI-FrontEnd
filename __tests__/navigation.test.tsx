@@ -176,17 +176,17 @@ describe('Phase 2A: Navigation & Mobile Screens (Google Stitch)', () => {
   });
 
   describe('Home Screen (2. Inicio - Stitch #7ca48a7c29fb4461b3d41c5eca804385)', () => {
-    it('renders brand header, demo notice, greeting, and all 4 Stitch dashboard sections', async () => {
-      const { getByText, getByTestId, queryByText } = await renderWithProviders(<HomeScreen />);
+    it('renders brand header, greeting, and all 4 Stitch dashboard sections (sin banner de ejemplo)', async () => {
+      const { getByText, getByTestId, queryByText, queryByTestId } = await renderWithProviders(<HomeScreen />);
 
       // Top brand header
       expect(getByText('RECETARIO POR PRESUPUESTO')).toBeTruthy();
       expect(getByText('Inicio')).toBeTruthy();
 
-      // Demo data banner
-      expect(getByTestId('demo-data-banner')).toBeTruthy();
-      expect(getByText('Vista de ejemplo')).toBeTruthy();
-      expect(getByText('Datos de demostración para evaluación visual')).toBeTruthy();
+      // Corrección 3: el banner de datos de ejemplo se retiró de Inicio
+      expect(queryByTestId('demo-data-banner')).toBeNull();
+      expect(queryByText('Vista de ejemplo')).toBeNull();
+      expect(queryByText('Datos de demostración para evaluación visual')).toBeNull();
 
       // Supportive prompt
       expect(getByText('COCINA INTELIGENTE Y CONSCIENTE')).toBeTruthy();

@@ -191,8 +191,12 @@ describe('Inicio · Recomendación del día real y personalizada', () => {
       expect(queryByText(/conveniente/)).toBeNull();
       expect(queryByText('Optimizado a tu despensa')).toBeNull();
       expect(queryByText('Según tu despensa y presupuesto actuales')).toBeNull();
-      // El aviso global de datos de ejemplo se conserva
-      expect(getByTestId('demo-data-banner')).toBeTruthy();
+      // Corrección 3: el banner "Vista de ejemplo" se retiró de Inicio (también en modo demo
+      // explícito); la tarjeta de estado demo sigue indicando que no hay recomendación personal.
+      expect(queryByTestId('demo-data-banner')).toBeNull();
+      expect(queryByText('Vista de ejemplo')).toBeNull();
+      expect(queryByText('Datos de demostración para evaluación visual')).toBeNull();
+      expect(queryByText('Aún no tienes una recomendación personalizada')).toBeTruthy();
 
       fireEvent.press(getByTestId('home-recommendation-generate-button'));
       expect(mockPush).toHaveBeenCalledWith('/recetas');

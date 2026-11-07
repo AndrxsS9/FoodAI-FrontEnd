@@ -17,7 +17,6 @@ import { getRecipeImageSource } from '../../src/utils/recipeImageCatalog';
 import { usePantry } from '../../src/context/PantryContext';
 import { useBudget } from '../../src/context/BudgetContext';
 import { useRecipes } from '../../src/context/RecipeContext';
-import { DEMO_DASHBOARD_DATA } from '../../src/fixtures/demoDashboardData';
 import { formatCopCurrency } from '../../src/types/recipe';
 import {
   hasBackendConvenienceScore,
@@ -220,26 +219,6 @@ export default function HomeScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Subtle demonstration data disclaimer banner */}
-        {isDemoMode && (
-          <View
-            style={styles.demoBanner}
-            testID="demo-data-banner"
-            accessibilityRole="text"
-            accessibilityLabel="Aviso: Vista de ejemplo con datos de demostración"
-          >
-            <View style={styles.demoBadge}>
-              <MaterialIcons name="science" size={14} color={colors.primary} />
-              <Text style={[styles.demoBadgeText, typography.labelSm]}>
-                {DEMO_DASHBOARD_DATA.badgeLabel}
-              </Text>
-            </View>
-            <Text style={[styles.demoNoticeText, typography.bodySm]}>
-              {DEMO_DASHBOARD_DATA.noticeText}
-            </Text>
-          </View>
-        )}
-
         {/* Supportive Prompt & Greeting (hero card) */}
         <View style={styles.greetingSection} testID="home-greeting-hero">
           <View style={styles.heroGlowTop} pointerEvents="none" />
@@ -858,36 +837,6 @@ const createStyles = (colors: AppColors) =>
     padding: spacing.margin,
     paddingBottom: spacing.xxl + spacing.md,
     gap: spacing.md,
-  },
-  demoBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs + 2,
-    backgroundColor: colors.surfaceContainerLow,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 6,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.borderLight,
-  },
-  demoBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: 'rgba(91, 75, 138, 0.1)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: radius.full,
-  },
-  demoBadgeText: {
-    color: colors.primary,
-    fontWeight: '700',
-    fontSize: 11,
-  },
-  demoNoticeText: {
-    color: colors.textSecondary,
-    fontSize: 12,
-    flex: 1,
   },
   greetingSection: {
     position: 'relative',

@@ -89,26 +89,47 @@ const RecipeContext = createContext<RecipeContextValue | undefined>(undefined);
 export interface RecipeProviderProps {
   children: React.ReactNode;
   initialRecipes?: ClientRecipe[];
+  /**
+   * Modo demo inicial explícito (herramientas de demostración y pruebas).
+   * Si se omite, el modo demo solo aplica SIN usuario autenticado: una sesión real nunca
+   * arranca con recetas de demostración (ver resolveDefaultDemoMode).
+   */
   initialIsDemoMode?: boolean;
   recipeApiClient?: typeof defaultRecipeApi;
   userId?: string | null;
 }
 
+/**
+ * Modo demo por defecto según la sesión: los fixtures de demostración solo se muestran sin
+ * usuario autenticado. Un usuario real arranca en modo real con cero recetas hasta que genera.
+ */
+export function resolveDefaultDemoMode(userId: string | null): boolean {
+  return userId === null;
+}
+
+/** Mensaje y código cuando se intenta generar antes de hidratar despensa y presupuesto. */
+export const DATA_NOT_READY_CODE = 'DATA_NOT_READY';
+const DATA_NOT_READY_MESSAGE =
+  'Todavía estamos cargando tu despensa y tu presupuesto. Intenta de nuevo en un momento.';
+
 export function RecipeProvider({
   children,
   initialRecipes,
-  initialIsDemoMode = true,
+  initialIsDemoMode,
   recipeApiClient = defaultRecipeApi,
   userId,
 }: RecipeProviderProps) {
   const auth = useAuthSafe();
   const effectiveUserId = userId !== undefined ? userId : auth?.user?.id ?? null;
 
-  const { budget, servings, maxMinutes } = useBudget();
+  const { budget, servings, maxMinutes, isLoading: isBudgetLoading } = useBudget();
   const pantry = usePantrySafe();
   const ingredients = useMemo(() => pantry?.ingredients ?? [], [pantry?.ingredients]);
+  const isPantryLoading = pantry?.isLoading ?? false;
 
-  const [isDemoMode, setIsDemoMode] = useState<boolean>(initialIsDemoMode);
+  const [isDemoMode, setIsDemoMode] = useState<boolean>(
+    () => initialIsDemoMode ?? resolveDefaultDemoMode(effectiveUserId)
+  );
   const [realRecipes, setRealRecipesState] = useState<ClientRecipe[]>(initialRecipes ?? []);
   const [selectedRecipeId, setSelectedRecipeId] = useState<string | null>(null);
   const [customSelectedRecipe, setCustomSelectedRecipe] = useState<ClientRecipe | null>(null);
@@ -141,6 +162,10 @@ export function RecipeProvider({
     if (!initialRecipes) {
       setRealRecipesState([]);
       setLastGeneratedAt(null);
+    }
+    // El modo demo por defecto sigue a la sesión: nunca se arrastra entre usuarios.
+    if (initialIsDemoMode === undefined) {
+      setIsDemoMode(resolveDefaultDemoMode(effectiveUserId));
     }
   }
 
@@ -396,7 +421,16 @@ export function RecipeProvider({
       const targetMaxMinutes = options?.maxMinutes ?? maxMinutes;
 
       try {
-        // 3. Validación estricta de la despensa: Al menos un ingrediente
+        // 3. La despensa y el presupuesto deben estar hidratados: una despensa aún cargando no
+        //    es una despensa vacía, y un presupuesto por defecto no es el del usuario. Generar
+        //    antes enviaría datos incorrectos y crearía una instantánea inválida.
+        if (isPantryLoading || isBudgetLoading) {
+          setError(DATA_NOT_READY_MESSAGE);
+          setErrorCode(DATA_NOT_READY_CODE);
+          throw new RecipeApiError(DATA_NOT_READY_MESSAGE, DATA_NOT_READY_CODE, 0);
+        }
+
+        // 4. Validación estricta de la despensa: Al menos un ingrediente
         if (!ingredients || ingredients.length === 0) {
           const emptyMsg =
             'Tu despensa está vacía. Registra al menos un alimento en Mi Despensa para generar recomendaciones.';
@@ -404,7 +438,7 @@ export function RecipeProvider({
           setErrorCode('EMPTY_PANTRY');
           throw new RecipeApiError(emptyMsg, 'EMPTY_PANTRY', 400, undefined, false, false, false, true);
         }
-        // 4. Mapear datos de la despensa al contrato del backend
+        // 5. Mapear datos de la despensa al contrato del backend
         const requestPayload = mapPantryToRecommendRequest(
            ingredients,
           budget,
@@ -412,12 +446,12 @@ export function RecipeProvider({
           targetMaxMinutes
         );
 
-        // 5. Invocar al backend real
+        // 6. Invocar al backend real
         const backendRecipes = await recipeApiClient.recommendRecipes(requestPayload, {
           signal: abortController.signal,
         });
 
-        // 6. Verificar si esta operación sigue siendo la más reciente y del usuario activo (evitar stale data)
+        // 7. Verificar si esta operación sigue siendo la más reciente y del usuario activo (evitar stale data)
         if (
           currentOpVersion !== operationVersionRef.current ||
           requestUserId !== activeUserIdRef.current
@@ -425,11 +459,11 @@ export function RecipeProvider({
           return [];
         }
 
-        // 7. Normalizar y registrar recetas reales con ID de generación
+        // 8. Normalizar y registrar recetas reales con ID de generación
         const generationId = `gen_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
         setRealRecipes(backendRecipes, servings, generationId);
 
-        // 8. Actualizar snapshot de la generación para cálculo de obsolescencia
+        // 9. Actualizar snapshot de la generación para cálculo de obsolescencia
         setLastSnapshot({
           pantryFingerprint: currentPantryFingerprint,
           budget,
@@ -499,6 +533,8 @@ export function RecipeProvider({
     [
       realRecipes,
       ingredients,
+      isPantryLoading,
+      isBudgetLoading,
       budget,
       servings,
       maxMinutes,
@@ -508,6 +544,13 @@ export function RecipeProvider({
       effectiveUserId,
     ]
   );
+
+  // Un aviso de "datos aún cargando" deja de ser cierto en cuanto termina la hidratación:
+  // se deja de exponer (derivado en render, sin efectos) para no mostrar un error obsoleto.
+  const isResolvedDataNotReady =
+    errorCode === DATA_NOT_READY_CODE && !isPantryLoading && !isBudgetLoading;
+  const exposedError = isResolvedDataNotReady ? null : error;
+  const exposedErrorCode = isResolvedDataNotReady ? null : errorCode;
 
   const refreshRecipes = useCallback(async (): Promise<void> => {
     if (isDemoMode) {
@@ -549,8 +592,8 @@ export function RecipeProvider({
       isGenerating,
       isStale,
       lastGeneratedAt,
-      error,
-      errorCode,
+      error: exposedError,
+      errorCode: exposedErrorCode,
       getRecipeById,
       selectRecipe,
       clearSelectedRecipe,
@@ -568,8 +611,8 @@ export function RecipeProvider({
       isGenerating,
       isStale,
       lastGeneratedAt,
-      error,
-      errorCode,
+      exposedError,
+      exposedErrorCode,
       getRecipeById,
       selectRecipe,
       clearSelectedRecipe,

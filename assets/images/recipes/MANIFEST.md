@@ -1,6 +1,6 @@
-# Manifiesto de imágenes de referencia de recetas (Bloques 3A–3E)
+# Manifiesto de imágenes de referencia de recetas (Bloques 3A–3E y Corrección 1)
 
-## Estado actual (verificado el 2026-11-05, Bloque 3E)
+## Estado actual (archivos verificados el 2026-11-05; política de preview añadida en la Corrección 1)
 
 - Archivos generados: 16 de 16
 - Archivos presentes y verificados técnicamente: 16 de 16
@@ -14,7 +14,10 @@
     `sandwich`
 - Pendientes de regeneración: 0 de 16
 - Revisión visual técnica (asistente de IA, no humana): 16 de 16 — con observaciones (ver tabla)
-- Revisión visual humana: 0 de 16 — **pendiente**
+- Revisión visual humana: 16 de 16 — el responsable del proyecto las considera aceptables para la
+  fase de pruebas del MVP (decisión comunicada en la Corrección 1). **No es una aprobación
+  comercial** y no se registra en `RECIPE_IMAGE_APPROVALS`.
+- Habilitados en preview interno: 16 de 16 — solo en builds del perfil EAS `preview`
 - Aprobados para producción: 0 de 16
 
 Copia de seguridad, fuera del repositorio, de los 16 archivos tal como estaban antes del Bloque 3D
@@ -22,11 +25,26 @@ Copia de seguridad, fuera del repositorio, de los 16 archivos tal como estaban a
 previsualizaciones del Bloque 3D, con SHA-256 y hoja de contacto:
 `C:\Users\Crist\Downloads\FoodAI-image-backups\2026-11-05-block3d\`.
 
-**Mientras no exista aprobación humana, ninguna imagen se muestra en la app**: toda receta real
-usa el respaldo neutro de `RecipeImage`. Los 16 archivos están registrados en
-`src/utils/recipeImageCatalog.ts` (`RECIPE_IMAGE_ASSET_RECORDS`) con `require()` estático y su
-SHA-256, pero el catálogo de producción solo activa las claves presentes en
-`RECIPE_IMAGE_APPROVALS`, que está vacío.
+### Política de visualización
+
+| Nivel | Qué incluye | Dónde se muestra |
+|---|---|---|
+| Verificado técnicamente | Los 16 registros de `RECIPE_IMAGE_ASSET_RECORDS` (archivo, ruta, `require()` estático, SHA-256, procedencia) | — |
+| Habilitado en preview interno | Los 16 registros verificados, **sin** aprobación (`buildRecipeImagePreviewCatalog`) | Solo builds con `EXPO_PUBLIC_APP_VARIANT=preview` **y** `EXPO_PUBLIC_RECIPE_IMAGES_PREVIEW_ENABLED=true` (perfil EAS `preview`, APK interno) |
+| Aprobado para producción | Solo claves con aprobación humana completa en `RECIPE_IMAGE_APPROVALS` (`buildRecipeImageCatalog`) | Todos los demás builds, incluido `production` |
+
+- La política se resuelve en `src/utils/recipeImageCatalog.ts`
+  (`resolveRecipeImageDisplayPolicy`) y falla en cerrado: cualquier valor ausente, distinto o mal
+  escrito (`TRUE`, `1`, espacios, variante `production` o `development`) aplica la política de
+  producción.
+- `eas.json` fija `preview`/`true` en el perfil `preview` y `production`/`false` en el perfil
+  `production`. Estas variables son públicas (`EXPO_PUBLIC_`): no son una credencial, solo una
+  configuración de compilación.
+- El preview **no** crea aprobaciones ni modifica `RECIPE_IMAGE_APPROVALS`: el catálogo de
+  producción sigue vacío también dentro de un APK de preview.
+- **En builds de producción y en desarrollo local sin esas dos variables, ninguna imagen se
+  muestra mientras no exista aprobación humana**: toda receta real usa el respaldo neutro de
+  `RecipeImage`.
 
 Estas imágenes son **imágenes de referencia de una categoría de plato**, no fotos del plato
 generado por la IA de recetas. La app lo indica con la insignia visible "Imagen de referencia" y en

@@ -314,6 +314,104 @@ export const RECIPE_IMAGE_CATALOG: RecipeImageCatalog = buildRecipeImageCatalog(
   RECIPE_IMAGE_APPROVALS
 );
 
+// ==========================================
+// Política de visualización: producción vs. preview interno
+// ==========================================
+
+/**
+ * - 'production-approved-only': solo imágenes con aprobación humana (RECIPE_IMAGE_CATALOG).
+ * - 'internal-preview-verified': builds INTERNOS de preview muestran los registros técnicamente
+ *   verificados para probarlos en dispositivo. NO equivale a aprobación comercial.
+ */
+export type RecipeImageDisplayPolicy = 'production-approved-only' | 'internal-preview-verified';
+
+/** Valor EXACTO de EXPO_PUBLIC_APP_VARIANT que permite la política de preview. */
+export const RECIPE_IMAGE_PREVIEW_APP_VARIANT = 'preview';
+/** Valor EXACTO de EXPO_PUBLIC_RECIPE_IMAGES_PREVIEW_ENABLED que la activa. */
+export const RECIPE_IMAGE_PREVIEW_FLAG_VALUE = 'true';
+
+export interface RecipeImageBuildConfig {
+  /** EXPO_PUBLIC_APP_VARIANT, fijado por perfil de compilación en eas.json. */
+  appVariant?: unknown;
+  /** EXPO_PUBLIC_RECIPE_IMAGES_PREVIEW_ENABLED, fijado por perfil de compilación en eas.json. */
+  previewImagesEnabled?: unknown;
+}
+
+/**
+ * Lee la configuración de compilación. El acceso a `process.env.EXPO_PUBLIC_*` es LITERAL a
+ * propósito: Expo solo incrusta en el bundle las lecturas estáticas (sin destructuring ni
+ * acceso dinámico). No es una credencial: las variables EXPO_PUBLIC_ son públicas.
+ */
+export function readRecipeImageBuildConfig(): RecipeImageBuildConfig {
+  return {
+    appVariant: process.env.EXPO_PUBLIC_APP_VARIANT,
+    previewImagesEnabled: process.env.EXPO_PUBLIC_RECIPE_IMAGES_PREVIEW_ENABLED,
+  };
+}
+
+/**
+ * Falla en cerrado: la política de preview exige AMBAS condiciones con valores exactos
+ * (variante 'preview' e indicador 'true'). Cualquier ausencia, valor inválido, variante
+ * 'production' u otra combinación devuelve la política estricta de producción.
+ * No depende de __DEV__ (los APK de preview de EAS son bundles de release).
+ */
+export function resolveRecipeImageDisplayPolicy(
+  config: RecipeImageBuildConfig | null | undefined
+): RecipeImageDisplayPolicy {
+  if (
+    config &&
+    config.appVariant === RECIPE_IMAGE_PREVIEW_APP_VARIANT &&
+    config.previewImagesEnabled === RECIPE_IMAGE_PREVIEW_FLAG_VALUE
+  ) {
+    return 'internal-preview-verified';
+  }
+  return 'production-approved-only';
+}
+
+/** Catálogo que consume la UI: el aprobado (producción) o el de preview interno. */
+export type RecipeImageDisplayCatalog = ReadonlyMap<RecipeImageKey, RecipeImageAssetRecord>;
+
+/**
+ * Catálogo de PREVIEW INTERNO: los registros técnicamente válidos (mismo validador que
+ * producción: clave, ruta canónica, fuente empaquetada, SHA-256 y procedencia), SIN
+ * aprobación. No fabrica objetos RecipeImageApproval ni pasa por buildRecipeImageCatalog:
+ * sus entradas son los registros tal cual y nunca se consideran aprobadas.
+ */
+export function buildRecipeImagePreviewCatalog(
+  records: readonly RecipeImageAssetRecord[]
+): RecipeImageDisplayCatalog {
+  const catalog = new Map<RecipeImageKey, RecipeImageAssetRecord>();
+  for (const record of records) {
+    if (!isValidRecipeImageAssetRecord(record)) continue;
+    if (catalog.has(record.key)) continue;
+    catalog.set(record.key, record);
+  }
+  return catalog;
+}
+
+/** Selecciona el catálogo según la política; cualquier valor desconocido usa producción. */
+export function selectRecipeImageCatalog(
+  policy: RecipeImageDisplayPolicy,
+  records: readonly RecipeImageAssetRecord[],
+  approvals: Readonly<Partial<Record<RecipeImageKey, RecipeImageApproval>>>
+): RecipeImageDisplayCatalog {
+  return policy === 'internal-preview-verified'
+    ? buildRecipeImagePreviewCatalog(records)
+    : buildRecipeImageCatalog(records, approvals);
+}
+
+/** Política resuelta en tiempo de compilación para este bundle. */
+export const RECIPE_IMAGE_DISPLAY_POLICY: RecipeImageDisplayPolicy = resolveRecipeImageDisplayPolicy(
+  readRecipeImageBuildConfig()
+);
+
+/** Catálogo efectivo que usa la UI (Inicio, Recetas y Detalle vía getRecipeImageSource). */
+export const ACTIVE_RECIPE_IMAGE_CATALOG: RecipeImageDisplayCatalog = selectRecipeImageCatalog(
+  RECIPE_IMAGE_DISPLAY_POLICY,
+  RECIPE_IMAGE_ASSET_RECORDS,
+  RECIPE_IMAGE_APPROVALS
+);
+
 export interface RecipeImageRecipeInput extends RecipeImageMatchInput {
   isDemoFixture?: boolean;
   imageUrl?: unknown;
@@ -351,12 +449,14 @@ export function getRecipeImageKey(recipe: RecipeImageRecipeInput): RecipeImageKe
 /**
  * Punto único de integración para Inicio, Recetas y Detalle.
  * Prioridad: foto empaquetada de demo → imagen de referencia del catálogo → respaldo neutro.
+ * Por defecto usa ACTIVE_RECIPE_IMAGE_CATALOG (aprobadas en producción; verificadas en preview
+ * interno). Acepta también un RecipeImageCatalog aprobado (subtipo).
  * Las URLs remotas (HTTPS o no) de recetas reales se ignoran mientras
  * REMOTE_RECIPE_IMAGES_ENABLED sea false.
  */
 export function getRecipeImageSource(
   recipe: RecipeImageRecipeInput | null | undefined,
-  catalog: RecipeImageCatalog = RECIPE_IMAGE_CATALOG
+  catalog: RecipeImageDisplayCatalog = ACTIVE_RECIPE_IMAGE_CATALOG
 ): RecipeImagePresentation {
   if (!recipe) return { kind: 'none', source: null, imageKey: null, referenceLabel: null };
 

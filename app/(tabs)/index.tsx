@@ -95,6 +95,7 @@ export default function HomeScreen() {
     recipes,
     isDemoMode,
     isGenerating,
+    isRestoring: isRecipesRestoring,
     isStale,
     error: recipeError,
     selectRecipe,
@@ -109,7 +110,8 @@ export default function HomeScreen() {
   const recommendation = useMemo(
     () =>
       resolveDailyRecommendationState({
-        isPantryLoading,
+        // Una restauración en frío pendiente se trata como carga, nunca como "sin recetas".
+        isPantryLoading: isPantryLoading || isRecipesRestoring,
         pantryCount: summary.totalCount,
         isDemoMode,
         isGenerating,
@@ -120,6 +122,7 @@ export default function HomeScreen() {
       }),
     [
       isPantryLoading,
+      isRecipesRestoring,
       summary.totalCount,
       isDemoMode,
       isGenerating,

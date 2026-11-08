@@ -34,13 +34,29 @@ import { useBudget } from './BudgetContext';
 import { usePantrySafe } from './PantryContext';
 import { useAuthSafe } from './AuthContext';
 import { recipeApi as defaultRecipeApi, RecipeApiError } from '../services/api/recipeApi';
+import {
+  RecipeGenerationSnapshot,
+  RecipeStorageAdapter,
+  RecipeStorageWriteBlockReason,
+  RecipeStorageWriteBlockedError,
+  createRecipeStorage,
+} from '../services/storage/recipeStorage';
 
-export interface GenerationSnapshot {
-  pantryFingerprint: string;
-  budget: number;
-  servings: number;
-  maxMinutes?: number;
-}
+export type GenerationSnapshot = RecipeGenerationSnapshot;
+
+/** Motivo (no sensible) por el que una generación exitosa no quedó guardada en el dispositivo. */
+export type PersistenceWarningCode = RecipeStorageWriteBlockReason | 'write_failed';
+
+const PERSISTENCE_WARNING_MESSAGES: Record<PersistenceWarningCode, string> = {
+  write_failed:
+    'Tus recetas se generaron correctamente, pero no pudimos guardarlas en este dispositivo. Siguen disponibles ahora, aunque podrían no conservarse si cierras la app.',
+  backup_failed:
+    'Tus recetas se generaron correctamente, pero no pudimos guardarlas en este dispositivo. Siguen disponibles ahora, aunque podrían no conservarse si cierras la app.',
+  invalid_collection:
+    'Tus recetas se generaron correctamente, pero no pudimos guardarlas en este dispositivo. Siguen disponibles ahora, aunque podrían no conservarse si cierras la app.',
+  unsupported_version:
+    'Tus recetas se generaron correctamente, pero este dispositivo tiene recetas guardadas por una versión más reciente de FoodAI y no las sobrescribimos. Las actuales podrían no conservarse si cierras la app.',
+};
 
 export interface RecipeContextValue {
   recipes: ClientRecipe[];
@@ -49,10 +65,23 @@ export interface RecipeContextValue {
   selectedRecipe: ClientRecipe | null;
   isLoading: boolean;
   isGenerating: boolean;
+  /**
+   * Hidratación en frío pendiente para un usuario autenticado: la colección persistida aún no
+   * se ha leído o la despensa/presupuesto aún no están listos para evaluar obsolescencia.
+   * Mientras sea true, una colección vacía NO significa "sin recetas".
+   */
+  isRestoring: boolean;
   isStale: boolean;
   lastGeneratedAt: string | null;
   error: string | null;
   errorCode: string | null;
+  /**
+   * Aviso no bloqueante: la generación con IA fue exitosa pero no quedó guardada en el
+   * dispositivo. Se limpia tras una escritura verificada. Nunca contiene detalles internos.
+   */
+  persistenceWarning: string | null;
+  persistenceWarningCode: PersistenceWarningCode | null;
+  clearPersistenceWarning: () => void;
   getRecipeById: (idOrSlug: string) => ClientRecipe | undefined;
   selectRecipe: (idOrRecipe: string | ClientRecipe) => ClientRecipe | undefined;
   clearSelectedRecipe: () => void;
@@ -70,10 +99,14 @@ const defaultRecipeContextValue: RecipeContextValue = {
   selectedRecipe: null,
   isLoading: false,
   isGenerating: false,
+  isRestoring: false,
   isStale: false,
   lastGeneratedAt: null,
   error: null,
   errorCode: null,
+  persistenceWarning: null,
+  persistenceWarningCode: null,
+  clearPersistenceWarning: () => {},
   getRecipeById: () => undefined,
   selectRecipe: () => undefined,
   clearSelectedRecipe: () => {},
@@ -97,6 +130,11 @@ export interface RecipeProviderProps {
   initialIsDemoMode?: boolean;
   recipeApiClient?: typeof defaultRecipeApi;
   userId?: string | null;
+  /**
+   * Adaptador de persistencia inyectable (pruebas). Solo se usa con un usuario autenticado y
+   * sin `initialRecipes`; por defecto se crea uno aislado por usuario sobre AsyncStorage.
+   */
+  storageAdapter?: RecipeStorageAdapter;
 }
 
 /**
@@ -118,9 +156,18 @@ export function RecipeProvider({
   initialIsDemoMode,
   recipeApiClient = defaultRecipeApi,
   userId,
+  storageAdapter,
 }: RecipeProviderProps) {
   const auth = useAuthSafe();
   const effectiveUserId = userId !== undefined ? userId : auth?.user?.id ?? null;
+
+  // Persistencia solo para usuarios autenticados y sin colección inicial inyectada
+  // (los fixtures/pruebas con initialRecipes conservan el comportamiento en memoria).
+  const isPersistenceActive = initialRecipes === undefined && effectiveUserId !== null;
+  const activeStorage = useMemo<RecipeStorageAdapter | null>(() => {
+    if (!isPersistenceActive) return null;
+    return storageAdapter ?? createRecipeStorage(effectiveUserId);
+  }, [isPersistenceActive, storageAdapter, effectiveUserId]);
 
   const { budget, servings, maxMinutes, isLoading: isBudgetLoading } = useBudget();
   const pantry = usePantrySafe();
@@ -142,11 +189,28 @@ export function RecipeProvider({
   // Snapshot de los datos utilizados en la última generación real exitosa
   const [lastSnapshot, setLastSnapshot] = useState<GenerationSnapshot | null>(null);
 
+  // Hidratación en frío: lectura del almacenamiento pendiente y, por separado, si ya se
+  // completó la hidratación conjunta (almacenamiento + despensa + presupuesto).
+  const [isStorageRestoring, setIsStorageRestoring] = useState<boolean>(isPersistenceActive);
+  const [hasHydrated, setHasHydrated] = useState<boolean>(!isPersistenceActive);
+
   // Referencias para control de concurrencia y cancelación de peticiones asíncronas
   const activeAbortControllerRef = useRef<AbortController | null>(null);
   const isGeneratingRef = useRef<boolean>(false);
   const operationVersionRef = useRef<number>(0);
   const activeUserIdRef = useRef<string | null>(effectiveUserId);
+  // Se incrementa cada vez que la colección real se reemplaza localmente (generación o
+  // setRealRecipes). Una restauración iniciada antes nunca sobrescribe datos más recientes.
+  const generationEpochRef = useRef<number>(0);
+
+  // Resultado de la persistencia local, separado del éxito de la generación con IA.
+  const [persistenceWarningCode, setPersistenceWarningCode] = useState<PersistenceWarningCode | null>(null);
+  const latestSaveOrderRef = useRef<number>(0);
+  const persistenceDiagnosticRef = useRef<{
+    code: PersistenceWarningCode;
+    error: unknown;
+    at: string;
+  } | null>(null);
 
   // Ajuste de estado inmediato durante render al cambiar de usuario (evita intermediate renders y cascading effects)
   const [prevUserIdState, setPrevUserIdState] = useState<string | null>(effectiveUserId);
@@ -167,7 +231,18 @@ export function RecipeProvider({
     if (initialIsDemoMode === undefined) {
       setIsDemoMode(resolveDefaultDemoMode(effectiveUserId));
     }
+    // La hidratación se reinicia para el nuevo usuario (o se desactiva al cerrar sesión).
+    setIsStorageRestoring(isPersistenceActive);
+    setHasHydrated(!isPersistenceActive);
+    setPersistenceWarningCode(null);
   }
+
+  // La hidratación conjunta concluye una sola vez por usuario: ni la recarga posterior de la
+  // despensa ni la del presupuesto vuelven a ocultar la colección.
+  if (!hasHydrated && !isStorageRestoring && !isPantryLoading && !isBudgetLoading) {
+    setHasHydrated(true);
+  }
+  const isRestoring = isPersistenceActive && !hasHydrated;
 
   // Aislamiento reactivo de efectos externos ante cambio de sesión o logout (Fase 5)
   useEffect(() => {
@@ -181,6 +256,51 @@ export function RecipeProvider({
     }
     isGeneratingRef.current = false;
   }, [effectiveUserId]);
+
+  // Restauración en frío de la última colección real del usuario activo (Bloque 5).
+  // Nunca invoca a Gemini; solo lee el almacenamiento aislado por usuario.
+  useEffect(() => {
+    if (!activeStorage) return;
+
+    let cancelled = false;
+    const restoreUserId = effectiveUserId;
+    const epochAtStart = generationEpochRef.current;
+
+    activeStorage
+      .load()
+      .then((result) => {
+        if (cancelled || restoreUserId !== activeUserIdRef.current) return;
+        // Una generación (o inyección) local más reciente prevalece sobre lo persistido.
+        if (generationEpochRef.current !== epochAtStart) return;
+
+        if (result.status === 'valid') {
+          const { collection } = result;
+          setRealRecipesState(collection.recipes);
+          setLastSnapshot(collection.snapshot);
+          setLastGeneratedAt(collection.generatedAt);
+        } else if (result.status !== 'empty') {
+          // Datos corruptos o de versión no soportada: no se muestran ni se modifican.
+          console.warn(
+            '[RecipeContext] Colección de recetas persistida no restaurable:',
+            result.status === 'corrupt' ? result.error : `versión ${result.version}`
+          );
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          console.warn('[RecipeContext] Error al leer recetas persistidas:', err);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsStorageRestoring(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeStorage, effectiveUserId]);
 
   // Huella digital reproducible de la despensa actual
   const currentPantryFingerprint = useMemo(() => {
@@ -196,6 +316,11 @@ export function RecipeProvider({
     if (isDemoMode || !lastSnapshot || realRecipes.length === 0) {
       return false;
     }
+    // Sin hidratación completa no se puede comparar: evita avisos falsos por una despensa
+    // o un presupuesto que aún no se han cargado tras el reinicio.
+    if (isRestoring) {
+      return false;
+    }
 
     const pantryChanged = lastSnapshot.pantryFingerprint !== currentPantryFingerprint;
     const budgetChanged = lastSnapshot.budget !== budget;
@@ -207,6 +332,7 @@ export function RecipeProvider({
     isDemoMode,
     lastSnapshot,
     realRecipes.length,
+    isRestoring,
     currentPantryFingerprint,
     budget,
     servings,
@@ -315,6 +441,7 @@ export function RecipeProvider({
    */
   const setRealRecipes = useCallback(
     (backendRecipes: BackendRecipe[], customServings?: number, generationId?: string) => {
+      generationEpochRef.current++;
       const activeServings = customServings ?? servings;
       const activeGenId = generationId || `gen_${Date.now()}`;
       const reservedIds = new Set<string>();
@@ -391,6 +518,11 @@ export function RecipeProvider({
     setErrorCode(null);
   }, []);
 
+  /** Oculta el aviso visible; el diagnóstico interno se conserva hasta una escritura verificada. */
+  const clearPersistenceWarning = useCallback(() => {
+    setPersistenceWarningCode(null);
+  }, []);
+
   /**
    * Operación principal de la Fase 3A: Generación real de recetas con IA (Gemini vía backend).
    * Valida precondiciones locales, ejecuta la llamada con AbortController y actualiza el estado.
@@ -459,19 +591,25 @@ export function RecipeProvider({
           return [];
         }
 
+        // Orden lógico de persistencia reservado en el instante de aceptación de la generación
+        // (independiente del reloj del dispositivo; ver recipeStorage.reserveWriteOrder).
+        const writeOrder = activeStorage ? activeStorage.reserveWriteOrder() : 0;
+
         // 8. Normalizar y registrar recetas reales con ID de generación
         const generationId = `gen_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
         setRealRecipes(backendRecipes, servings, generationId);
 
         // 9. Actualizar snapshot de la generación para cálculo de obsolescencia
-        setLastSnapshot({
+        const snapshot: GenerationSnapshot = {
           pantryFingerprint: currentPantryFingerprint,
           budget,
           servings,
           maxMinutes: targetMaxMinutes,
-        });
+        };
+        setLastSnapshot(snapshot);
 
-        setLastGeneratedAt(new Date().toISOString());
+        const generatedAt = new Date().toISOString();
+        setLastGeneratedAt(generatedAt);
 
         // Derivar y retornar el nuevo listado con identidades de instancia
         const reservedIds = new Set<string>();
@@ -496,6 +634,53 @@ export function RecipeProvider({
             generationId,
           };
         });
+
+        // 10. Persistir la colección real en el almacenamiento aislado del usuario que la
+        //     solicitó. Un fallo de escritura no invalida la generación: queda en memoria.
+        //     El resultado (aviso visible o su limpieza) solo lo aplica la escritura más reciente
+        //     del usuario que sigue activo.
+        if (activeStorage) {
+          const { maxMinutes: snapshotMaxMinutes, ...snapshotBase } = snapshot;
+          latestSaveOrderRef.current = writeOrder;
+          const isCurrentSave = () =>
+            requestUserId === activeUserIdRef.current && latestSaveOrderRef.current === writeOrder;
+
+          activeStorage
+            .save(
+              {
+                generationId,
+                generatedAt,
+                snapshot:
+                  snapshotMaxMinutes != null
+                    ? { ...snapshotBase, maxMinutes: snapshotMaxMinutes }
+                    : snapshotBase,
+                recipes: finalNormalized,
+              },
+              writeOrder
+            )
+            .then((saveResult) => {
+              if (saveResult.status === 'saved' && isCurrentSave()) {
+                // Persistencia verificada: se retira cualquier aviso previo.
+                persistenceDiagnosticRef.current = null;
+                setPersistenceWarningCode(null);
+              }
+            })
+            .catch((persistErr) => {
+              console.warn('[RecipeContext] No se pudieron persistir las recetas generadas:', persistErr);
+              if (!isCurrentSave()) return;
+              const code: PersistenceWarningCode =
+                persistErr instanceof RecipeStorageWriteBlockedError
+                  ? persistErr.reason
+                  : 'write_failed';
+              // El error original se conserva solo internamente para diagnóstico.
+              persistenceDiagnosticRef.current = {
+                code,
+                error: persistErr,
+                at: new Date().toISOString(),
+              };
+              setPersistenceWarningCode(code);
+            });
+        }
 
         return finalNormalized;
       } catch (err) {
@@ -542,6 +727,7 @@ export function RecipeProvider({
       recipeApiClient,
       setRealRecipes,
       effectiveUserId,
+      activeStorage,
     ]
   );
 
@@ -590,10 +776,14 @@ export function RecipeProvider({
       selectedRecipe,
       isLoading,
       isGenerating,
+      isRestoring,
       isStale,
       lastGeneratedAt,
       error: exposedError,
       errorCode: exposedErrorCode,
+      persistenceWarning: persistenceWarningCode ? PERSISTENCE_WARNING_MESSAGES[persistenceWarningCode] : null,
+      persistenceWarningCode,
+      clearPersistenceWarning,
       getRecipeById,
       selectRecipe,
       clearSelectedRecipe,
@@ -609,10 +799,13 @@ export function RecipeProvider({
       selectedRecipe,
       isLoading,
       isGenerating,
+      isRestoring,
       isStale,
       lastGeneratedAt,
       exposedError,
       exposedErrorCode,
+      persistenceWarningCode,
+      clearPersistenceWarning,
       getRecipeById,
       selectRecipe,
       clearSelectedRecipe,

@@ -51,10 +51,13 @@ export default function RecipeDiscoveryScreen() {
     selectRecipe,
     isLoading,
     isGenerating,
+    isRestoring,
     isStale,
     error,
     generateRecipes,
     clearError,
+    persistenceWarning,
+    clearPersistenceWarning,
   } = useRecipes();
 
   // Estados de control para persistencia asíncrona de comensales
@@ -334,6 +337,43 @@ export default function RecipeDiscoveryScreen() {
           </Card>
         )}
 
+        {/* 4.2. Aviso no bloqueante: recetas generadas pero no guardadas en el dispositivo */}
+        {persistenceWarning && (
+          <Card
+            variant="outlined"
+            style={styles.storageErrorCard}
+            testID="recipes-persistence-warning"
+            accessibilityRole="text"
+            accessibilityLabel={`Aviso: ${persistenceWarning}`}
+          >
+            <View
+              style={styles.storageErrorRow}
+              testID="recipes-persistence-warning-live"
+              accessibilityRole="alert"
+              accessibilityLiveRegion="polite"
+            >
+              <MaterialIcons name="cloud-off" size={20} color={colors.error} />
+              <View style={styles.storageErrorTextCol}>
+                <Text style={[styles.storageErrorTitle, typography.labelMd]}>
+                  Recetas no guardadas en este dispositivo
+                </Text>
+                <Text style={[styles.storageErrorDesc, typography.bodySm]}>
+                  {persistenceWarning}
+                </Text>
+              </View>
+              <Pressable
+                testID="recipes-dismiss-persistence-warning-button"
+                onPress={clearPersistenceWarning}
+                accessibilityRole="button"
+                accessibilityLabel="Descartar aviso de guardado"
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <MaterialIcons name="close" size={18} color={colors.textSecondary} />
+              </Pressable>
+            </View>
+          </Card>
+        )}
+
         {/* 4.2. Acción Principal: Generar recetas con IA */}
         <View style={styles.aiActionSection}>
           <Button
@@ -482,7 +522,7 @@ export default function RecipeDiscoveryScreen() {
         </View>
 
         {/* 6. Estados de Carga, Error o Lista */}
-        {isLoading || isGenerating ? (
+        {isLoading || isGenerating || isRestoring ? (
           <View
             style={styles.centerContainer}
             testID="recipes-loading-state"

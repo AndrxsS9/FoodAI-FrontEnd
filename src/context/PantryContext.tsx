@@ -28,6 +28,8 @@ import {
   PantryDeductionPlan,
   applyPantryDeduction,
   calculatePantryDeduction,
+  createEmptyPantryDeductionPlan,
+  evaluateRecipeConsumptionEligibility,
 } from '../utils/pantryConsumption';
 import {
   isRecipeDeducted,
@@ -141,8 +143,16 @@ export interface PantryContextValue {
     recipe: ClientRecipe,
     options?: { mealPlanDay?: number }
   ) => Promise<ConsumeRecipeResult>;
-  checkIfRecipeDeducted: (recipeOrKey: string | { id: string; instanceId?: string }) => Promise<boolean>;
+  checkIfRecipeDeducted: (recipeOrKey: RecipeDeductionLookup) => Promise<boolean>;
 }
+
+/**
+ * Identidad aceptada por checkIfRecipeDeducted. Una clave textual no transporta la
+ * bandera demo; solo un objeto con `isDemoFixture === true` se identifica como demo.
+ */
+export type RecipeDeductionLookup =
+  | string
+  | { id: string; instanceId?: string; isDemoFixture?: boolean };
 
 const PantryContext = createContext<PantryContextValue | undefined>(undefined);
 
@@ -450,7 +460,15 @@ export function PantryProvider({
 
 
   const checkIfRecipeDeducted = useCallback(
-    async (recipeOrKey: string | { id: string; instanceId?: string }): Promise<boolean> => {
+    async (recipeOrKey: RecipeDeductionLookup): Promise<boolean> => {
+      // Una receta explícitamente demo nunca puede haber descontado la despensa real
+      // (consumeRecipeIngredients la rechaza). Se responde sin tocar el ledger para que
+      // la consulta no dispare reconciliaciones ni escrituras; los registros heredados
+      // con esa clave se conservan intactos.
+      if (typeof recipeOrKey === 'object' && recipeOrKey !== null && recipeOrKey.isDemoFixture === true) {
+        return false;
+      }
+
       const targetKey =
         typeof recipeOrKey === 'string'
           ? recipeOrKey
@@ -483,6 +501,20 @@ export function PantryProvider({
       recipe: ClientRecipe,
       options?: { mealPlanDay?: number }
     ): Promise<ConsumeRecipeResult> => {
+      // 0. Guardia de autorización fail-closed: debe ejecutarse antes de derivar la clave,
+      // adquirir el mutex o tocar ledger/despensa. Recetas demo o inválidas no generan
+      // ningún efecto secundario persistente ni se clasifican como ya descontadas.
+      const eligibility = evaluateRecipeConsumptionEligibility(recipe);
+      if (!eligibility.eligible) {
+        return {
+          success: false,
+          alreadyDeducted: false,
+          plan: createEmptyPantryDeductionPlan(),
+          deductedCount: 0,
+          error: eligibility.error,
+        };
+      }
+
       const targetKey = getRecipeDeductionKey(recipe);
 
       // 1. Candado de concurrencia en memoria (in-flight mutex) por preparación activa

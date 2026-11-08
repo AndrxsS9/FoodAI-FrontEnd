@@ -249,7 +249,12 @@ export default function GuidedCookingScreen() {
   // Estado y consumo confirmado de despensa
   const [isDeducted, setIsDeducted] = useState(false);
   const [isDeducting, setIsDeducting] = useState(false);
-  const [deductionFeedback, setDeductionFeedback] = useState<string | null>(null);
+  const [deductionFeedback, setDeductionFeedback] = useState<{
+    tone: 'success' | 'error';
+    message: string;
+  } | null>(null);
+  // Solo una bandera explícita identifica la receta como demo; el bloqueo definitivo vive en PantryContext.
+  const isDemoRecipe = recipe?.isDemoFixture === true;
 
   useEffect(() => {
     let isMounted = true;
@@ -269,14 +274,17 @@ export default function GuidedCookingScreen() {
   }, [pantry, recipe]);
 
   const handleConfirmDeduction = async () => {
-    if (!recipe || isDeducted || isDeducting || !pantry) return;
+    if (!recipe || isDemoRecipe || isDeducted || isDeducting || !pantry) return;
     setIsDeducting(true);
     setDeductionFeedback(null);
     try {
       const result = await pantry.consumeRecipeIngredients(recipe);
       if (result.success) {
         setIsDeducted(true);
-        setDeductionFeedback(`¡Descuento exitoso! Se descontaron ${result.deductedCount} ingredientes.`);
+        setDeductionFeedback({
+          tone: 'success',
+          message: `¡Descuento exitoso! Se descontaron ${result.deductedCount} ingredientes.`,
+        });
         if (mealPlan && recipe.id) {
           await mealPlan.markRecipeCompleted(recipe.id);
         }
@@ -284,10 +292,16 @@ export default function GuidedCookingScreen() {
         if (result.alreadyDeducted) {
           setIsDeducted(true);
         }
-        setDeductionFeedback(result.error || 'No se pudo aplicar el descuento.');
+        setDeductionFeedback({
+          tone: 'error',
+          message: result.error || 'No se pudo aplicar el descuento.',
+        });
       }
     } catch {
-      setDeductionFeedback('Ocurrió un error al descontar ingredientes de la despensa.');
+      setDeductionFeedback({
+        tone: 'error',
+        message: 'Ocurrió un error al descontar ingredientes de la despensa.',
+      });
     } finally {
       setIsDeducting(false);
     }
@@ -704,7 +718,14 @@ export default function GuidedCookingScreen() {
                     </Text>
                   </View>
 
-                  {deductionPlan && deductionPlan.deductibleItems.length > 0 ? (
+                  {isDemoRecipe ? (
+                    <Text
+                      style={[styles.deductionEmptyText, typography.bodySm]}
+                      testID="cooking-demo-deduction-notice"
+                    >
+                      Esta es una receta de demostración: no descuenta ingredientes de tu despensa real.
+                    </Text>
+                  ) : deductionPlan && deductionPlan.deductibleItems.length > 0 ? (
                     <View style={styles.deductibleList} testID="cooking-deductible-list">
                       {deductionPlan.deductibleItems.map((item, idx) => (
                         <View key={`deduct-${idx}`} style={styles.deductibleRow} testID={`cooking-deduct-item-${idx}`}>
@@ -721,7 +742,7 @@ export default function GuidedCookingScreen() {
                     </Text>
                   )}
 
-                  {deductionPlan && deductionPlan.reviewItems.length > 0 && (
+                  {!isDemoRecipe && deductionPlan && deductionPlan.reviewItems.length > 0 && (
                     <View style={styles.reviewList} testID="cooking-review-list">
                       <Text style={[styles.reviewHeader, typography.labelSm]}>
                         Requieren revisión manual ({deductionPlan.reviewItems.length})
@@ -743,18 +764,37 @@ export default function GuidedCookingScreen() {
                     variant="secondary"
                     size="sm"
                     fullWidth
-                    disabled={isDeducting || isDeducted || !deductionPlan || deductionPlan.deductibleItems.length === 0}
+                    disabled={
+                      isDemoRecipe ||
+                      isDeducting ||
+                      isDeducted ||
+                      !deductionPlan ||
+                      deductionPlan.deductibleItems.length === 0
+                    }
                     onPress={handleConfirmDeduction}
                     leftIcon={<MaterialIcons name="done" size={18} color={colors.onPrimary} />}
                   />
                 </View>
               ) : null}
 
-              {Boolean(deductionFeedback) && (
+              {deductionFeedback?.tone === 'success' && (
                 <View style={styles.deductionSuccessBadge} testID="cooking-deduction-success">
                   <MaterialIcons name="task-alt" size={16} color={colors.primary} />
                   <Text style={[styles.deductionSuccessText, typography.labelSm]}>
-                    {deductionFeedback}
+                    {deductionFeedback.message}
+                  </Text>
+                </View>
+              )}
+
+              {deductionFeedback?.tone === 'error' && (
+                <View
+                  style={styles.deductionErrorBadge}
+                  testID="cooking-deduction-error"
+                  accessibilityRole="alert"
+                >
+                  <MaterialIcons name="error-outline" size={16} color={colors.error} />
+                  <Text style={[styles.deductionErrorText, typography.labelSm]}>
+                    {deductionFeedback.message}
                   </Text>
                 </View>
               )}
@@ -1258,6 +1298,22 @@ const createStyles = (colors: AppColors) =>
   },
   deductionSuccessText: {
     color: colors.primary,
+    fontWeight: '600',
+    flex: 1,
+  },
+  deductionErrorBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.errorContainer,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: radius.md,
+    width: '100%',
+    marginBottom: spacing.xs,
+  },
+  deductionErrorText: {
+    color: colors.onErrorContainer,
     fontWeight: '600',
     flex: 1,
   },

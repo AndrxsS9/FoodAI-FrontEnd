@@ -43,6 +43,73 @@ export interface PantryDeductionPlan {
   totalReviewCount: number;
 }
 
+// ==========================================
+// Autorización de consumo (defensa en profundidad)
+// ==========================================
+
+export const DEMO_RECIPE_CONSUMPTION_ERROR =
+  'Esta es una receta de demostración y no puede descontar ingredientes de tu despensa real.';
+
+export const INVALID_RECIPE_CONSUMPTION_ERROR =
+  'No fue posible verificar esta receta, por lo que no se descontaron ingredientes de tu despensa.';
+
+export type RecipeConsumptionEligibility =
+  | { eligible: true }
+  | { eligible: false; reason: 'demo_fixture' | 'invalid_recipe'; error: string };
+
+/**
+ * Determina, sin efectos secundarios, si una receta puede entrar al flujo de
+ * deducción de despensa y ledger de consumo.
+ *
+ * Política fail-closed: solo una receta estructuralmente válida marcada
+ * explícitamente con `isDemoFixture === false` es elegible. Una bandera ausente,
+ * no booleana o `true` se rechaza. No se infiere legitimidad por id, nombre o ruta.
+ */
+export function evaluateRecipeConsumptionEligibility(
+  recipe: unknown
+): RecipeConsumptionEligibility {
+  if (!recipe || typeof recipe !== 'object' || Array.isArray(recipe)) {
+    return { eligible: false, reason: 'invalid_recipe', error: INVALID_RECIPE_CONSUMPTION_ERROR };
+  }
+
+  const candidate = recipe as Record<string, unknown>;
+
+  if (candidate.isDemoFixture === true) {
+    return { eligible: false, reason: 'demo_fixture', error: DEMO_RECIPE_CONSUMPTION_ERROR };
+  }
+
+  if (candidate.isDemoFixture !== false) {
+    return { eligible: false, reason: 'invalid_recipe', error: INVALID_RECIPE_CONSUMPTION_ERROR };
+  }
+
+  const { id, instanceId } = candidate;
+  const hasValidId = typeof id === 'string' && id.trim().length > 0;
+  // Misma derivación que getRecipeDeductionKey: instanceId vacío/ausente recae en id.
+  const hasValidInstanceId =
+    instanceId === undefined ||
+    instanceId === null ||
+    instanceId === '' ||
+    (typeof instanceId === 'string' && instanceId.trim().length > 0);
+
+  if (!hasValidId || !hasValidInstanceId || !Array.isArray(candidate.ingredients)) {
+    return { eligible: false, reason: 'invalid_recipe', error: INVALID_RECIPE_CONSUMPTION_ERROR };
+  }
+
+  return { eligible: true };
+}
+
+/** Plan vacío y tipado para respuestas rechazadas que no deben calcular ni persistir nada. */
+export function createEmptyPantryDeductionPlan(): PantryDeductionPlan {
+  return {
+    items: [],
+    deductibleItems: [],
+    reviewItems: [],
+    canDeductAny: false,
+    totalDeductibleCount: 0,
+    totalReviewCount: 0,
+  };
+}
+
 export function calculatePantryDeduction(
   pantryIngredients: Ingredient[],
   recipeIngredients: RecipeIngredient[]

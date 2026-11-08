@@ -1,41 +1,74 @@
-import React from 'react';
-import { StyleSheet, Platform } from 'react-native';
+import React, { ComponentProps } from 'react';
+import { StyleSheet, Platform, View } from 'react-native';
 import { Tabs } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useTypography, useAppTheme } from '../../src/theme';
+import { radius, useTypography, useAppTheme } from '../../src/theme';
+
+type IconName = ComponentProps<typeof MaterialCommunityIcons>['name'];
+
+interface TabIconProps {
+  focused: boolean;
+  color: string;
+  activeIcon: IconName;
+  inactiveIcon: IconName;
+}
+
+/** Ícono de pestaña con indicador en forma de píldora para el estado activo. */
+function TabIcon({ focused, color, activeIcon, inactiveIcon }: TabIconProps) {
+  const { colors } = useAppTheme();
+  return (
+    <View
+      style={[
+        styles.iconPill,
+        focused && { backgroundColor: colors.primaryFixed },
+      ]}
+    >
+      <MaterialCommunityIcons
+        name={focused ? activeIcon : inactiveIcon}
+        size={22}
+        color={color}
+      />
+    </View>
+  );
+}
 
 export default function TabsLayout() {
   const insets = useSafeAreaInsets();
   const typography = useTypography();
   const { colors: activeColors } = useAppTheme();
+  const bottomInset = Platform.OS === 'ios' ? insets.bottom : Math.max(insets.bottom, 8);
 
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
+        // En Android, si la ventana se redimensiona con el teclado, la barra subiría sobre él
+        // y taparía las acciones de los formularios; se oculta mientras el teclado está abierto.
+        tabBarHideOnKeyboard: Platform.OS === 'android',
         tabBarActiveTintColor: activeColors.primary,
         tabBarInactiveTintColor: activeColors.outline,
         tabBarStyle: {
           backgroundColor: activeColors.surface,
-          borderTopColor: 'transparent',
-          borderTopWidth: 0,
-          height: 60 + (Platform.OS === 'ios' ? insets.bottom : Math.max(insets.bottom, 6)),
-          paddingBottom: Platform.OS === 'ios' ? insets.bottom : Math.max(insets.bottom, 6),
-          paddingTop: 6,
-          elevation: 12,
+          borderTopColor: activeColors.borderLight,
+          borderTopWidth: StyleSheet.hairlineWidth,
+          height: 66 + bottomInset,
+          paddingBottom: bottomInset,
+          paddingTop: 8,
+          elevation: 8,
           shadowColor: activeColors.cardShadow,
           shadowOffset: { width: 0, height: -2 },
-          shadowOpacity: 0.07,
-          shadowRadius: 12,
+          shadowOpacity: 0.05,
+          shadowRadius: 10,
         },
         tabBarLabelStyle: {
           ...typography.labelSm,
           fontSize: 11,
-          marginTop: 2,
+          letterSpacing: 0.2,
+          marginTop: 4,
         },
         tabBarItemStyle: {
-          paddingVertical: 2,
+          paddingVertical: 0,
         },
       }}
     >
@@ -45,11 +78,11 @@ export default function TabsLayout() {
           title: 'Inicio',
           tabBarAccessibilityLabel: 'Pestaña Inicio',
           tabBarIcon: ({ color, focused }) => (
-            <MaterialCommunityIcons
-              name={focused ? 'home-variant' : 'home-variant-outline'}
-              size={24}
+            <TabIcon
+              focused={focused}
               color={String(color)}
-              style={focused ? styles.activeIcon : undefined}
+              activeIcon="home-variant"
+              inactiveIcon="home-variant-outline"
             />
           ),
         }}
@@ -60,11 +93,11 @@ export default function TabsLayout() {
           title: 'Despensa',
           tabBarAccessibilityLabel: 'Pestaña Despensa',
           tabBarIcon: ({ color, focused }) => (
-            <MaterialCommunityIcons
-              name={focused ? 'fridge' : 'fridge-outline'}
-              size={24}
+            <TabIcon
+              focused={focused}
               color={String(color)}
-              style={focused ? styles.activeIcon : undefined}
+              activeIcon="fridge"
+              inactiveIcon="fridge-outline"
             />
           ),
         }}
@@ -75,11 +108,11 @@ export default function TabsLayout() {
           title: 'Plan',
           tabBarAccessibilityLabel: 'Pestaña Plan',
           tabBarIcon: ({ color, focused }) => (
-            <MaterialCommunityIcons
-              name={focused ? 'calendar-month' : 'calendar-month-outline'}
-              size={24}
+            <TabIcon
+              focused={focused}
               color={String(color)}
-              style={focused ? styles.activeIcon : undefined}
+              activeIcon="calendar-month"
+              inactiveIcon="calendar-month-outline"
             />
           ),
         }}
@@ -90,11 +123,11 @@ export default function TabsLayout() {
           title: 'Perfil',
           tabBarAccessibilityLabel: 'Pestaña Perfil',
           tabBarIcon: ({ color, focused }) => (
-            <MaterialCommunityIcons
-              name={focused ? 'account-circle' : 'account-circle-outline'}
-              size={24}
+            <TabIcon
+              focused={focused}
               color={String(color)}
-              style={focused ? styles.activeIcon : undefined}
+              activeIcon="account-circle"
+              inactiveIcon="account-circle-outline"
             />
           ),
         }}
@@ -104,7 +137,11 @@ export default function TabsLayout() {
 }
 
 const styles = StyleSheet.create({
-  activeIcon: {
-    transform: [{ scale: 1.05 }],
+  iconPill: {
+    width: 56,
+    height: 30,
+    borderRadius: radius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

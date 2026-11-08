@@ -11,9 +11,8 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import {
-  CATEGORY_CONFIG,
   INGREDIENT_CATEGORIES,
   INGREDIENT_UNITS,
   INGREDIENT_UNIT_LABELS,
@@ -34,6 +33,7 @@ import {
   useAppTheme,
   useThemeStyles,
 } from '../../theme';
+import { getCategoryVisual } from '../pantry/categoryVisuals';
 
 /** Área táctil mínima cómoda para controles interactivos (44 pt / dp). */
 export const MIN_TOUCH_TARGET = 44;
@@ -60,14 +60,14 @@ export function DetectedIngredientCard({
   onRemove,
 }: DetectedIngredientCardProps) {
   const typography = useTypography();
-  const { colors } = useAppTheme();
+  const { colors, activeColorScheme } = useAppTheme();
   const styles = useThemeStyles(createStyles);
   const [isEditingDetails, setIsEditingDetails] = useState(false);
   const [quantityInput, setQuantityInput] = useState(
     item.quantity !== null ? String(item.quantity) : ''
   );
 
-  const categoryCfg = CATEGORY_CONFIG[item.category] || CATEGORY_CONFIG['Otros'];
+  const categoryVisual = getCategoryVisual(item.category, activeColorScheme);
   const isCompatibleWithDuplicate = item.duplicateMatch
     ? areUnitsCompatibleForAddition(item.duplicateMatch.unit, item.unit)
     : true;
@@ -105,7 +105,7 @@ export function DetectedIngredientCard({
       ]}
       testID={`detected-card-${item.id}`}
     >
-      {/* Header: Checkbox, Name, Status Badge, Remove Action */}
+      {/* Encabezado: selección, nombre editable y exclusión */}
       <View style={styles.headerRow}>
         <Pressable
           testID={`detected-checkbox-${item.id}`}
@@ -117,7 +117,7 @@ export function DetectedIngredientCard({
         >
           <View style={[styles.checkbox, item.isSelected && styles.checkboxActive]}>
             {item.isSelected && (
-              <MaterialIcons name="check" size={16} color={colors.onPrimary} />
+              <MaterialCommunityIcons name="check" size={16} color={colors.onPrimary} />
             )}
           </View>
         </Pressable>
@@ -125,7 +125,7 @@ export function DetectedIngredientCard({
         <View style={styles.nameContainer}>
           <TextInput
             testID={`detected-name-input-${item.id}`}
-            style={[styles.nameInput, typography.headlineMd]}
+            style={[styles.nameInput, typography.bodyLg]}
             value={item.name}
             onChangeText={(val) => onChangeName(item.id, val)}
             placeholder="Nombre del alimento"
@@ -139,30 +139,25 @@ export function DetectedIngredientCard({
           accessibilityRole="button"
           accessibilityLabel={`Excluir ${item.name}`}
           onPress={() => onRemove(item.id)}
-          style={styles.removeButton}
+          style={({ pressed }) => [styles.removeButton, pressed && styles.removeButtonPressed]}
         >
-          <MaterialIcons name="delete-outline" size={22} color={colors.outline} />
+          <MaterialCommunityIcons name="trash-can-outline" size={20} color={colors.outline} />
         </Pressable>
       </View>
 
-      {/* Badges Row: Needs review notice & Category badge */}
+      {/* Insignias: categoría, revisión pendiente y coincidencia en despensa */}
       <View style={styles.badgesRow}>
-        <View
-          style={[
-            styles.categoryPill,
-            { backgroundColor: categoryCfg.bgColor },
-          ]}
-        >
-          <MaterialIcons
-            name={categoryCfg.icon as any}
+        <View style={[styles.badge, { backgroundColor: categoryVisual.bgColor }]}>
+          <MaterialCommunityIcons
+            name={categoryVisual.icon}
             size={14}
-            color={categoryCfg.color}
+            color={categoryVisual.color}
           />
           <Text
             style={[
-              styles.categoryPillText,
+              styles.badgeText,
               typography.labelSm,
-              { color: categoryCfg.color },
+              { color: categoryVisual.color },
             ]}
           >
             {item.category}
@@ -170,9 +165,12 @@ export function DetectedIngredientCard({
         </View>
 
         {item.needsReview && (
-          <View style={styles.reviewBadge} testID={`detected-review-badge-${item.id}`}>
-            <MaterialIcons name="help-outline" size={14} color={warningTone} />
-            <Text style={[styles.reviewBadgeText, typography.labelSm]}>
+          <View
+            style={[styles.badge, styles.reviewBadge]}
+            testID={`detected-review-badge-${item.id}`}
+          >
+            <MaterialCommunityIcons name="help-circle-outline" size={14} color={warningTone} />
+            <Text style={[styles.badgeText, typography.labelSm, styles.reviewBadgeText]}>
               {item.quantity === null ? 'Cantidad requerida' : 'Confirmar datos'}
             </Text>
           </View>
@@ -181,20 +179,22 @@ export function DetectedIngredientCard({
         {item.duplicateMatch && (
           <View
             style={[
+              styles.badge,
               styles.duplicateBadge,
               isPossibleDuplicate && styles.duplicateBadgePossible,
             ]}
             testID={`detected-duplicate-badge-${item.id}`}
           >
-            <MaterialIcons
-              name={isPossibleDuplicate ? 'help-outline' : 'sync'}
+            <MaterialCommunityIcons
+              name={isPossibleDuplicate ? 'help-circle-outline' : 'sync'}
               size={14}
               color={isPossibleDuplicate ? warningTone : colors.primary}
             />
             <Text
               style={[
-                styles.duplicateBadgeText,
+                styles.badgeText,
                 typography.labelSm,
+                styles.duplicateBadgeText,
                 isPossibleDuplicate && { color: warningTone },
               ]}
             >
@@ -204,107 +204,109 @@ export function DetectedIngredientCard({
         )}
       </View>
 
-      {/* Sección de cantidad: etiqueta legible en una línea, estado y campo a lo ancho */}
-      <View style={styles.fieldSection} testID={`detected-quantity-section-${item.id}`}>
-        <View style={styles.fieldLabelRow}>
-          <Text style={[styles.fieldLabel, typography.labelMd]}>Cantidad</Text>
-          <Text
-            testID={`detected-quantity-hint-${item.id}`}
+      {/* Panel de datos: cantidad y unidad agrupadas sobre una superficie suave */}
+      <View style={styles.detailsPanel}>
+        <View style={styles.fieldSection} testID={`detected-quantity-section-${item.id}`}>
+          <View style={styles.fieldLabelRow}>
+            <Text style={[styles.fieldLabel, typography.labelMd]}>Cantidad</Text>
+            <Text
+              testID={`detected-quantity-hint-${item.id}`}
+              style={[
+                styles.fieldHint,
+                typography.labelSm,
+                item.quantity === null && styles.fieldHintRequired,
+              ]}
+            >
+              {item.quantity === null ? 'Obligatoria' : 'Estimada'}
+            </Text>
+          </View>
+          <View
             style={[
-              styles.fieldHint,
-              typography.labelSm,
-              item.quantity === null && styles.fieldHintRequired,
+              styles.quantityInputContainer,
+              hasQuantityError && styles.quantityInputContainerError,
             ]}
           >
-            {item.quantity === null ? 'Obligatoria' : 'Estimada'}
-          </Text>
+            <TextInput
+              testID={`detected-quantity-input-${item.id}`}
+              style={[styles.quantityInput, typography.bodyLg]}
+              value={quantityInput}
+              onChangeText={handleQuantityTextChange}
+              placeholder="Ej. 2"
+              placeholderTextColor={colors.outline}
+              keyboardType="decimal-pad"
+              accessibilityLabel={`Cantidad para ${item.name}`}
+            />
+            <Text
+              testID={`detected-quantity-unit-suffix-${item.id}`}
+              style={[styles.quantityUnitSuffix, typography.labelMd]}
+              numberOfLines={1}
+              importantForAccessibility="no"
+            >
+              {INGREDIENT_UNIT_NAMES[item.unit]}
+            </Text>
+          </View>
         </View>
-        <View
-          style={[
-            styles.quantityInputContainer,
-            hasQuantityError && styles.quantityInputContainerError,
-          ]}
-        >
-          <TextInput
-            testID={`detected-quantity-input-${item.id}`}
-            style={[styles.quantityInput, typography.bodyMd]}
-            value={quantityInput}
-            onChangeText={handleQuantityTextChange}
-            placeholder="Ej. 2"
-            placeholderTextColor={colors.outline}
-            keyboardType="decimal-pad"
-            accessibilityLabel={`Cantidad para ${item.name}`}
-          />
-          <Text
-            testID={`detected-quantity-unit-suffix-${item.id}`}
-            style={[styles.quantityUnitSuffix, typography.bodySm]}
-            numberOfLines={1}
-            importantForAccessibility="no"
+
+        {/* Sección de unidad: opciones en cuadrícula adaptable, sin desplazamiento horizontal oculto */}
+        <View style={styles.fieldSection} testID={`detected-unit-section-${item.id}`}>
+          <Text style={[styles.fieldLabel, typography.labelMd]}>Unidad</Text>
+          <View
+            style={styles.unitOptionsWrap}
+            testID={`detected-unit-options-${item.id}`}
+            accessibilityRole="radiogroup"
+            accessibilityLabel={`Unidad de medida para ${item.name}`}
           >
-            {INGREDIENT_UNIT_NAMES[item.unit]}
-          </Text>
-        </View>
-      </View>
-
-      {/* Sección de unidad: opciones en cuadrícula adaptable, sin desplazamiento horizontal oculto */}
-      <View style={styles.fieldSection} testID={`detected-unit-section-${item.id}`}>
-        <Text style={[styles.fieldLabel, typography.labelMd]}>Unidad</Text>
-        <View
-          style={styles.unitOptionsWrap}
-          testID={`detected-unit-options-${item.id}`}
-          accessibilityRole="radiogroup"
-          accessibilityLabel={`Unidad de medida para ${item.name}`}
-        >
-          {INGREDIENT_UNITS.map((u) => {
-            const isSelected = item.unit === u;
-            return (
-              <Pressable
-                key={u}
-                testID={`detected-unit-${item.id}-${u}`}
-                style={({ pressed }) => [
-                  styles.unitChip,
-                  isSelected && styles.unitChipSelected,
-                  pressed && !isSelected && styles.unitChipPressed,
-                ]}
-                onPress={() => onChangeUnit(item.id, u)}
-                accessibilityRole="button"
-                accessibilityLabel={`Unidad ${INGREDIENT_UNIT_NAMES[u]}`}
-                accessibilityState={{ selected: isSelected }}
-              >
-                {isSelected && (
-                  <MaterialIcons name="check" size={14} color={colors.onPrimary} />
-                )}
-                <Text
-                  style={[
-                    styles.unitChipText,
-                    typography.labelMd,
-                    isSelected && styles.unitChipTextSelected,
+            {INGREDIENT_UNITS.map((u) => {
+              const isSelected = item.unit === u;
+              return (
+                <Pressable
+                  key={u}
+                  testID={`detected-unit-${item.id}-${u}`}
+                  style={({ pressed }) => [
+                    styles.unitChip,
+                    isSelected && styles.unitChipSelected,
+                    pressed && !isSelected && styles.unitChipPressed,
                   ]}
+                  onPress={() => onChangeUnit(item.id, u)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Unidad ${INGREDIENT_UNIT_NAMES[u]}`}
+                  accessibilityState={{ selected: isSelected }}
                 >
-                  {INGREDIENT_UNIT_LABELS[u]}
-                </Text>
-              </Pressable>
-            );
-          })}
+                  {isSelected && (
+                    <MaterialCommunityIcons name="check" size={14} color={colors.onPrimary} />
+                  )}
+                  <Text
+                    style={[
+                      styles.unitChipText,
+                      typography.labelMd,
+                      isSelected && styles.unitChipTextSelected,
+                    ]}
+                  >
+                    {INGREDIENT_UNIT_LABELS[u]}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
         </View>
       </View>
 
-      {/* Error message when quantity is missing */}
+      {/* Aviso cuando falta la cantidad */}
       {hasQuantityError && (
         <View style={styles.errorNotice} testID={`detected-quantity-error-${item.id}`}>
-          <MaterialIcons name="error" size={16} color={colors.error} />
+          <MaterialCommunityIcons name="alert-circle-outline" size={16} color={colors.error} />
           <Text style={[styles.errorNoticeText, typography.bodySm]}>
             Ingresa una cantidad mayor a 0 para poder guardar este alimento.
           </Text>
         </View>
       )}
 
-      {/* Duplicate Resolution Section */}
+      {/* Resolución de duplicados */}
       {item.duplicateMatch && (
         <View style={styles.duplicateSection} testID={`detected-duplicate-box-${item.id}`}>
           <View style={styles.duplicateInfoRow}>
-            <MaterialIcons
-              name={isPossibleDuplicate ? 'help-outline' : 'info-outline'}
+            <MaterialCommunityIcons
+              name={isPossibleDuplicate ? 'help-circle-outline' : 'information-outline'}
               size={18}
               color={isPossibleDuplicate ? warningTone : colors.primary}
             />
@@ -334,7 +336,7 @@ export function DetectedIngredientCard({
 
           {!isCompatibleWithDuplicate && (
             <View style={styles.incompatibleNotice} testID={`detected-incompatible-notice-${item.id}`}>
-              <MaterialIcons name="info" size={14} color={warningTone} />
+              <MaterialCommunityIcons name="information-outline" size={14} color={warningTone} />
               <Text style={[styles.incompatibleNoticeText, typography.bodySm]}>
                 Unidades no compatibles ({INGREDIENT_UNIT_LABELS[item.unit]} y {INGREDIENT_UNIT_LABELS[item.duplicateMatch.unit]}). No se pueden sumar directamente.
               </Text>
@@ -361,8 +363,8 @@ export function DetectedIngredientCard({
                 disabled: !isCompatibleWithDuplicate,
               }}
             >
-              <MaterialIcons
-                name="add-circle-outline"
+              <MaterialCommunityIcons
+                name="plus-circle-multiple-outline"
                 size={16}
                 color={
                   !isCompatibleWithDuplicate
@@ -375,7 +377,7 @@ export function DetectedIngredientCard({
               <Text
                 style={[
                   styles.actionOptionText,
-                  typography.labelSm,
+                  typography.labelMd,
                   !isCompatibleWithDuplicate && { color: colors.outline },
                   item.action === 'add_to_existing' &&
                     styles.actionOptionTextActive,
@@ -395,8 +397,8 @@ export function DetectedIngredientCard({
               accessibilityRole="radio"
               accessibilityState={{ checked: item.action === 'create' }}
             >
-              <MaterialIcons
-                name="fiber-new"
+              <MaterialCommunityIcons
+                name="plus-circle-outline"
                 size={16}
                 color={
                   item.action === 'create'
@@ -407,7 +409,7 @@ export function DetectedIngredientCard({
               <Text
                 style={[
                   styles.actionOptionText,
-                  typography.labelSm,
+                  typography.labelMd,
                   item.action === 'create' && styles.actionOptionTextActive,
                 ]}
               >
@@ -418,7 +420,7 @@ export function DetectedIngredientCard({
         </View>
       )}
 
-      {/* Expandable Category Customization */}
+      {/* Personalización de categoría desplegable */}
       <Pressable
         testID={`detected-category-toggle-${item.id}`}
         style={styles.expandDetailsButton}
@@ -427,11 +429,12 @@ export function DetectedIngredientCard({
         accessibilityLabel="Cambiar categoría de alimento"
         accessibilityState={{ expanded: isEditingDetails }}
       >
-        <Text style={[styles.expandDetailsText, typography.labelSm]}>
+        <MaterialCommunityIcons name="tag-outline" size={16} color={colors.primary} />
+        <Text style={[styles.expandDetailsText, typography.labelMd]}>
           {isEditingDetails ? 'Ocultar categorías' : 'Cambiar categoría'}
         </Text>
-        <MaterialIcons
-          name={isEditingDetails ? 'expand-less' : 'expand-more'}
+        <MaterialCommunityIcons
+          name={isEditingDetails ? 'chevron-up' : 'chevron-down'}
           size={18}
           color={colors.primary}
         />
@@ -443,7 +446,7 @@ export function DetectedIngredientCard({
           <View style={styles.categoryChipsWrap}>
             {INGREDIENT_CATEGORIES.map((cat) => {
               const isSelected = item.category === cat;
-              const cfg = CATEGORY_CONFIG[cat];
+              const visual = getCategoryVisual(cat, activeColorScheme);
               return (
                 <Pressable
                   key={cat}
@@ -451,8 +454,8 @@ export function DetectedIngredientCard({
                   style={[
                     styles.categorySelectChip,
                     isSelected && {
-                      backgroundColor: cfg.bgColor,
-                      borderColor: cfg.color,
+                      backgroundColor: visual.bgColor,
+                      borderColor: visual.color,
                     },
                   ]}
                   onPress={() => onChangeCategory(item.id, cat)}
@@ -460,16 +463,16 @@ export function DetectedIngredientCard({
                   accessibilityLabel={`Categoría ${cat}`}
                   accessibilityState={{ selected: isSelected }}
                 >
-                  <MaterialIcons
-                    name={cfg.icon as any}
-                    size={14}
-                    color={isSelected ? cfg.color : colors.textSecondary}
+                  <MaterialCommunityIcons
+                    name={visual.icon}
+                    size={16}
+                    color={isSelected ? visual.color : colors.textSecondary}
                   />
                   <Text
                     style={[
                       styles.categorySelectChipText,
-                      typography.labelSm,
-                      isSelected && { color: cfg.color, fontWeight: '700' },
+                      typography.labelMd,
+                      isSelected && { color: visual.color, fontWeight: '700' },
                     ]}
                   >
                     {cat}
@@ -488,30 +491,34 @@ const createStyles = (colors: AppColors) =>
   StyleSheet.create({
     cardContainer: {
       backgroundColor: colors.surface,
-      borderRadius: radius.lg,
+      borderRadius: radius.lg + 4,
       borderWidth: 1,
       borderColor: colors.border,
-      padding: spacing.md,
-      gap: spacing.md,
+      paddingHorizontal: spacing.md,
+      paddingTop: spacing.sm,
+      gap: spacing.sm + 4,
       shadowColor: colors.cardShadow,
-      shadowOffset: { width: 0, height: 1 },
-      shadowOpacity: 0.05,
-      shadowRadius: 3,
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.06,
+      shadowRadius: 12,
       elevation: 2,
+      overflow: 'hidden',
     },
     cardContainerDeselected: {
-      opacity: 0.5,
+      opacity: 0.55,
       backgroundColor: colors.surfaceContainerLow,
+      shadowOpacity: 0,
+      elevation: 0,
     },
     cardContainerError: {
       borderColor: colors.error,
-      backgroundColor: colors.errorContainer,
+      borderWidth: 1.5,
     },
     headerRow: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: spacing.xs,
-      marginHorizontal: -spacing.xs,
+      marginHorizontal: -spacing.sm,
     },
     checkboxTouchArea: {
       width: MIN_TOUCH_TARGET,
@@ -522,7 +529,7 @@ const createStyles = (colors: AppColors) =>
     checkbox: {
       width: 24,
       height: 24,
-      borderRadius: radius.sm,
+      borderRadius: radius.md - 1,
       borderWidth: 2,
       borderColor: colors.outline,
       alignItems: 'center',
@@ -530,8 +537,8 @@ const createStyles = (colors: AppColors) =>
       backgroundColor: colors.surface,
     },
     checkboxActive: {
-      backgroundColor: colors.primary,
-      borderColor: colors.primary,
+      backgroundColor: colors.primaryAction,
+      borderColor: colors.primaryAction,
     },
     nameContainer: {
       flex: 1,
@@ -542,8 +549,6 @@ const createStyles = (colors: AppColors) =>
       fontWeight: '700',
       minHeight: MIN_TOUCH_TARGET,
       paddingVertical: spacing.xs,
-      borderBottomWidth: 1,
-      borderBottomColor: colors.border,
     },
     removeButton: {
       width: MIN_TOUCH_TARGET,
@@ -552,54 +557,50 @@ const createStyles = (colors: AppColors) =>
       justifyContent: 'center',
       borderRadius: radius.full,
     },
+    removeButtonPressed: {
+      backgroundColor: colors.surfaceContainer,
+    },
     badgesRow: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: spacing.xs,
       flexWrap: 'wrap',
+      marginTop: -spacing.xs,
     },
-    categoryPill: {
+    badge: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: 4,
-      paddingHorizontal: spacing.sm,
+      paddingHorizontal: spacing.sm + 2,
       paddingVertical: 4,
       borderRadius: radius.full,
     },
-    categoryPillText: {
-      fontWeight: '600',
+    badgeText: {
+      fontWeight: '700',
     },
     reviewBadge: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 4,
       backgroundColor: colors.demoBadgeBackground,
-      paddingHorizontal: spacing.sm,
-      paddingVertical: 4,
-      borderRadius: radius.full,
     },
     reviewBadgeText: {
       color: colors.demoBadgeText,
-      fontWeight: '600',
     },
     duplicateBadge: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 4,
-      backgroundColor: colors.surfaceContainerLow,
-      paddingHorizontal: spacing.sm,
-      paddingVertical: 4,
-      borderRadius: radius.full,
+      backgroundColor: colors.primaryFixed,
     },
     duplicateBadgePossible: {
       backgroundColor: colors.surfaceContainer,
     },
     duplicateBadgeText: {
       color: colors.primary,
-      fontWeight: '700',
+    },
+    detailsPanel: {
+      backgroundColor: colors.surfaceContainerLow,
+      borderRadius: radius.lg,
+      padding: spacing.sm + 4,
+      gap: spacing.md,
     },
     fieldSection: {
-      gap: spacing.xs,
+      gap: spacing.sm,
     },
     fieldLabelRow: {
       flexDirection: 'row',
@@ -613,30 +614,29 @@ const createStyles = (colors: AppColors) =>
     },
     fieldHint: {
       color: colors.textSecondary,
-      backgroundColor: colors.surfaceContainer,
+      backgroundColor: colors.surfaceContainerHigh,
       paddingHorizontal: spacing.sm,
       paddingVertical: 2,
       borderRadius: radius.full,
       overflow: 'hidden',
     },
     fieldHintRequired: {
-      color: colors.error,
+      color: colors.onErrorContainer,
       backgroundColor: colors.errorContainer,
     },
     quantityInputContainer: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: spacing.sm,
-      minHeight: 48,
-      borderWidth: 1,
-      borderColor: colors.border,
-      borderRadius: radius.md,
-      backgroundColor: colors.surfaceContainerLow,
+      minHeight: 50,
+      borderWidth: 1.5,
+      borderColor: colors.borderLight,
+      borderRadius: radius.md + 4,
+      backgroundColor: colors.surface,
       paddingHorizontal: spacing.md,
     },
     quantityInputContainerError: {
       borderColor: colors.error,
-      backgroundColor: colors.errorContainer,
     },
     quantityInput: {
       flex: 1,
@@ -644,7 +644,7 @@ const createStyles = (colors: AppColors) =>
       minHeight: 46,
       paddingVertical: spacing.xs,
       color: colors.textPrimary,
-      fontWeight: '600',
+      fontWeight: '700',
     },
     quantityUnitSuffix: {
       flexShrink: 1,
@@ -655,25 +655,24 @@ const createStyles = (colors: AppColors) =>
     unitOptionsWrap: {
       flexDirection: 'row',
       flexWrap: 'wrap',
-      gap: spacing.sm,
+      gap: spacing.xs + 2,
     },
     unitChip: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
       gap: 4,
-      minWidth: 56,
+      minWidth: 52,
       minHeight: MIN_TOUCH_TARGET,
-      paddingHorizontal: spacing.md,
-      paddingVertical: spacing.xs,
-      borderRadius: radius.full,
+      paddingHorizontal: spacing.sm + 6,
+      borderRadius: radius.md + 4,
       borderWidth: 1,
       borderColor: colors.border,
-      backgroundColor: colors.surfaceContainerLow,
+      backgroundColor: colors.surface,
     },
     unitChipSelected: {
-      backgroundColor: colors.primary,
-      borderColor: colors.primary,
+      backgroundColor: colors.primaryAction,
+      borderColor: colors.primaryAction,
     },
     unitChipPressed: {
       backgroundColor: colors.surfaceContainerHigh,
@@ -690,26 +689,23 @@ const createStyles = (colors: AppColors) =>
       alignItems: 'center',
       gap: spacing.xs,
       backgroundColor: colors.errorContainer,
-      paddingVertical: spacing.xs,
-      paddingHorizontal: spacing.sm,
-      borderRadius: radius.md,
-      marginTop: -spacing.xs,
+      paddingVertical: spacing.sm,
+      paddingHorizontal: spacing.sm + 4,
+      borderRadius: radius.md + 4,
     },
     errorNoticeText: {
-      color: colors.error,
+      color: colors.onErrorContainer,
       flex: 1,
     },
     duplicateSection: {
       backgroundColor: colors.surfaceContainerLow,
-      borderRadius: radius.md,
-      padding: spacing.sm,
-      gap: spacing.xs,
-      borderWidth: 1,
-      borderColor: colors.borderLight,
+      borderRadius: radius.lg,
+      padding: spacing.sm + 4,
+      gap: spacing.sm,
     },
     duplicateInfoRow: {
       flexDirection: 'row',
-      alignItems: 'center',
+      alignItems: 'flex-start',
       gap: spacing.xs,
     },
     duplicateText: {
@@ -721,7 +717,6 @@ const createStyles = (colors: AppColors) =>
       flexDirection: 'row',
       flexWrap: 'wrap',
       gap: spacing.xs,
-      marginTop: 4,
     },
     actionOptionButton: {
       flexGrow: 1,
@@ -729,18 +724,18 @@ const createStyles = (colors: AppColors) =>
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
-      gap: 4,
+      gap: 6,
       minHeight: MIN_TOUCH_TARGET,
       paddingVertical: spacing.xs,
       paddingHorizontal: spacing.sm,
-      borderRadius: radius.sm,
-      borderWidth: 1,
+      borderRadius: radius.md + 4,
+      borderWidth: 1.5,
       borderColor: colors.border,
       backgroundColor: colors.surface,
     },
     actionOptionButtonActive: {
       borderColor: colors.primary,
-      backgroundColor: colors.surfaceContainer,
+      backgroundColor: colors.primaryFixed,
     },
     actionOptionButtonDisabled: {
       opacity: 0.45,
@@ -748,7 +743,6 @@ const createStyles = (colors: AppColors) =>
     },
     actionOptionText: {
       color: colors.textSecondary,
-      fontWeight: '600',
     },
     actionOptionTextActive: {
       color: colors.primary,
@@ -758,12 +752,11 @@ const createStyles = (colors: AppColors) =>
       flexDirection: 'row',
       alignItems: 'center',
       gap: 6,
-      backgroundColor: colors.surfaceContainer,
-      padding: spacing.xs,
-      borderRadius: radius.sm,
+      backgroundColor: colors.surface,
+      padding: spacing.sm,
+      borderRadius: radius.md,
       borderWidth: 1,
       borderColor: colors.border,
-      marginTop: 4,
     },
     incompatibleNoticeText: {
       color: colors.textSecondary,
@@ -773,17 +766,18 @@ const createStyles = (colors: AppColors) =>
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
-      gap: 4,
+      gap: 6,
       minHeight: MIN_TOUCH_TARGET,
+      marginHorizontal: -spacing.md,
       borderTopWidth: 1,
       borderTopColor: colors.borderLight,
     },
     expandDetailsText: {
       color: colors.primary,
-      fontWeight: '600',
     },
     categoryPickerContainer: {
       gap: spacing.sm,
+      paddingBottom: spacing.md,
     },
     categoryChipsWrap: {
       flexDirection: 'row',
@@ -800,7 +794,7 @@ const createStyles = (colors: AppColors) =>
       borderRadius: radius.full,
       borderWidth: 1,
       borderColor: colors.border,
-      backgroundColor: colors.surfaceContainerLow,
+      backgroundColor: colors.surface,
     },
     categorySelectChipText: {
       color: colors.textPrimary,

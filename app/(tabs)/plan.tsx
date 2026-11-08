@@ -22,7 +22,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { MaterialIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Button, Card, Header } from '../../src/components/common';
 import { useBudget } from '../../src/context/BudgetContext';
@@ -151,7 +151,7 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             style={styles.avatarButton}
           >
-            <MaterialIcons name="person" size={20} color={colors.onPrimary} />
+            <MaterialCommunityIcons name="account-outline" size={20} color={colors.onPrimary} />
           </Pressable>
         }
       />
@@ -161,59 +161,62 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
         showsVerticalScrollIndicator={false}
         testID="plan-scroll-view"
       >
-        {/* 2. Franja de resumen de parámetros activos (Stitch design) */}
-        <View style={styles.summaryStrip} testID="plan-summary-strip">
-          <View style={styles.summaryItem}>
-            <MaterialIcons name="savings" size={18} color={colors.primary} />
-            <View>
-              <Text style={[styles.summaryLabel, typography.labelSm]}>Presupuesto</Text>
-              <Text style={[styles.summaryValue, typography.labelMd]}>
-                {formatCopCurrency(budget)}
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.summaryDivider} />
-
-          <View style={styles.summaryItem}>
-            <MaterialIcons name="group" size={18} color={colors.primary} />
-            <View>
-              <Text style={[styles.summaryLabel, typography.labelSm]}>Porciones</Text>
-              <Text style={[styles.summaryValue, typography.labelMd]}>
-                {servings} {servings === 1 ? 'persona' : 'personas'}
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.summaryDivider} />
-
-          <View style={styles.summaryItem}>
-            <MaterialIcons name="timer" size={18} color={colors.primary} />
-            <View>
-              <Text style={[styles.summaryLabel, typography.labelSm]}>Tiempo máx.</Text>
-              <Text style={[styles.summaryValue, typography.labelMd]}>
-                {maxMinutes ? `${maxMinutes} min` : 'Sin límite'}
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.summaryDivider} />
-
-          <View style={styles.summaryItem}>
-            <MaterialIcons name="kitchen" size={18} color={colors.primary} />
-            <View>
-              <Text style={[styles.summaryLabel, typography.labelSm]}>Despensa</Text>
-              <Text style={[styles.summaryValue, typography.labelMd]}>
-                {ingredients.length} {ingredients.length === 1 ? 'ítem' : 'ítems'}
-              </Text>
-            </View>
+        {/* 2. Resumen de parámetros activos en cuadrícula 2×2 */}
+        <View style={styles.summaryCard} testID="plan-summary-strip">
+          <Text style={[styles.summaryEyebrow, typography.labelSm]}>TU PLAN SE BASA EN</Text>
+          <View style={styles.summaryGrid}>
+            {[
+              {
+                key: 'budget',
+                icon: 'piggy-bank-outline' as const,
+                tint: colors.tertiaryFixed,
+                iconColor: colors.onTertiaryFixed,
+                label: 'Presupuesto',
+                value: formatCopCurrency(budget),
+              },
+              {
+                key: 'servings',
+                icon: 'account-group-outline' as const,
+                tint: colors.primaryFixed,
+                iconColor: colors.primary,
+                label: 'Porciones',
+                value: `${servings} ${servings === 1 ? 'persona' : 'personas'}`,
+              },
+              {
+                key: 'time',
+                icon: 'timer-outline' as const,
+                tint: colors.secondaryFixed,
+                iconColor: colors.onSecondaryFixed,
+                label: 'Tiempo máx.',
+                value: maxMinutes ? `${maxMinutes} min` : 'Sin límite',
+              },
+              {
+                key: 'pantry',
+                icon: 'fridge-outline' as const,
+                tint: colors.successContainer,
+                iconColor: colors.success,
+                label: 'Despensa',
+                value: `${ingredients.length} ${ingredients.length === 1 ? 'ítem' : 'ítems'}`,
+              },
+            ].map((tile) => (
+              <View key={tile.key} style={styles.summaryTile} testID={`plan-summary-${tile.key}`}>
+                <View style={[styles.summaryIconBox, { backgroundColor: tile.tint }]}>
+                  <MaterialCommunityIcons name={tile.icon} size={18} color={tile.iconColor} />
+                </View>
+                {/* Sin numberOfLines: el valor (p. ej. «$250.000 COP») envuelve en lugar de truncarse */}
+                <View style={styles.summaryTextCol}>
+                  <Text style={[styles.summaryLabel, typography.labelSm]}>{tile.label}</Text>
+                  <Text style={[styles.summaryValue, typography.labelLg]}>{tile.value}</Text>
+                </View>
+              </View>
+            ))}
           </View>
         </View>
 
         {/* 3. Banner de alerta de plan obsoleto (isStale) */}
         {Boolean(plan && isStale) && (
           <View style={styles.staleBanner} testID="plan-stale-banner">
-            <MaterialIcons name="info" size={20} color={colors.onErrorContainer} />
+            <MaterialCommunityIcons name="information-outline" size={20} color={colors.onErrorContainer} />
             <View style={styles.staleTextWrapper}>
               <Text style={[styles.staleTitle, typography.labelMd]}>
                 Cambios en tu despensa o presupuesto
@@ -229,7 +232,7 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
         {Boolean(error) && (
           <Card variant="outlined" style={styles.errorCard} testID="plan-error-banner">
             <View style={styles.errorHeaderRow}>
-              <MaterialIcons name="error-outline" size={24} color={colors.secondary} />
+              <MaterialCommunityIcons name="alert-circle-outline" size={24} color={colors.secondary} />
               <Text style={[styles.errorTitle, typography.headlineMd]}>
                 No pudimos generar el plan
               </Text>
@@ -271,7 +274,7 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
               variant="outline"
               size="sm"
               onPress={handleCancelGeneration}
-              leftIcon={<MaterialIcons name="close" size={16} color={colors.primary} />}
+              leftIcon={<MaterialCommunityIcons name="close" size={16} color={colors.primary} />}
             />
           </Card>
         )}
@@ -280,7 +283,7 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
         {!hasPantryItems && !plan && !isLoading && (
           <Card variant="outlined" style={styles.emptyCard} testID="plan-empty-pantry-card">
             <View style={styles.emptyIconCircle}>
-              <MaterialIcons name="kitchen" size={40} color={colors.outline} />
+              <MaterialCommunityIcons name="fridge-outline" size={40} color={colors.outline} />
             </View>
             <Text style={[styles.emptyTitle, typography.headlineMd]}>
               Tu despensa está vacía
@@ -294,7 +297,7 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
               variant="primary"
               size="md"
               onPress={handleGoToPantry}
-              leftIcon={<MaterialIcons name="add" size={18} color={colors.onPrimary} />}
+              leftIcon={<MaterialCommunityIcons name="plus" size={18} color={colors.onPrimary} />}
             />
           </Card>
         )}
@@ -303,7 +306,7 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
         {hasPantryItems && !plan && !isLoading && (
           <Card variant="elevated" style={styles.introCard} testID="plan-intro-card">
             <View style={styles.introIconCircle}>
-              <MaterialIcons name="auto-awesome" size={32} color={colors.primary} />
+              <MaterialCommunityIcons name="creation" size={32} color={colors.primary} />
             </View>
             <Text style={[styles.introTitle, typography.headlineMd]}>
               Planifica tus comidas de los próximos 3 días
@@ -319,7 +322,7 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
               size="lg"
               fullWidth
               onPress={handleGeneratePlan}
-              leftIcon={<MaterialIcons name="restaurant-menu" size={20} color={colors.onPrimary} />}
+              leftIcon={<MaterialCommunityIcons name="silverware-fork-knife" size={20} color={colors.onPrimary} />}
             />
           </Card>
         )}
@@ -329,7 +332,7 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
           <View style={styles.planResultsContainer} testID="plan-results-section">
             {/* Botón de regeneración superior */}
             <View style={styles.regenerateRow}>
-              <View>
+              <View style={styles.resultsHeaderTextCol}>
                 <Text style={[styles.resultsHeaderTitle, typography.headlineMd]}>
                   Menú de 3 Días
                 </Text>
@@ -344,7 +347,7 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
                 size="sm"
                 onPress={handleGeneratePlan}
                 disabled={!hasPantryItems || isLoading}
-                leftIcon={<MaterialIcons name="refresh" size={16} color={isStale ? colors.onPrimary : colors.primary} />}
+                leftIcon={<MaterialCommunityIcons name="refresh" size={16} color={isStale ? colors.onPrimary : colors.primary} />}
               />
             </View>
 
@@ -352,7 +355,7 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
             <Card variant="elevated" style={styles.progressCard} testID="plan-progress-card">
               <View style={styles.progressHeaderRow}>
                 <View style={styles.progressHeaderLeft}>
-                  <MaterialIcons name="task-alt" size={20} color={colors.primary} />
+                  <MaterialCommunityIcons name="progress-check" size={20} color={colors.primary} />
                   <Text style={[styles.progressCardTitle, typography.headlineMd]}>
                     Progreso del plan
                   </Text>
@@ -399,7 +402,7 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
                     </View>
 
                     <View style={styles.convenienceBadge}>
-                      <MaterialIcons name="stars" size={14} color={colors.onTertiaryContainer} />
+                      <MaterialCommunityIcons name="star-circle-outline" size={14} color={colors.onTertiaryContainer} />
                       <Text style={[styles.convenienceBadgeText, typography.labelSm]}>
                         {recipe.convenience}
                       </Text>
@@ -417,14 +420,14 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
                   {/* Métricas rápidas de la receta */}
                   <View style={styles.dayMetricsRow}>
                     <View style={styles.dayMetricItem}>
-                      <MaterialIcons name="timer" size={16} color={colors.primary} />
+                      <MaterialCommunityIcons name="timer-outline" size={16} color={colors.primary} />
                       <Text style={[styles.dayMetricText, typography.labelSm]}>
                         {recipe.totalMinutes} min
                       </Text>
                     </View>
 
                     <View style={styles.dayMetricItem}>
-                      <MaterialIcons name="check-circle" size={16} color={colors.primary} />
+                      <MaterialCommunityIcons name="check-circle-outline" size={16} color={colors.primary} />
                       <Text style={[styles.dayMetricText, typography.labelSm]}>
                         {recipe.availableIngredients.length} en casa
                       </Text>
@@ -432,14 +435,14 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
 
                     {hasMissing ? (
                       <View style={styles.dayMetricItem}>
-                        <MaterialIcons name="add-shopping-cart" size={16} color={colors.secondary} />
+                        <MaterialCommunityIcons name="cart-plus" size={16} color={colors.secondary} />
                         <Text style={[styles.dayMetricText, typography.labelSm, { color: colors.secondary }]}>
                           {recipe.missingIngredients.length} por comprar
                         </Text>
                       </View>
                     ) : (
                       <View style={styles.dayMetricItem}>
-                        <MaterialIcons name="done-all" size={16} color={colors.primary} />
+                        <MaterialCommunityIcons name="check-all" size={16} color={colors.primary} />
                         <Text style={[styles.dayMetricText, typography.labelSm, { color: colors.primary }]}>
                           Completa
                         </Text>
@@ -461,7 +464,7 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
                   {/* Estado de completado del día (Fase 6A) */}
                   {dayItem.isCompleted && (
                     <View style={styles.completedBadge} testID={`plan-day-completed-badge-${dayItem.day}`}>
-                      <MaterialIcons name="check-circle" size={16} color={colors.primary} />
+                      <MaterialCommunityIcons name="check-circle-outline" size={16} color={colors.primary} />
                       <Text style={[styles.completedBadgeText, typography.labelSm]}>
                         ¡Día completado!
                       </Text>
@@ -476,7 +479,7 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
                     fullWidth
                     onPress={() => toggleDayCompleted(dayItem.day)}
                     leftIcon={
-                      <MaterialIcons
+                      <MaterialCommunityIcons
                         name={dayItem.isCompleted ? 'undo' : 'check'}
                         size={18}
                         color={dayItem.isCompleted ? colors.textPrimary : colors.onPrimary}
@@ -491,7 +494,7 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
                     size="md"
                     fullWidth
                     onPress={() => handleNavigateToRecipe(recipe.id)}
-                    leftIcon={<MaterialIcons name="menu-book" size={18} color={colors.primary} />}
+                    leftIcon={<MaterialCommunityIcons name="book-open-variant" size={18} color={colors.primary} />}
                   />
                 </Card>
               );
@@ -500,7 +503,7 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
             {/* 9. Resumen presupuestario del plan */}
             <Card variant="elevated" style={styles.budgetCard} testID="plan-budget-summary">
               <View style={styles.budgetCardHeader}>
-                <MaterialIcons name="account-balance-wallet" size={22} color={colors.primary} />
+                <MaterialCommunityIcons name="wallet-outline" size={22} color={colors.primary} />
                 <Text style={[styles.budgetCardTitle, typography.headlineMd]}>
                   Balance del plan
                 </Text>
@@ -556,8 +559,8 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
                   plan.withinBudget ? styles.withinBudgetSuccess : styles.withinBudgetWarning,
                 ]}
               >
-                <MaterialIcons
-                  name={plan.withinBudget ? 'check-circle' : 'warning'}
+                <MaterialCommunityIcons
+                  name={plan.withinBudget ? 'check-circle-outline' : 'alert-outline'}
                   size={18}
                   color={plan.withinBudget ? colors.primary : colors.secondary}
                 />
@@ -586,7 +589,7 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
               <View style={styles.shoppingHeaderRow}>
                 <View style={styles.shoppingTitleRow}>
                   <View style={styles.shoppingIconBox}>
-                    <MaterialIcons name="shopping-cart" size={18} color={colors.secondary} />
+                    <MaterialCommunityIcons name="cart-outline" size={18} color={colors.secondary} />
                   </View>
                   <Text style={[styles.shoppingTitle, typography.headlineMd]}>
                     Ingredientes por comprar
@@ -601,7 +604,7 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
 
               {plan.uniqueMissingIngredients.length === 0 ? (
                 <Card variant="outlined" style={styles.allReadyCard}>
-                  <MaterialIcons name="done-all" size={24} color={colors.primary} />
+                  <MaterialCommunityIcons name="check-all" size={24} color={colors.primary} />
                   <Text style={[styles.allReadyText, typography.bodyMd]}>
                     ¡Tienes todos los ingredientes necesarios en tu despensa! No necesitas compras extra.
                   </Text>
@@ -615,8 +618,8 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
                       testID={`plan-missing-item-${idx}`}
                     >
                       <View style={styles.missingItemLeft}>
-                        <MaterialIcons
-                          name="radio-button-unchecked"
+                        <MaterialCommunityIcons
+                          name="checkbox-blank-circle-outline"
                           size={18}
                           color={colors.secondary}
                         />
@@ -671,40 +674,54 @@ const createStyles = (colors: AppColors) =>
       alignItems: 'center',
       justifyContent: 'center',
     },
-    summaryStrip: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
+    summaryCard: {
       backgroundColor: colors.surface,
-      paddingVertical: spacing.sm,
-      paddingHorizontal: spacing.md,
-      borderRadius: radius.lg + 4,
+      borderRadius: radius.xl,
+      borderWidth: 1,
+      borderColor: colors.borderLight,
+      padding: spacing.md,
+      gap: spacing.sm + 4,
       shadowColor: colors.cardShadow,
       shadowOffset: { width: 0, height: 4 },
       shadowOpacity: 0.07,
       shadowRadius: 12,
       elevation: 2,
     },
-    summaryItem: {
+    summaryEyebrow: {
+      color: colors.textSecondary,
+      letterSpacing: 0.6,
+    },
+    summaryGrid: {
       flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: spacing.sm,
+    },
+    // Ícono arriba y texto debajo: todo el ancho del mosaico queda para el valor
+    summaryTile: {
+      flexGrow: 1,
+      flexBasis: '45%',
+      gap: spacing.sm,
+      paddingHorizontal: spacing.sm + 4,
+      paddingVertical: spacing.sm + 4,
+      borderRadius: radius.lg,
+      backgroundColor: colors.surfaceContainerLow,
+    },
+    summaryIconBox: {
+      width: 36,
+      height: 36,
+      borderRadius: radius.md + 4,
       alignItems: 'center',
-      gap: 6,
-      flex: 1,
+      justifyContent: 'center',
+    },
+    summaryTextCol: {
+      gap: 1,
     },
     summaryLabel: {
-      color: colors.outline,
-      fontSize: 10,
+      color: colors.textSecondary,
     },
     summaryValue: {
       color: colors.textPrimary,
       fontWeight: '700',
-      fontSize: 12,
-    },
-    summaryDivider: {
-      width: 1,
-      height: 24,
-      backgroundColor: colors.outlineVariant,
-      marginHorizontal: 4,
     },
     staleBanner: {
       flexDirection: 'row',
@@ -828,7 +845,12 @@ const createStyles = (colors: AppColors) =>
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
+      gap: spacing.sm,
       marginBottom: spacing.xs,
+    },
+    resultsHeaderTextCol: {
+      flex: 1,
+      minWidth: 0,
     },
     resultsHeaderTitle: {
       color: colors.textPrimary,

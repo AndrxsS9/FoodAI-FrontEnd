@@ -9,9 +9,8 @@ import {
   Text,
   View,
 } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import {
-  CATEGORY_CONFIG,
   INGREDIENT_UNIT_LABELS,
   Ingredient,
   getExpirationStatus,
@@ -25,6 +24,8 @@ import {
   useThemeStyles,
 } from '../../theme';
 import { Card } from '../common/Card';
+import { formatShortDate } from '../../utils/dateFormat';
+import { CategoryIconName, getCategoryVisual } from './categoryVisuals';
 
 export interface IngredientCardProps {
   ingredient: Ingredient;
@@ -42,11 +43,12 @@ export function IngredientCard({
   onAdjustQuantity,
 }: IngredientCardProps) {
   const typography = useTypography();
-  const { colors } = useAppTheme();
+  const { colors, activeColorScheme } = useAppTheme();
   const styles = useThemeStyles(createStyles);
 
-  const catConfig = CATEGORY_CONFIG[ingredient.category] || CATEGORY_CONFIG.Otros;
+  const catVisual = getCategoryVisual(ingredient.category, activeColorScheme);
   const expiration = getExpirationStatus(ingredient.expirationDate);
+  const formattedDate = formatShortDate(ingredient.expirationDate);
 
   // Determinar paso de incremento según la unidad
   const step =
@@ -78,10 +80,27 @@ export function IngredientCard({
   const unitLabel = INGREDIENT_UNIT_LABELS[ingredient.unit] || ingredient.unit;
   const quantityDisplay = `${ingredient.quantity} ${unitLabel}`;
 
+  // Chip de estado de caducidad: urgente, pronto, con fecha o sin fecha
+  const statusChip: { icon: CategoryIconName; label: string; tone: 'urgent' | 'warning' | 'neutral' } =
+    expiration.isUrgent
+      ? { icon: 'clock-alert-outline', label: expiration.label, tone: 'urgent' }
+      : expiration.badgeVariant === 'warning'
+      ? { icon: 'clock-outline', label: expiration.label, tone: 'warning' }
+      : formattedDate
+      ? { icon: 'calendar-blank-outline', label: `Vence ${formattedDate}`, tone: 'neutral' }
+      : { icon: 'infinity', label: 'Sin fecha de caducidad', tone: 'neutral' };
+
+  const statusColor =
+    statusChip.tone === 'urgent'
+      ? colors.onSecondaryFixed
+      : statusChip.tone === 'warning'
+      ? colors.onTertiaryFixed
+      : colors.textSecondary;
+
   return (
     <Card
       variant="elevated"
-      style={styles.card}
+      style={[styles.card, expiration.isUrgent && styles.cardUrgent]}
       testID={`ingredient-card-${ingredient.id}`}
       accessibilityRole="text"
       accessibilityLabel={`Alimento: ${ingredient.name}, cantidad: ${quantityDisplay}, categoría: ${ingredient.category}, estado: ${expiration.label}`}
@@ -89,14 +108,10 @@ export function IngredientCard({
       <View style={styles.contentRow}>
         {/* Ícono de categoría con fondo suave acorde a la paleta */}
         <View
-          style={[styles.iconContainer, { backgroundColor: catConfig.bgColor }]}
+          style={[styles.iconContainer, { backgroundColor: catVisual.bgColor }]}
           accessibilityRole="none"
         >
-          <MaterialIcons
-            name={catConfig.icon as any}
-            size={24}
-            color={catConfig.color}
-          />
+          <MaterialCommunityIcons name={catVisual.icon} size={24} color={catVisual.color} />
         </View>
 
         {/* Información del ingrediente */}
@@ -109,41 +124,18 @@ export function IngredientCard({
         >
           <Text
             style={[styles.nameText, typography.bodyLg]}
-            numberOfLines={1}
+            numberOfLines={2}
             ellipsizeMode="tail"
           >
             {ingredient.name}
           </Text>
-
-          <View style={styles.tagsRow}>
-            {/* Categoría chip */}
-            <View style={styles.categoryChip}>
-              <Text style={[styles.categoryText, typography.labelSm]}>
-                {ingredient.category}
-              </Text>
-            </View>
-
-            {/* Badge de vencimiento/prioridad */}
-            {expiration.isUrgent ? (
-              <View style={styles.urgentBadge}>
-                <MaterialIcons name="schedule" size={12} color={colors.secondary} />
-                <Text style={[styles.urgentText, typography.labelSm]}>
-                  {expiration.label}
-                </Text>
-              </View>
-            ) : expiration.daysRemaining !== null ? (
-              <View style={styles.warningBadge}>
-                <MaterialIcons name="event" size={12} color={colors.tertiaryContainer} />
-                <Text style={[styles.warningText, typography.labelSm]}>
-                  {expiration.label}
-                </Text>
-              </View>
-            ) : null}
-          </View>
+          <Text style={[styles.categoryText, typography.bodySm]} numberOfLines={1}>
+            {ingredient.category}
+          </Text>
         </Pressable>
 
         {/* Acciones: Editar y Eliminar */}
-        <View style={styles.actionsCol}>
+        <View style={styles.actionsRow}>
           {onEdit && (
             <Pressable
               testID={`edit-ingredient-${ingredient.id}`}
@@ -154,9 +146,9 @@ export function IngredientCard({
               onPress={() => onEdit(ingredient)}
               accessibilityRole="button"
               accessibilityLabel={`Editar ${ingredient.name}`}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
             >
-              <MaterialIcons name="edit" size={20} color={colors.textSecondary} />
+              <MaterialCommunityIcons name="pencil-outline" size={18} color={colors.textSecondary} />
             </Pressable>
           )}
 
@@ -170,26 +162,34 @@ export function IngredientCard({
               onPress={() => onDelete(ingredient)}
               accessibilityRole="button"
               accessibilityLabel={`Eliminar ${ingredient.name}`}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
             >
-              <MaterialIcons name="delete-outline" size={20} color={colors.error} />
+              <MaterialCommunityIcons name="trash-can-outline" size={18} color={colors.error} />
             </Pressable>
           )}
         </View>
       </View>
 
-      {/* Barra inferior: Stepper de cantidad rápida y fecha */}
+      {/* Barra inferior: estado de caducidad y stepper de cantidad */}
       <View style={styles.footerRow}>
-        <View style={styles.expirationInfo}>
-          <MaterialIcons name="calendar-today" size={14} color={colors.outline} />
-          <Text style={[styles.expirationDateText, typography.bodySm]}>
-            {ingredient.expirationDate
-              ? `Vence: ${ingredient.expirationDate}`
-              : 'Sin fecha de caducidad'}
+        <View
+          testID={`expiration-chip-${ingredient.id}`}
+          style={[
+            styles.statusChip,
+            statusChip.tone === 'urgent' && styles.statusChipUrgent,
+            statusChip.tone === 'warning' && styles.statusChipWarning,
+          ]}
+        >
+          <MaterialCommunityIcons name={statusChip.icon} size={14} color={statusColor} />
+          <Text
+            style={[styles.statusText, typography.labelMd, { color: statusColor }]}
+            numberOfLines={2}
+          >
+            {statusChip.label}
           </Text>
         </View>
 
-        {onAdjustQuantity && (
+        {onAdjustQuantity ? (
           <View style={styles.stepperContainer}>
             <Pressable
               testID={`stepper-minus-${ingredient.id}`}
@@ -200,13 +200,13 @@ export function IngredientCard({
               onPress={handleMinus}
               accessibilityRole="button"
               accessibilityLabel={`Disminuir cantidad de ${ingredient.name}`}
-              hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
             >
-              <MaterialIcons name="remove" size={16} color={colors.textPrimary} />
+              <MaterialCommunityIcons name="minus" size={16} color={colors.textPrimary} />
             </Pressable>
 
             <Text
-              style={[styles.quantityText, typography.labelMd]}
+              style={[styles.quantityText, typography.labelLg]}
               testID={`quantity-display-${ingredient.id}`}
             >
               {quantityDisplay}
@@ -221,12 +221,12 @@ export function IngredientCard({
               onPress={handlePlus}
               accessibilityRole="button"
               accessibilityLabel={`Aumentar cantidad de ${ingredient.name}`}
-              hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
             >
-              <MaterialIcons name="add" size={16} color={colors.textPrimary} />
+              <MaterialCommunityIcons name="plus" size={16} color={colors.textPrimary} />
             </Pressable>
           </View>
-        )}
+        ) : null}
       </View>
     </Card>
   );
@@ -236,78 +236,41 @@ const createStyles = (colors: AppColors) =>
   StyleSheet.create({
     card: {
       padding: spacing.md,
-      marginBottom: spacing.sm,
       borderRadius: radius.lg + 4,
+      gap: spacing.sm + 4,
+    },
+    cardUrgent: {
+      borderLeftWidth: 3,
+      borderLeftColor: colors.secondary,
     },
     contentRow: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: spacing.md,
-      marginBottom: spacing.sm,
+      gap: spacing.sm + 4,
     },
     iconContainer: {
-      width: 48,
-      height: 48,
-      borderRadius: radius.md,
+      width: 46,
+      height: 46,
+      borderRadius: radius.md + 6,
       alignItems: 'center',
       justifyContent: 'center',
     },
     infoCol: {
       flex: 1,
-      gap: 4,
+      minWidth: 0,
+      gap: 2,
     },
     nameText: {
       color: colors.textPrimary,
       fontWeight: '700',
     },
-    tagsRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      flexWrap: 'wrap',
-      gap: spacing.xs,
-    },
-    categoryChip: {
-      backgroundColor: colors.surfaceContainerLow,
-      paddingHorizontal: spacing.xs + 2,
-      paddingVertical: 2,
-      borderRadius: radius.sm,
-    },
     categoryText: {
       color: colors.textSecondary,
-      fontSize: 11,
     },
-    urgentBadge: {
+    actionsRow: {
       flexDirection: 'row',
       alignItems: 'center',
-      backgroundColor: colors.secondaryFixed,
-      paddingHorizontal: spacing.sm,
-      paddingVertical: 3,
-      borderRadius: radius.full,
-      gap: 3,
-    },
-    urgentText: {
-      color: colors.onSecondaryFixed,
-      fontWeight: '700',
-      fontSize: 11,
-    },
-    warningBadge: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      backgroundColor: colors.tertiaryFixed,
-      paddingHorizontal: spacing.sm,
-      paddingVertical: 3,
-      borderRadius: radius.full,
-      gap: 3,
-    },
-    warningText: {
-      color: colors.onTertiaryFixed,
-      fontWeight: '600',
-      fontSize: 11,
-    },
-    actionsCol: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 2,
+      gap: spacing.xs,
       flexShrink: 0,
     },
     iconButton: {
@@ -316,56 +279,66 @@ const createStyles = (colors: AppColors) =>
       borderRadius: radius.full,
       alignItems: 'center',
       justifyContent: 'center',
+      backgroundColor: colors.surfaceContainerLow,
     },
     buttonPressed: {
       opacity: 0.6,
       transform: [{ scale: 0.95 }],
     },
+    // Si la etiqueta de caducidad y el stepper no caben (320 dp o fuente grande), el stepper
+    // pasa a la línea siguiente alineado a la derecha en lugar de truncar la fecha.
     footerRow: {
       flexDirection: 'row',
+      flexWrap: 'wrap',
       alignItems: 'center',
       justifyContent: 'space-between',
-      paddingTop: spacing.xs,
-      borderTopWidth: 1,
-      borderTopColor: colors.borderLight,
+      gap: spacing.sm,
     },
-    expirationInfo: {
+    statusChip: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: 4,
-      flex: 1,
+      flexShrink: 1,
       minWidth: 0,
+      paddingHorizontal: spacing.sm + 2,
+      paddingVertical: 6,
+      borderRadius: radius.full,
+      backgroundColor: colors.surfaceContainerLow,
     },
-    expirationDateText: {
-      color: colors.textSecondary,
-      fontSize: 12,
+    statusChipUrgent: {
+      backgroundColor: colors.secondaryFixed,
+    },
+    statusChipWarning: {
+      backgroundColor: colors.tertiaryFixed,
+    },
+    statusText: {
+      flexShrink: 1,
     },
     stepperContainer: {
+      marginLeft: 'auto',
       flexDirection: 'row',
       alignItems: 'center',
       backgroundColor: colors.surfaceContainerLow,
-      borderRadius: radius.md + 2,
-      padding: 4,
-      gap: 4,
+      borderRadius: radius.full,
+      padding: 3,
+      gap: 2,
+      flexShrink: 0,
     },
     stepperBtn: {
-      width: 30,
-      height: 30,
-      borderRadius: radius.md,
+      width: 32,
+      height: 32,
+      borderRadius: radius.full,
       backgroundColor: colors.surface,
       alignItems: 'center',
       justifyContent: 'center',
-      elevation: 1,
-      shadowColor: colors.cardShadow,
-      shadowOffset: { width: 0, height: 1 },
-      shadowOpacity: 0.08,
-      shadowRadius: 1,
+      borderWidth: 1,
+      borderColor: colors.borderLight,
     },
     quantityText: {
       color: colors.textPrimary,
       fontWeight: '700',
       paddingHorizontal: spacing.xs,
-      minWidth: 48,
+      minWidth: 52,
       textAlign: 'center',
     },
   });

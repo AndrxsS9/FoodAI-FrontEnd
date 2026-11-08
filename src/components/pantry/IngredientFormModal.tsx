@@ -2,20 +2,32 @@
  * Formulario modal accesible para el registro y edición de ingredientes (Fase 2B & Fase 6B.2).
  * Inspirado en la pantalla «5. Ingredientes Detectados» de Google Stitch.
  */
-import React, { useState } from 'react';
+import React, {
+  ComponentRef,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import {
+  Keyboard,
+  KeyboardAvoidingView,
+  LayoutChangeEvent,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
+import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import {
-  CATEGORY_CONFIG,
   CreateIngredientInput,
   INGREDIENT_CATEGORIES,
   INGREDIENT_UNITS,
+  INGREDIENT_UNIT_LABELS,
   INGREDIENT_UNIT_NAMES,
   Ingredient,
   IngredientCategory,
@@ -32,6 +44,8 @@ import {
 import { Button } from '../common/Button';
 import { Input } from '../common/Input';
 import { validateIngredientForm } from '../../utils/pantryValidation';
+import { getCategoryVisual } from './categoryVisuals';
+import { ExpirationDateField } from './ExpirationDateField';
 
 export type IngredientFormSaveData = Omit<
   CreateIngredientInput,
@@ -48,6 +62,22 @@ export interface IngredientFormModalProps {
   onDeleteRequest?: (ingredient: Ingredient) => void;
 }
 
+/** Campos de texto cuyo desplazamiento se sigue para mantenerlos visibles sobre el teclado. */
+type FocusableField = 'name' | 'quantity';
+
+/** Etiquetas compactas para los chips de unidad (el nombre completo se anuncia por accesibilidad). */
+const UNIT_CHIP_LABELS: Record<IngredientUnit, string> = {
+  unidad: 'Unidad',
+  g: 'g',
+  kg: 'kg',
+  ml: 'ml',
+  l: 'l',
+  cucharada: 'Cda.',
+  cucharadita: 'Cdta.',
+  taza: 'Taza',
+  desconocida: 'Otra',
+};
+
 function IngredientFormSheet({
   initialIngredient,
   onClose,
@@ -55,7 +85,7 @@ function IngredientFormSheet({
   onDeleteRequest,
 }: Omit<IngredientFormModalProps, 'visible'>) {
   const typography = useTypography();
-  const { colors } = useAppTheme();
+  const { colors, activeColorScheme } = useAppTheme();
   const styles = useThemeStyles(createStyles);
   const isEditing = Boolean(initialIngredient);
 
@@ -75,20 +105,46 @@ function IngredientFormSheet({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleQuickExpiration = (daysFromNow: number | null) => {
-    if (daysFromNow === null) {
-      setExpirationDateText('');
-      return;
-    }
+  // Insets seguros opcionales: sin proveedor (p. ej. pruebas aisladas) se asume 0
+  const insets = useContext(SafeAreaInsetsContext);
+  const topInset = insets?.top ?? 0;
+  // En pantallas angostas o con fuente ampliada, los botones del pie se apilan para no truncarse
+  const { width: windowWidth, fontScale } = useWindowDimensions();
+  const stackFooter = windowWidth < 360 || fontScale > 1.2;
 
-    const targetDate = new Date();
-    targetDate.setDate(targetDate.getDate() + daysFromNow);
+  // Mantener visible el campo de texto enfocado cuando aparece el teclado
+  const scrollRef = useRef<ComponentRef<typeof ScrollView>>(null);
+  const fieldOffsets = useRef<Partial<Record<FocusableField, number>>>({});
+  const focusedField = useRef<FocusableField | null>(null);
 
-    const y = targetDate.getFullYear();
-    const m = String(targetDate.getMonth() + 1).padStart(2, '0');
-    const d = String(targetDate.getDate()).padStart(2, '0');
-    setExpirationDateText(`${y}-${m}-${d}`);
-  };
+  const scrollToFocusedField = useCallback(() => {
+    const key = focusedField.current;
+    const y = key ? fieldOffsets.current[key] : undefined;
+    if (y === undefined) return;
+    scrollRef.current?.scrollTo({ y: Math.max(y - spacing.sm, 0), animated: true });
+  }, []);
+
+  useEffect(() => {
+    const subscription = Keyboard.addListener('keyboardDidShow', scrollToFocusedField);
+    return () => subscription.remove();
+  }, [scrollToFocusedField]);
+
+  const handleFieldFocus = useCallback(
+    (key: FocusableField) => {
+      focusedField.current = key;
+      // Al cambiar de campo con el teclado ya abierto no habrá un nuevo keyboardDidShow
+      if (Keyboard.isVisible()) scrollToFocusedField();
+    },
+    [scrollToFocusedField]
+  );
+
+  const handleFieldBlur = useCallback((key: FocusableField) => {
+    if (focusedField.current === key) focusedField.current = null;
+  }, []);
+
+  const handleFieldLayout = useCallback((key: FocusableField, event: LayoutChangeEvent) => {
+    fieldOffsets.current[key] = event.nativeEvent.layout.y;
+  }, []);
 
   const handleSubmit = async () => {
     const validation = validateIngredientForm({
@@ -134,7 +190,14 @@ function IngredientFormSheet({
   };
 
   return (
-    <View style={styles.backdrop}>
+    // `padding` en ambas plataformas: KeyboardAvoidingView calcula solo el solapamiento real
+    // entre esta vista y el borde superior del teclado (en Android, con edge-to-edge, la ventana
+    // ya no se redimensiona; si un dispositivo sí la redimensiona, el solapamiento resulta 0).
+    <KeyboardAvoidingView
+      testID="ingredient-form-keyboard-avoider"
+      behavior="padding"
+      style={[styles.backdrop, { paddingTop: topInset + spacing.lg }]}
+    >
       <Pressable
         style={StyleSheet.absoluteFill}
         onPress={onClose}
@@ -150,14 +213,21 @@ function IngredientFormSheet({
         <View style={styles.sheetDragBar} />
 
         <View style={styles.headerRow}>
+          <View style={styles.headerIconBox}>
+            <MaterialCommunityIcons
+              name={isEditing ? 'pencil-outline' : 'basket-plus-outline'}
+              size={22}
+              color={colors.primary}
+            />
+          </View>
           <View style={styles.headerTextCol}>
             <Text style={[styles.headerTitle, typography.headlineMd]}>
               {isEditing ? 'Editar alimento' : 'Agregar alimento'}
             </Text>
             <Text style={[styles.headerSubtitle, typography.bodySm]}>
               {isEditing
-                ? 'Modifica las cantidades o categoría guardada.'
-                : 'Ingresa los datos para sumar el alimento a tu despensa.'}
+                ? 'Actualiza cantidad, categoría o fecha.'
+                : 'Súmalo a tu despensa en segundos.'}
             </Text>
           </View>
 
@@ -172,19 +242,22 @@ function IngredientFormSheet({
             accessibilityLabel="Cerrar modal"
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
-            <MaterialIcons name="close" size={22} color={colors.textSecondary} />
+            <MaterialCommunityIcons name="close" size={20} color={colors.textSecondary} />
           </Pressable>
         </View>
 
         <ScrollView
+          ref={scrollRef}
+          testID="ingredient-form-scroll"
           style={styles.scrollArea}
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
           showsVerticalScrollIndicator={false}
         >
           {errors.form && (
             <View style={styles.errorBanner}>
-              <MaterialIcons name="error-outline" size={18} color={colors.error} />
+              <MaterialCommunityIcons name="alert-circle-outline" size={18} color={colors.error} />
               <Text style={[styles.errorBannerText, typography.bodySm]}>
                 {errors.form}
               </Text>
@@ -192,8 +265,10 @@ function IngredientFormSheet({
           )}
 
           {/* 1. Nombre del alimento */}
-          <View style={styles.fieldSection}>
+          <View onLayout={(event) => handleFieldLayout('name', event)}>
             <Input
+              onFocus={() => handleFieldFocus('name')}
+              onBlur={() => handleFieldBlur('name')}
               testID="ingredient-name-input"
               label="Nombre del alimento *"
               placeholder="Ej. Pechuga de pollo, Tomate, Arroz"
@@ -206,16 +281,22 @@ function IngredientFormSheet({
               }}
               error={errors.name}
               leftIcon={
-                <MaterialIcons name="restaurant" size={20} color={colors.outline} />
+                <MaterialCommunityIcons name="food-outline" size={20} color={colors.outline} />
               }
               autoCapitalize="sentences"
               accessibilityLabel="Nombre del alimento"
+              containerStyle={styles.inputContainer}
             />
           </View>
 
-          {/* 2. Cantidad */}
-          <View style={styles.fieldSection}>
+          {/* 2. Cantidad y unidad */}
+          <View
+            style={styles.fieldSection}
+            onLayout={(event) => handleFieldLayout('quantity', event)}
+          >
             <Input
+              onFocus={() => handleFieldFocus('quantity')}
+              onBlur={() => handleFieldBlur('quantity')}
               testID="ingredient-quantity-input"
               label="Cantidad *"
               placeholder="1"
@@ -229,27 +310,29 @@ function IngredientFormSheet({
               }}
               error={errors.quantity}
               leftIcon={
-                <MaterialIcons name="scale" size={20} color={colors.outline} />
+                <MaterialCommunityIcons name="scale-balance" size={20} color={colors.outline} />
+              }
+              rightIcon={
+                <Text style={[styles.unitSuffix, typography.labelMd]}>
+                  {INGREDIENT_UNIT_LABELS[unit]}
+                </Text>
               }
               accessibilityLabel="Cantidad del alimento"
+              containerStyle={styles.inputContainer}
             />
-          </View>
 
-          {/* 3. Unidad de medida */}
-          <View style={styles.fieldSection}>
-            <Text style={[styles.sectionLabel, typography.labelMd]}>
-              Unidad de medida *
-            </Text>
-            <View style={styles.chipsWrap}>
+            <View style={styles.chipsWrap} accessibilityLabel="Unidad de medida">
               {INGREDIENT_UNITS.map((unitOpt) => {
                 const isSelected = unit === unitOpt;
                 return (
                   <Pressable
                     key={unitOpt}
                     testID={`unit-option-${unitOpt}`}
-                    style={[
-                      styles.chip,
-                      isSelected ? styles.chipSelected : styles.chipUnselected,
+                    hitSlop={{ top: 2, bottom: 2 }}
+                    style={({ pressed }) => [
+                      styles.unitChip,
+                      isSelected && styles.unitChipSelected,
+                      pressed && !isSelected && styles.chipPressed,
                     ]}
                     onPress={() => setUnit(unitOpt)}
                     accessibilityRole="button"
@@ -258,14 +341,12 @@ function IngredientFormSheet({
                   >
                     <Text
                       style={[
-                        styles.chipText,
-                        typography.labelSm,
-                        isSelected
-                          ? styles.chipTextSelected
-                          : styles.chipTextUnselected,
+                        styles.unitChipText,
+                        typography.labelMd,
+                        isSelected && styles.unitChipTextSelected,
                       ]}
                     >
-                      {INGREDIENT_UNIT_NAMES[unitOpt]}
+                      {UNIT_CHIP_LABELS[unitOpt]}
                     </Text>
                   </Pressable>
                 );
@@ -278,43 +359,43 @@ function IngredientFormSheet({
             )}
           </View>
 
-          {/* 4. Categoría */}
+          {/* 3. Categoría */}
           <View style={styles.fieldSection}>
             <Text style={[styles.sectionLabel, typography.labelMd]}>
               Categoría *
             </Text>
-            <View style={styles.chipsWrap}>
+            <View style={styles.categoryGrid}>
               {INGREDIENT_CATEGORIES.map((catOpt) => {
                 const isSelected = category === catOpt;
-                const config = CATEGORY_CONFIG[catOpt];
+                const visual = getCategoryVisual(catOpt, activeColorScheme);
                 return (
                   <Pressable
                     key={catOpt}
                     testID={`category-option-${catOpt}`}
-                    style={[
-                      styles.chip,
-                      isSelected
-                        ? [styles.chipSelected, { backgroundColor: config.color }]
-                        : styles.chipUnselected,
+                    style={({ pressed }) => [
+                      styles.categoryTile,
+                      isSelected && styles.categoryTileSelected,
+                      pressed && !isSelected && styles.chipPressed,
                     ]}
                     onPress={() => setCategory(catOpt)}
                     accessibilityRole="button"
                     accessibilityLabel={`Categoría: ${catOpt}`}
                     accessibilityState={{ selected: isSelected }}
                   >
-                    <MaterialIcons
-                      name={config.icon as any}
-                      size={16}
-                      color={isSelected ? colors.onPrimary : config.color}
-                      style={{ marginRight: 4 }}
-                    />
+                    <View style={[styles.categoryIconBox, { backgroundColor: visual.bgColor }]}>
+                      <MaterialCommunityIcons name={visual.icon} size={18} color={visual.color} />
+                      {/* Marca de selección superpuesta: no resta ancho al texto en pantallas angostas */}
+                      {isSelected && (
+                        <View style={styles.categoryCheckBadge}>
+                          <MaterialCommunityIcons name="check" size={11} color={colors.onPrimary} />
+                        </View>
+                      )}
+                    </View>
                     <Text
                       style={[
-                        styles.chipText,
-                        typography.labelSm,
-                        isSelected
-                          ? styles.chipTextSelected
-                          : styles.chipTextUnselected,
+                        styles.categoryTileText,
+                        typography.labelMd,
+                        isSelected && styles.categoryTileTextSelected,
                       ]}
                     >
                       {catOpt}
@@ -330,141 +411,78 @@ function IngredientFormSheet({
             )}
           </View>
 
-          {/* 5. Fecha de caducidad (Opcional) */}
-          <View style={styles.fieldSection}>
-            <Input
-              testID="ingredient-expiration-input"
-              label="Fecha de vencimiento (Opcional)"
-              placeholder="AAAA-MM-DD (ej. 2026-11-15)"
-              value={expirationDateText}
-              onChangeText={(text) => {
-                setExpirationDateText(text);
-                if (errors.expirationDate) {
-                  setErrors((prev) => ({ ...prev, expirationDate: '' }));
-                }
-              }}
-              error={errors.expirationDate}
-              leftIcon={
-                <MaterialIcons name="event" size={20} color={colors.outline} />
+          {/* 4. Fecha de caducidad (opcional) con calendario */}
+          <ExpirationDateField
+            value={expirationDateText}
+            onChange={(next) => {
+              setExpirationDateText(next);
+              if (errors.expirationDate) {
+                setErrors((prev) => ({ ...prev, expirationDate: '' }));
               }
-              accessibilityLabel="Fecha de vencimiento en formato año mes día"
-            />
-
-            <Text style={[styles.helperText, typography.bodySm]}>
-              Atajos rápidos de consumo:
-            </Text>
-
-            <View style={styles.quickDatesRow}>
-              <Pressable
-                testID="quick-exp-none"
-                style={styles.quickDateBtn}
-                onPress={() => handleQuickExpiration(null)}
-                accessibilityRole="button"
-                accessibilityLabel="Sin fecha de caducidad"
-              >
-                <Text style={[styles.quickDateText, typography.labelSm]}>
-                  Sin fecha
-                </Text>
-              </Pressable>
-
-              <Pressable
-                testID="quick-exp-3d"
-                style={styles.quickDateBtn}
-                onPress={() => handleQuickExpiration(3)}
-                accessibilityRole="button"
-                accessibilityLabel="Vence en 3 días"
-              >
-                <Text style={[styles.quickDateText, typography.labelSm]}>
-                  En 3 días
-                </Text>
-              </Pressable>
-
-              <Pressable
-                testID="quick-exp-7d"
-                style={styles.quickDateBtn}
-                onPress={() => handleQuickExpiration(7)}
-                accessibilityRole="button"
-                accessibilityLabel="Vence en 1 semana"
-              >
-                <Text style={[styles.quickDateText, typography.labelSm]}>
-                  En 1 semana
-                </Text>
-              </Pressable>
-
-              <Pressable
-                testID="quick-exp-15d"
-                style={styles.quickDateBtn}
-                onPress={() => handleQuickExpiration(15)}
-                accessibilityRole="button"
-                accessibilityLabel="Vence en 15 días"
-              >
-                <Text style={[styles.quickDateText, typography.labelSm]}>
-                  En 15 días
-                </Text>
-              </Pressable>
-            </View>
-          </View>
+            }}
+            error={errors.expirationDate}
+          />
 
           {/* Si está editando, ofrecer botón de eliminar directo */}
           {isEditing && initialIngredient && onDeleteRequest && (
-            <View style={styles.deleteSection}>
-              <Pressable
-                testID="form-delete-trigger-button"
-                style={({ pressed }) => [
-                  styles.deleteTrigger,
-                  pressed && styles.buttonPressed,
-                ]}
-                onPress={() => {
-                  onClose();
-                  onDeleteRequest(initialIngredient);
-                }}
-                accessibilityRole="button"
-                accessibilityLabel={`Eliminar ${initialIngredient.name} de la despensa`}
-              >
-                <MaterialIcons name="delete" size={18} color={colors.error} />
-                <Text style={[styles.deleteTriggerText, typography.labelMd]}>
-                  Eliminar este alimento
-                </Text>
-              </Pressable>
-            </View>
+            <Pressable
+              testID="form-delete-trigger-button"
+              style={({ pressed }) => [
+                styles.deleteTrigger,
+                pressed && styles.buttonPressed,
+              ]}
+              onPress={() => {
+                onClose();
+                onDeleteRequest(initialIngredient);
+              }}
+              accessibilityRole="button"
+              accessibilityLabel={`Eliminar ${initialIngredient.name} de la despensa`}
+            >
+              <MaterialCommunityIcons name="trash-can-outline" size={18} color={colors.error} />
+              <Text style={[styles.deleteTriggerText, typography.labelMd]}>
+                Eliminar este alimento
+              </Text>
+            </Pressable>
           )}
-
-          {/* Botones de acción */}
-          <View style={styles.submitSection}>
-            <Button
-              testID="submit-ingredient-form"
-              title={isEditing ? 'Guardar cambios' : 'Guardar alimento'}
-              variant="primary"
-              size="lg"
-              fullWidth
-              onPress={handleSubmit}
-              loading={isSubmitting}
-              leftIcon={
-                <MaterialIcons
-                  name={isEditing ? 'check' : 'add'}
-                  size={20}
-                  color={colors.onPrimary}
-                />
-              }
-              accessibilityLabel={
-                isEditing ? 'Confirmar y guardar cambios' : 'Guardar nuevo ingrediente'
-              }
-            />
-
-            <Button
-              testID="cancel-ingredient-form"
-              title="Cancelar"
-              variant="outline"
-              size="md"
-              fullWidth
-              onPress={onClose}
-              disabled={isSubmitting}
-              accessibilityLabel="Cancelar registro"
-            />
-          </View>
         </ScrollView>
+
+        {/* Botones de acción fijos al pie de la hoja */}
+        <View
+          testID="ingredient-form-footer"
+          style={[styles.footer, stackFooter && styles.footerStacked]}
+        >
+          <Button
+            testID="cancel-ingredient-form"
+            title="Cancelar"
+            variant="outline"
+            size="lg"
+            style={stackFooter ? styles.footerStackedButton : styles.footerCancel}
+            onPress={onClose}
+            disabled={isSubmitting}
+            accessibilityLabel="Cancelar registro"
+          />
+          <Button
+            testID="submit-ingredient-form"
+            title={isEditing ? 'Guardar cambios' : 'Guardar alimento'}
+            variant="primary"
+            size="lg"
+            style={stackFooter ? styles.footerStackedButton : styles.footerSubmit}
+            onPress={handleSubmit}
+            loading={isSubmitting}
+            leftIcon={
+              <MaterialCommunityIcons
+                name={isEditing ? 'check' : 'plus'}
+                size={20}
+                color={colors.onPrimary}
+              />
+            }
+            accessibilityLabel={
+              isEditing ? 'Confirmar y guardar cambios' : 'Guardar nuevo ingrediente'
+            }
+          />
+        </View>
       </View>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -501,6 +519,9 @@ export function IngredientFormModal({
   );
 }
 
+/** Margen lateral de la hoja: 20 dp deja dos categorías por fila incluso a 320 dp. */
+const SHEET_GUTTER = spacing.md + 4;
+
 const createStyles = (colors: AppColors) =>
   StyleSheet.create({
     overlayRoot: {
@@ -513,13 +534,15 @@ const createStyles = (colors: AppColors) =>
       justifyContent: 'flex-end',
     },
     sheetContainer: {
-      maxHeight: '90%',
+      // Se encoge para caber entre el inset superior y el teclado; el ScrollView absorbe el resto
+      flexShrink: 1,
       backgroundColor: colors.surface,
-      borderTopLeftRadius: radius.xl,
-      borderTopRightRadius: radius.xl,
+      borderTopLeftRadius: radius.xl + 4,
+      borderTopRightRadius: radius.xl + 4,
+      borderWidth: 1,
+      borderBottomWidth: 0,
+      borderColor: colors.borderLight,
       paddingTop: spacing.sm,
-      paddingHorizontal: spacing.margin,
-      paddingBottom: spacing.xl,
       elevation: 10,
       shadowColor: colors.cardShadow,
       shadowOffset: { width: 0, height: -4 },
@@ -527,23 +550,33 @@ const createStyles = (colors: AppColors) =>
       shadowRadius: 16,
     },
     sheetDragBar: {
-      width: 44,
-      height: 5,
+      width: 40,
+      height: 4,
       borderRadius: radius.full,
       backgroundColor: colors.outlineVariant,
       alignSelf: 'center',
-      marginBottom: spacing.xs,
+      marginBottom: spacing.sm,
     },
     headerRow: {
       flexDirection: 'row',
-      alignItems: 'flex-start',
-      justifyContent: 'space-between',
-      paddingVertical: spacing.xs,
-      marginBottom: spacing.xs,
+      alignItems: 'center',
+      gap: spacing.sm,
+      paddingHorizontal: SHEET_GUTTER,
+      paddingBottom: spacing.md,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.borderLight,
+    },
+    headerIconBox: {
+      width: 44,
+      height: 44,
+      borderRadius: radius.md + 6,
+      backgroundColor: colors.primaryFixed,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
     headerTextCol: {
       flex: 1,
-      gap: 2,
+      minWidth: 0,
     },
     headerTitle: {
       color: colors.textPrimary,
@@ -558,17 +591,23 @@ const createStyles = (colors: AppColors) =>
       borderRadius: radius.full,
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: colors.surfaceContainerLow,
+      backgroundColor: colors.surfaceContainer,
     },
     buttonPressed: {
       opacity: 0.6,
     },
     scrollArea: {
-      width: '100%',
+      flexGrow: 0,
+      flexShrink: 1,
     },
     scrollContent: {
-      paddingVertical: spacing.xs,
-      gap: spacing.md,
+      paddingHorizontal: SHEET_GUTTER,
+      paddingTop: spacing.md,
+      paddingBottom: spacing.lg,
+      gap: spacing.lg,
+    },
+    inputContainer: {
+      marginBottom: 0,
     },
     errorBanner: {
       flexDirection: 'row',
@@ -576,93 +615,140 @@ const createStyles = (colors: AppColors) =>
       gap: spacing.xs,
       backgroundColor: colors.errorContainer,
       padding: spacing.sm,
-      borderRadius: radius.md,
+      borderRadius: radius.md + 4,
     },
     errorBannerText: {
-      color: colors.error,
+      color: colors.onErrorContainer,
       flex: 1,
     },
     fieldSection: {
-      gap: spacing.xs,
+      gap: spacing.sm,
     },
     sectionLabel: {
       color: colors.textPrimary,
-      fontWeight: '600',
+    },
+    unitSuffix: {
+      color: colors.textSecondary,
     },
     chipsWrap: {
       flexDirection: 'row',
       flexWrap: 'wrap',
       gap: spacing.xs,
     },
-    chip: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      paddingHorizontal: spacing.sm + 2,
-      paddingVertical: spacing.xs + 2,
+    chipPressed: {
+      backgroundColor: colors.surfaceContainerHigh,
+    },
+    unitChip: {
+      minHeight: 40,
+      minWidth: 48,
+      paddingHorizontal: spacing.sm + 4,
       borderRadius: radius.full,
       borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
-    chipSelected: {
-      backgroundColor: colors.primary,
-      borderColor: colors.primary,
+    unitChipSelected: {
+      backgroundColor: colors.primaryAction,
+      borderColor: colors.primaryAction,
     },
-    chipUnselected: {
-      backgroundColor: colors.surfaceContainerLow,
-      borderColor: colors.outlineVariant,
+    unitChipText: {
+      color: colors.textSecondary,
     },
-    chipText: {
-      fontWeight: '600',
-    },
-    chipTextSelected: {
+    unitChipTextSelected: {
       color: colors.onPrimary,
+      fontWeight: '700',
     },
-    chipTextUnselected: {
+    categoryGrid: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: spacing.sm,
+    },
+    categoryTile: {
+      flexGrow: 1,
+      flexBasis: '45%',
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      minHeight: 52,
+      paddingHorizontal: spacing.sm,
+      paddingVertical: spacing.xs,
+      borderRadius: radius.md + 6,
+      borderWidth: 1.5,
+      borderColor: colors.borderLight,
+      backgroundColor: colors.surface,
+    },
+    categoryTileSelected: {
+      borderColor: colors.primary,
+      backgroundColor: colors.surfaceContainerLow,
+    },
+    categoryIconBox: {
+      width: 32,
+      height: 32,
+      borderRadius: radius.md + 2,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    categoryCheckBadge: {
+      position: 'absolute',
+      right: -5,
+      bottom: -5,
+      width: 17,
+      height: 17,
+      borderRadius: radius.full,
+      backgroundColor: colors.primaryAction,
+      borderWidth: 2,
+      borderColor: colors.surface,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    categoryTileText: {
+      flex: 1,
+      color: colors.textSecondary,
+    },
+    categoryTileTextSelected: {
       color: colors.textPrimary,
+      fontWeight: '700',
     },
     fieldError: {
       color: colors.error,
-      marginTop: 2,
-    },
-    helperText: {
-      color: colors.textSecondary,
-      fontSize: 12,
-      marginTop: 2,
-    },
-    quickDatesRow: {
-      flexDirection: 'row',
-      flexWrap: 'wrap',
-      gap: spacing.xs,
-      marginTop: spacing.xs,
-    },
-    quickDateBtn: {
-      backgroundColor: colors.surfaceContainerLow,
-      paddingHorizontal: spacing.sm,
-      paddingVertical: spacing.xs,
-      borderRadius: radius.sm,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.outlineVariant,
-    },
-    quickDateText: {
-      color: colors.textSecondary,
-      fontWeight: '500',
-    },
-    deleteSection: {
-      alignItems: 'center',
-      paddingVertical: spacing.xs,
+      marginLeft: spacing.xs,
     },
     deleteTrigger: {
       flexDirection: 'row',
       alignItems: 'center',
+      justifyContent: 'center',
       gap: spacing.xs,
-      padding: spacing.xs,
+      minHeight: 44,
+      borderRadius: radius.md + 4,
+      backgroundColor: colors.errorContainer,
     },
     deleteTriggerText: {
-      color: colors.error,
-      fontWeight: '600',
+      color: colors.onErrorContainer,
     },
-    submitSection: {
+    footer: {
+      flexDirection: 'row',
       gap: spacing.sm,
-      paddingTop: spacing.xs,
-      paddingBottom: spacing.sm,
+      paddingHorizontal: SHEET_GUTTER,
+      paddingTop: spacing.md,
+      paddingBottom: spacing.lg,
+      borderTopWidth: 1,
+      borderTopColor: colors.borderLight,
+      backgroundColor: colors.surface,
+    },
+    footerCancel: {
+      flex: 1,
+      paddingHorizontal: spacing.sm,
+    },
+    footerSubmit: {
+      flex: 1.6,
+      paddingHorizontal: spacing.sm,
+    },
+    footerStacked: {
+      flexDirection: 'column-reverse',
+    },
+    footerStackedButton: {
+      width: '100%',
     },
   });

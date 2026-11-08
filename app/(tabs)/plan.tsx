@@ -19,6 +19,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -32,7 +33,83 @@ import {
   formatCopCurrency,
   formatIngredientQuantity,
 } from '../../src/types/recipe';
-import { AppColors, radius, spacing, useAppTheme, useThemeStyles, useTypography } from '../../src/theme';
+import { AppColors, darkColors, radius, spacing, useAppTheme, useThemeStyles, useTypography } from '../../src/theme';
+
+/** Cualquier emoji ya presente en el título: se respeta y no se añade otro. */
+const EXISTING_EMOJI = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u;
+const NEUTRAL_RECIPE_EMOJI = '🍽️';
+const RECIPE_EMOJI_RULES: readonly { emoji: string; pattern: RegExp }[] = [
+  {
+    emoji: '🍲',
+    pattern: /\b(sopas?|caldos?|sancochos?|ajiacos?|guisos?|estofados?|cocido|potajes?|consome|mondongo|cazuelas?)\b|^crema de\b/,
+  },
+  { emoji: '🥗', pattern: /\bensaladas?\b/ },
+  {
+    emoji: '🍝',
+    pattern: /\b(pastas?|espaguetis?|spaghetti|fideos?|macarrones|lasanas?|tallarines|penne|fettuccine|raviolis?|noquis)\b/,
+  },
+  { emoji: '🍚', pattern: /\b(arroz|risotto|paella)\b/ },
+  { emoji: '🥚', pattern: /\b(huevos?|omelette?)\b/ },
+  { emoji: '🍗', pattern: /\b(pollo|gallina)\b/ },
+];
+
+/**
+ * Emoji decorativo para el título visible de una preparación. Solo presentación: no altera el nombre,
+ * los identificadores ni los datos guardados. Gana el plato o ingrediente mencionado primero
+ * («Sopa de pollo» 🍲, «Pollo con arroz» 🍗) y, ante la duda, se usa el emoji neutro.
+ * Devuelve null si el título ya trae un emoji.
+ */
+export function getRecipeTitleEmoji(recipeName: string): string | null {
+  if (typeof recipeName !== 'string' || EXISTING_EMOJI.test(recipeName)) return null;
+  const normalized = recipeName
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim()
+    // Lo que el plato no lleva, y los falsos amigos, no deben clasificarlo
+    .replace(/\bsin\s+\w+/g, ' ')
+    .replace(/\barroz con leche\b/g, ' ')
+    .replace(/\bpasta de (ajo|tomate|mani|maiz|achiote)\b/g, ' ');
+
+  let bestEmoji = NEUTRAL_RECIPE_EMOJI;
+  let bestIndex = Number.POSITIVE_INFINITY;
+  for (const { emoji, pattern } of RECIPE_EMOJI_RULES) {
+    const match = pattern.exec(normalized);
+    if (match && match.index < bestIndex) {
+      bestIndex = match.index;
+      bestEmoji = emoji;
+    }
+  }
+  return bestEmoji;
+}
+
+/** Superficies del plan: púrpura profundo en oscuro (referencia aprobada) y tokens del tema en claro. */
+const getPlanPalette = (colors: AppColors) => {
+  const isDark = colors === darkColors;
+  return {
+    isDark,
+    canvasGradient: isDark
+      ? { backgroundImage: 'linear-gradient(180deg, #241A3E 0%, #15121D 24%, #131217 50%)' }
+      : {},
+    cardBackground: isDark ? '#231B38' : colors.surface,
+    cardGradient: isDark
+      ? { backgroundImage: 'linear-gradient(155deg, #2E2350 0%, #1E1830 62%, #1A1529 100%)' }
+      : {},
+    tileGradient: isDark
+      ? { backgroundImage: 'linear-gradient(150deg, #2B2240 0%, #1C1829 100%)' }
+      : {},
+    cardBorder: isDark ? '#46386F' : colors.primaryFixed,
+    divider: isDark ? '#46386F' : colors.outlineVariant,
+    inset: isDark ? '#171225' : colors.surfaceContainerLow,
+    iconTile: isDark ? '#3A2C60' : colors.primaryFixed,
+    accent: isDark ? '#CDB6FF' : colors.primary,
+    outlineStrong: isDark ? '#7561B0' : colors.primaryContainer,
+    cta: isDark ? '#B99AF0' : colors.primaryAction,
+    ctaGradient: isDark
+      ? { backgroundImage: 'linear-gradient(180deg, #CDB0F7 0%, #AE8BE8 100%)' }
+      : { backgroundImage: 'linear-gradient(180deg, #5B4B8A 0%, #433371 100%)' },
+  };
+};
 
 export interface PlanScreenProps {
   /** Callback opcional para pruebas y observabilidad de concurrencia/ciclo de vida de peticiones */
@@ -49,6 +126,15 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
   const router = useRouter();
   const { colors } = useAppTheme();
   const styles = useThemeStyles(createStyles);
+  const palette = getPlanPalette(colors);
+  const { width: windowWidth, height: windowHeight, fontScale } = useWindowDimensions();
+  // Si el ancho o la fuente no dan para ícono y texto en fila, el ícono pasa arriba y el valor no se parte
+  const stackSummaryTiles = windowWidth < 360 || fontScale > 1.3;
+  // Los indicadores quedan fijos sobre el scroll para que el encabezado nunca los cubra; en pantallas
+  // bajas o con fuente grande vuelven al scroll para no dejar sin espacio al contenido
+  const pinSummary = !stackSummaryTiles && windowHeight >= 640;
+  // A 360 dp se compacta el mosaico para que un monto como «$100.000 COP» quepa en una línea
+  const compactSummaryTiles = !stackSummaryTiles && windowWidth < 380;
 
   const { budget, servings, maxMinutes } = useBudget();
   const { ingredients } = usePantry();
@@ -134,12 +220,71 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
     router.push('/(tabs)/despensa');
   };
 
+  const summaryGrid = (
+    <View style={styles.summaryGrid} testID="plan-summary-strip">
+      {[
+        {
+          key: 'budget',
+          icon: 'piggy-bank' as const,
+          label: 'Presupuesto',
+          value: formatCopCurrency(budget),
+        },
+        {
+          key: 'servings',
+          icon: 'account-group' as const,
+          label: 'Porciones',
+          value: `${servings} ${servings === 1 ? 'persona' : 'personas'}`,
+        },
+        {
+          key: 'time',
+          icon: 'timer' as const,
+          label: 'Tiempo máx.',
+          value: maxMinutes ? `${maxMinutes} min` : 'Sin límite',
+        },
+        {
+          key: 'pantry',
+          icon: 'fridge' as const,
+          label: 'Despensa',
+          value: `${ingredients.length} ${ingredients.length === 1 ? 'ítem' : 'ítems'}`,
+        },
+      ].map((tile) => (
+        <View
+          key={tile.key}
+          style={[
+            styles.summaryTile,
+            stackSummaryTiles && styles.summaryTileStacked,
+            compactSummaryTiles && styles.summaryTileCompact,
+          ]}
+          testID={`plan-summary-${tile.key}`}
+        >
+          <View style={[styles.summaryIconBox, compactSummaryTiles && styles.summaryIconBoxCompact]}>
+            <MaterialCommunityIcons name={tile.icon} size={compactSummaryTiles ? 18 : 20} color={palette.accent} />
+          </View>
+          {!stackSummaryTiles && <View style={styles.summaryDivider} />}
+          {/* Sin numberOfLines: el valor (p. ej. «$250.000 COP») envuelve en lugar de truncarse */}
+          <View style={styles.summaryTextCol}>
+            <Text style={[styles.summaryLabel, typography.bodySm]}>{tile.label}</Text>
+            <Text
+              style={[
+                styles.summaryValue,
+                typography.labelLg,
+                compactSummaryTiles && styles.summaryValueCompact,
+              ]}
+              testID={`plan-summary-value-${tile.key}`}
+            >
+              {tile.value}
+            </Text>
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
       {/* 1. Header institucional */}
       <Header
         showLogo
-        elevated
         title="Mi plan de comidas"
         subtitle="Organiza tres días según tu despensa y presupuesto"
         rightElement={
@@ -156,62 +301,15 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
         }
       />
 
+      {pinSummary && <View style={styles.summaryPinned}>{summaryGrid}</View>}
+
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         testID="plan-scroll-view"
       >
-        {/* 2. Resumen de parámetros activos en cuadrícula 2×2 */}
-        <View style={styles.summaryCard} testID="plan-summary-strip">
-          <Text style={[styles.summaryEyebrow, typography.labelSm]}>TU PLAN SE BASA EN</Text>
-          <View style={styles.summaryGrid}>
-            {[
-              {
-                key: 'budget',
-                icon: 'piggy-bank-outline' as const,
-                tint: colors.tertiaryFixed,
-                iconColor: colors.onTertiaryFixed,
-                label: 'Presupuesto',
-                value: formatCopCurrency(budget),
-              },
-              {
-                key: 'servings',
-                icon: 'account-group-outline' as const,
-                tint: colors.primaryFixed,
-                iconColor: colors.primary,
-                label: 'Porciones',
-                value: `${servings} ${servings === 1 ? 'persona' : 'personas'}`,
-              },
-              {
-                key: 'time',
-                icon: 'timer-outline' as const,
-                tint: colors.secondaryFixed,
-                iconColor: colors.onSecondaryFixed,
-                label: 'Tiempo máx.',
-                value: maxMinutes ? `${maxMinutes} min` : 'Sin límite',
-              },
-              {
-                key: 'pantry',
-                icon: 'fridge-outline' as const,
-                tint: colors.successContainer,
-                iconColor: colors.success,
-                label: 'Despensa',
-                value: `${ingredients.length} ${ingredients.length === 1 ? 'ítem' : 'ítems'}`,
-              },
-            ].map((tile) => (
-              <View key={tile.key} style={styles.summaryTile} testID={`plan-summary-${tile.key}`}>
-                <View style={[styles.summaryIconBox, { backgroundColor: tile.tint }]}>
-                  <MaterialCommunityIcons name={tile.icon} size={18} color={tile.iconColor} />
-                </View>
-                {/* Sin numberOfLines: el valor (p. ej. «$250.000 COP») envuelve en lugar de truncarse */}
-                <View style={styles.summaryTextCol}>
-                  <Text style={[styles.summaryLabel, typography.labelSm]}>{tile.label}</Text>
-                  <Text style={[styles.summaryValue, typography.labelLg]}>{tile.value}</Text>
-                </View>
-              </View>
-            ))}
-          </View>
-        </View>
+        {/* 2. Resumen en cuadrícula 2×2 cuando no cabe fijo sobre el scroll */}
+        {!pinSummary && summaryGrid}
 
         {/* 3. Banner de alerta de plan obsoleto (isStale) */}
         {Boolean(plan && isStale) && (
@@ -283,7 +381,7 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
         {!hasPantryItems && !plan && !isLoading && (
           <Card variant="outlined" style={styles.emptyCard} testID="plan-empty-pantry-card">
             <View style={styles.emptyIconCircle}>
-              <MaterialCommunityIcons name="fridge-outline" size={40} color={colors.outline} />
+              <MaterialCommunityIcons name="fridge-outline" size={40} color={palette.accent} />
             </View>
             <Text style={[styles.emptyTitle, typography.headlineMd]}>
               Tu despensa está vacía
@@ -296,6 +394,8 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
               title="Ir a Mi Despensa"
               variant="primary"
               size="md"
+              style={styles.ctaButton}
+              textStyle={styles.ctaText}
               onPress={handleGoToPantry}
               leftIcon={<MaterialCommunityIcons name="plus" size={18} color={colors.onPrimary} />}
             />
@@ -305,10 +405,23 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
         {/* 7. Estado inicial cuando hay despensa pero no se ha generado plan */}
         {hasPantryItems && !plan && !isLoading && (
           <Card variant="elevated" style={styles.introCard} testID="plan-intro-card">
-            <View style={styles.introIconCircle}>
-              <MaterialCommunityIcons name="creation" size={32} color={colors.primary} />
+            {/* Composición con íconos vectoriales: no añade imágenes ni assets */}
+            <View
+              style={styles.introIllustration}
+              testID="plan-intro-illustration"
+              accessible={false}
+              importantForAccessibility="no-hide-descendants"
+            >
+              <View style={styles.introHalo} />
+              <MaterialCommunityIcons name="calendar-check" size={88} color={palette.accent} />
+              <View style={styles.introBowl}>
+                <MaterialCommunityIcons name="bowl-mix" size={30} color={colors.onPrimary} />
+              </View>
+              <View style={[styles.introSpark, styles.introSparkTop]} />
+              <View style={[styles.introSpark, styles.introSparkMiddle]} />
+              <View style={[styles.introSpark, styles.introSparkBottom]} />
             </View>
-            <Text style={[styles.introTitle, typography.headlineMd]}>
+            <Text style={[styles.introTitle, typography.headlineLg]}>
               Planifica tus comidas de los próximos 3 días
             </Text>
             <Text style={[styles.introDescription, typography.bodyMd]}>
@@ -321,8 +434,15 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
               variant="primary"
               size="lg"
               fullWidth
+              style={styles.ctaButton}
+              textStyle={styles.ctaText}
               onPress={handleGeneratePlan}
               leftIcon={<MaterialCommunityIcons name="silverware-fork-knife" size={20} color={colors.onPrimary} />}
+              rightIcon={
+                stackSummaryTiles ? undefined : (
+                  <MaterialCommunityIcons name="arrow-right" size={20} color={colors.onPrimary} />
+                )
+              }
             />
           </Card>
         )}
@@ -345,9 +465,10 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
                 title={isStale ? 'Actualizar plan' : 'Regenerar'}
                 variant={isStale ? 'primary' : 'outline'}
                 size="sm"
+                style={isStale && hasPantryItems ? styles.ctaButton : styles.outlineAction}
                 onPress={handleGeneratePlan}
                 disabled={!hasPantryItems || isLoading}
-                leftIcon={<MaterialCommunityIcons name="refresh" size={16} color={isStale ? colors.onPrimary : colors.primary} />}
+                leftIcon={<MaterialCommunityIcons name="refresh" size={16} color={isStale ? colors.onPrimary : palette.accent} />}
               />
             </View>
 
@@ -355,8 +476,8 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
             <Card variant="elevated" style={styles.progressCard} testID="plan-progress-card">
               <View style={styles.progressHeaderRow}>
                 <View style={styles.progressHeaderLeft}>
-                  <MaterialCommunityIcons name="progress-check" size={20} color={colors.primary} />
-                  <Text style={[styles.progressCardTitle, typography.headlineMd]}>
+                  <MaterialCommunityIcons name="progress-check" size={20} color={palette.accent} />
+                  <Text style={[typography.headlineMd, styles.progressCardTitle]}>
                     Progreso del plan
                   </Text>
                 </View>
@@ -385,6 +506,7 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
             {plan.days.map((dayItem) => {
               const recipe = dayItem.recipe;
               const hasMissing = recipe.missingIngredients.length > 0;
+              const titleEmoji = getRecipeTitleEmoji(recipe.name);
 
               return (
                 <Card
@@ -410,9 +532,25 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
                   </View>
 
                   {/* Título y descripción */}
-                  <Text style={[styles.recipeName, typography.headlineMd]} numberOfLines={2}>
-                    {recipe.name}
-                  </Text>
+                  <View style={styles.recipeTitleRow}>
+                    {titleEmoji && (
+                      <Text
+                        style={styles.recipeEmoji}
+                        testID={`plan-day-emoji-${dayItem.day}`}
+                        accessibilityElementsHidden
+                        importantForAccessibility="no"
+                      >
+                        {titleEmoji}
+                      </Text>
+                    )}
+                    <Text
+                      style={[typography.headlineMd, styles.recipeName]}
+                      numberOfLines={2}
+                      testID={`plan-day-title-${dayItem.day}`}
+                    >
+                      {recipe.name}
+                    </Text>
+                  </View>
                   <Text style={[styles.recipeDescription, typography.bodySm]} numberOfLines={3}>
                     {recipe.description}
                   </Text>
@@ -420,14 +558,14 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
                   {/* Métricas rápidas de la receta */}
                   <View style={styles.dayMetricsRow}>
                     <View style={styles.dayMetricItem}>
-                      <MaterialCommunityIcons name="timer-outline" size={16} color={colors.primary} />
+                      <MaterialCommunityIcons name="timer-outline" size={16} color={palette.accent} />
                       <Text style={[styles.dayMetricText, typography.labelSm]}>
                         {recipe.totalMinutes} min
                       </Text>
                     </View>
 
                     <View style={styles.dayMetricItem}>
-                      <MaterialCommunityIcons name="check-circle-outline" size={16} color={colors.primary} />
+                      <MaterialCommunityIcons name="check-circle-outline" size={16} color={palette.accent} />
                       <Text style={[styles.dayMetricText, typography.labelSm]}>
                         {recipe.availableIngredients.length} en casa
                       </Text>
@@ -474,9 +612,11 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
                   <Button
                     testID={`plan-day-complete-button-${dayItem.day}`}
                     title={dayItem.isCompleted ? 'Marcar como pendiente' : 'Marcar día como completado'}
-                    variant={dayItem.isCompleted ? 'ghost' : 'secondary'}
+                    variant={dayItem.isCompleted ? 'ghost' : 'primary'}
                     size="md"
                     fullWidth
+                    style={dayItem.isCompleted ? undefined : styles.ctaButton}
+                    textStyle={dayItem.isCompleted ? undefined : styles.ctaText}
                     onPress={() => toggleDayCompleted(dayItem.day)}
                     leftIcon={
                       <MaterialCommunityIcons
@@ -493,8 +633,10 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
                     variant="outline"
                     size="md"
                     fullWidth
+                    style={styles.outlineAction}
+                    textStyle={styles.outlineActionText}
                     onPress={() => handleNavigateToRecipe(recipe.id)}
-                    leftIcon={<MaterialCommunityIcons name="book-open-variant" size={18} color={colors.primary} />}
+                    leftIcon={<MaterialCommunityIcons name="book-open-variant" size={18} color={palette.accent} />}
                   />
                 </Card>
               );
@@ -503,7 +645,7 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
             {/* 9. Resumen presupuestario del plan */}
             <Card variant="elevated" style={styles.budgetCard} testID="plan-budget-summary">
               <View style={styles.budgetCardHeader}>
-                <MaterialCommunityIcons name="wallet-outline" size={22} color={colors.primary} />
+                <MaterialCommunityIcons name="wallet-outline" size={22} color={palette.accent} />
                 <Text style={[styles.budgetCardTitle, typography.headlineMd]}>
                   Balance del plan
                 </Text>
@@ -655,11 +797,20 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
   );
 }
 
-const createStyles = (colors: AppColors) =>
-  StyleSheet.create({
+const createStyles = (colors: AppColors) => {
+  const palette = getPlanPalette(colors);
+  const surfaceCard = {
+    backgroundColor: palette.cardBackground,
+    ...palette.cardGradient,
+    borderWidth: 1,
+    borderColor: palette.cardBorder,
+    borderRadius: radius.lg + 6,
+  };
+  return StyleSheet.create({
     safeArea: {
       flex: 1,
       backgroundColor: colors.canvas,
+      ...palette.canvasGradient,
     },
     scrollContent: {
       padding: spacing.margin,
@@ -674,37 +825,46 @@ const createStyles = (colors: AppColors) =>
       alignItems: 'center',
       justifyContent: 'center',
     },
-    summaryCard: {
-      backgroundColor: colors.surface,
-      borderRadius: radius.xl,
-      borderWidth: 1,
-      borderColor: colors.borderLight,
-      padding: spacing.md,
-      gap: spacing.sm + 4,
-      shadowColor: colors.cardShadow,
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.07,
-      shadowRadius: 12,
-      elevation: 2,
-    },
-    summaryEyebrow: {
-      color: colors.textSecondary,
-      letterSpacing: 0.6,
+    summaryPinned: {
+      paddingHorizontal: spacing.margin,
+      paddingTop: spacing.xs,
+      paddingBottom: spacing.sm + 4,
     },
     summaryGrid: {
       flexDirection: 'row',
       flexWrap: 'wrap',
       gap: spacing.sm,
     },
-    // Ícono arriba y texto debajo: todo el ancho del mosaico queda para el valor
     summaryTile: {
       flexGrow: 1,
       flexBasis: '45%',
-      gap: spacing.sm,
-      paddingHorizontal: spacing.sm + 4,
-      paddingVertical: spacing.sm + 4,
-      borderRadius: radius.lg,
-      backgroundColor: colors.surfaceContainerLow,
+      minWidth: 0,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm - 2,
+      padding: spacing.sm,
+      borderRadius: radius.lg + 2,
+      borderWidth: 1,
+      borderColor: palette.cardBorder,
+      backgroundColor: palette.cardBackground,
+      ...palette.tileGradient,
+    },
+    // Ícono arriba y texto debajo: todo el ancho del mosaico queda para el valor
+    summaryTileStacked: {
+      flexDirection: 'column',
+      alignItems: 'flex-start',
+    },
+    summaryTileCompact: {
+      gap: spacing.xs,
+      paddingHorizontal: spacing.xs + 2,
+    },
+    summaryIconBoxCompact: {
+      width: 32,
+      height: 32,
+    },
+    summaryValueCompact: {
+      fontSize: 13,
+      letterSpacing: 0,
     },
     summaryIconBox: {
       width: 36,
@@ -712,9 +872,18 @@ const createStyles = (colors: AppColors) =>
       borderRadius: radius.md + 4,
       alignItems: 'center',
       justifyContent: 'center',
+      backgroundColor: palette.iconTile,
+    },
+    summaryDivider: {
+      width: 1,
+      alignSelf: 'stretch',
+      marginVertical: spacing.xs,
+      backgroundColor: palette.divider,
     },
     summaryTextCol: {
-      gap: 1,
+      flex: 1,
+      flexBasis: 'auto',
+      minWidth: 0,
     },
     summaryLabel: {
       color: colors.textSecondary,
@@ -787,17 +956,17 @@ const createStyles = (colors: AppColors) =>
       marginBottom: spacing.xs,
     },
     emptyCard: {
-      padding: spacing.xl,
+      ...surfaceCard,
+      padding: spacing.lg,
       alignItems: 'center',
       justifyContent: 'center',
       gap: spacing.md,
-      backgroundColor: colors.surface,
     },
     emptyIconCircle: {
       width: 72,
       height: 72,
       borderRadius: radius.full,
-      backgroundColor: colors.primaryFixed,
+      backgroundColor: palette.iconTile,
       alignItems: 'center',
       justifyContent: 'center',
     },
@@ -813,19 +982,60 @@ const createStyles = (colors: AppColors) =>
       maxWidth: 280,
     },
     introCard: {
-      padding: spacing.xl,
+      ...surfaceCard,
+      paddingHorizontal: spacing.md,
+      paddingTop: spacing.lg,
+      paddingBottom: spacing.lg,
       alignItems: 'center',
       justifyContent: 'center',
-      gap: spacing.md,
-      backgroundColor: colors.surface,
+      gap: spacing.sm + 4,
     },
-    introIconCircle: {
-      width: 64,
-      height: 64,
-      borderRadius: radius.full,
-      backgroundColor: colors.primaryFixed,
+    introIllustration: {
+      width: 176,
+      height: 132,
       alignItems: 'center',
       justifyContent: 'center',
+    },
+    introHalo: {
+      position: 'absolute',
+      width: 128,
+      height: 128,
+      borderRadius: radius.full,
+      backgroundColor: palette.iconTile,
+    },
+    introBowl: {
+      position: 'absolute',
+      right: 22,
+      bottom: 6,
+      width: 52,
+      height: 52,
+      borderRadius: radius.full,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: palette.cta,
+      ...palette.ctaGradient,
+    },
+    introSpark: {
+      position: 'absolute',
+      width: 16,
+      height: 4,
+      borderRadius: radius.full,
+      backgroundColor: colors.tertiary,
+    },
+    introSparkTop: {
+      top: 8,
+      right: 38,
+      transform: [{ rotate: '-70deg' }],
+    },
+    introSparkMiddle: {
+      top: 22,
+      right: 20,
+      transform: [{ rotate: '-30deg' }],
+    },
+    introSparkBottom: {
+      top: 40,
+      right: 16,
+      transform: [{ rotate: '0deg' }],
     },
     introTitle: {
       color: colors.textPrimary,
@@ -841,8 +1051,29 @@ const createStyles = (colors: AppColors) =>
     planResultsContainer: {
       gap: spacing.md,
     },
+    ctaButton: {
+      backgroundColor: palette.cta,
+      ...palette.ctaGradient,
+      paddingHorizontal: spacing.md,
+      borderRadius: radius.lg + 2,
+    },
+    ctaText: {
+      fontSize: 15,
+      fontWeight: '700',
+    },
+    outlineAction: {
+      backgroundColor: 'transparent',
+      borderWidth: 1.5,
+      borderColor: palette.outlineStrong,
+      paddingHorizontal: spacing.md,
+      borderRadius: radius.lg + 2,
+    },
+    outlineActionText: {
+      fontSize: 15,
+    },
     regenerateRow: {
       flexDirection: 'row',
+      flexWrap: 'wrap',
       alignItems: 'center',
       justifyContent: 'space-between',
       gap: spacing.sm,
@@ -860,20 +1091,16 @@ const createStyles = (colors: AppColors) =>
       color: colors.textSecondary,
     },
     progressCard: {
+      ...surfaceCard,
       padding: spacing.md,
-      backgroundColor: colors.surface,
-      gap: spacing.sm,
-      borderRadius: radius.lg + 4,
-      shadowColor: colors.cardShadow,
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.07,
-      shadowRadius: 12,
-      elevation: 2,
+      gap: spacing.sm + 2,
     },
     progressHeaderRow: {
       flexDirection: 'row',
+      flexWrap: 'wrap',
       alignItems: 'center',
       justifyContent: 'space-between',
+      gap: spacing.xs,
     },
     progressHeaderLeft: {
       flexDirection: 'row',
@@ -883,21 +1110,23 @@ const createStyles = (colors: AppColors) =>
     progressCardTitle: {
       color: colors.textPrimary,
       fontWeight: '700',
+      fontSize: 17,
+      lineHeight: 24,
     },
     progressCountText: {
-      color: colors.primary,
+      color: palette.accent,
       fontWeight: '700',
     },
     progressBarTrack: {
       width: '100%',
       height: 8,
-      backgroundColor: colors.surfaceContainer,
+      backgroundColor: palette.inset,
       borderRadius: radius.full,
       overflow: 'hidden',
     },
     progressBarFill: {
       height: '100%',
-      backgroundColor: colors.primary,
+      backgroundColor: palette.accent,
       borderRadius: radius.full,
     },
     completedBadge: {
@@ -915,17 +1144,19 @@ const createStyles = (colors: AppColors) =>
       fontWeight: '600',
     },
     dayCard: {
+      ...surfaceCard,
       padding: spacing.md,
-      backgroundColor: colors.surface,
-      gap: spacing.sm,
+      gap: spacing.sm + 2,
     },
     dayHeaderRow: {
       flexDirection: 'row',
+      flexWrap: 'wrap',
       alignItems: 'center',
       justifyContent: 'space-between',
+      gap: spacing.xs,
     },
     dayBadge: {
-      backgroundColor: colors.primaryFixed,
+      backgroundColor: palette.iconTile,
       paddingHorizontal: 10,
       paddingVertical: 4,
       borderRadius: radius.full,
@@ -949,9 +1180,21 @@ const createStyles = (colors: AppColors) =>
       fontWeight: '700',
       fontSize: 11,
     },
+    recipeTitleRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: spacing.sm,
+    },
+    recipeEmoji: {
+      fontSize: 18,
+      lineHeight: 26,
+    },
     recipeName: {
+      flexShrink: 1,
       color: colors.textPrimary,
       fontWeight: '700',
+      fontSize: 18,
+      lineHeight: 24,
     },
     recipeDescription: {
       color: colors.textSecondary,
@@ -960,10 +1203,11 @@ const createStyles = (colors: AppColors) =>
     dayMetricsRow: {
       flexDirection: 'row',
       flexWrap: 'wrap',
-      gap: spacing.sm,
-      backgroundColor: colors.surfaceContainerLow,
-      padding: spacing.xs,
-      borderRadius: radius.md + 4,
+      gap: spacing.sm + 2,
+      backgroundColor: palette.inset,
+      paddingVertical: spacing.xs + 2,
+      paddingHorizontal: spacing.sm + 2,
+      borderRadius: radius.lg,
     },
     dayMetricItem: {
       flexDirection: 'row',
@@ -978,18 +1222,21 @@ const createStyles = (colors: AppColors) =>
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
+      gap: spacing.sm,
       paddingVertical: 2,
     },
     recipeCostLabel: {
+      flexShrink: 1,
       color: colors.textSecondary,
     },
     recipeCostValue: {
+      flexShrink: 0,
       color: colors.secondary,
       fontWeight: '700',
     },
     budgetCard: {
+      ...surfaceCard,
       padding: spacing.md,
-      backgroundColor: colors.surfaceContainerHigh,
       gap: spacing.xs,
     },
     budgetCardHeader: {
@@ -1006,26 +1253,33 @@ const createStyles = (colors: AppColors) =>
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
+      gap: spacing.sm,
       paddingVertical: 2,
     },
     budgetTableLabel: {
+      flex: 1,
       color: colors.textSecondary,
     },
     budgetTableValue: {
+      flexShrink: 1,
       color: colors.textPrimary,
       fontWeight: '600',
+      textAlign: 'right',
     },
     budgetDivider: {
       height: 1,
-      backgroundColor: colors.outlineVariant,
+      backgroundColor: palette.divider,
       marginVertical: spacing.xs,
     },
     budgetTotalLabel: {
+      flex: 1,
       color: colors.textPrimary,
       fontWeight: '700',
     },
     budgetTotalValue: {
+      flexShrink: 1,
       fontWeight: '700',
+      textAlign: 'right',
     },
     withinBudgetBadge: {
       flexDirection: 'row',
@@ -1051,22 +1305,19 @@ const createStyles = (colors: AppColors) =>
       marginTop: spacing.xs,
     },
     shoppingSection: {
-      backgroundColor: colors.surface,
+      ...surfaceCard,
       padding: spacing.md,
-      borderRadius: radius.xl,
       gap: spacing.sm,
-      shadowColor: colors.cardShadow,
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.07,
-      shadowRadius: 12,
-      elevation: 2,
     },
     shoppingHeaderRow: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
+      gap: spacing.xs,
     },
     shoppingTitleRow: {
+      flex: 1,
+      minWidth: 0,
       flexDirection: 'row',
       alignItems: 'center',
       gap: spacing.xs,
@@ -1080,6 +1331,7 @@ const createStyles = (colors: AppColors) =>
       justifyContent: 'center',
     },
     shoppingTitle: {
+      flexShrink: 1,
       color: colors.textPrimary,
       fontWeight: '700',
     },
@@ -1113,11 +1365,12 @@ const createStyles = (colors: AppColors) =>
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
-      padding: spacing.sm,
-      backgroundColor: colors.canvas,
-      borderRadius: radius.md,
+      gap: spacing.sm,
+      padding: spacing.sm + 2,
+      backgroundColor: palette.inset,
+      borderRadius: radius.md + 4,
       borderWidth: 1,
-      borderColor: colors.outlineVariant,
+      borderColor: palette.cardBorder,
     },
     missingItemLeft: {
       flexDirection: 'row',
@@ -1147,3 +1400,4 @@ const createStyles = (colors: AppColors) =>
       marginTop: spacing.xs,
     },
   });
+};

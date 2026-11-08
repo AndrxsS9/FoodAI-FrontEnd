@@ -11,19 +11,22 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
+  Keyboard,
   Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import { Button, Card, Header } from '../../src/components/common';
+import { Button, Card } from '../../src/components/common';
 import { DetectedIngredientCard } from '../../src/components/scanner';
+import { getScannerPalette } from '../../src/components/scanner/DetectedIngredientCard';
 import { usePantry } from '../../src/context/PantryContext';
 import {
   formatScannerDiagnostic,
@@ -55,6 +58,9 @@ export default function ScannerScreen() {
   const router = useRouter();
   const { colors } = useAppTheme();
   const styles = useThemeStyles(createStyles);
+  const insets = useSafeAreaInsets();
+  const palette = getScannerPalette(colors);
+  const { width: windowWidth } = useWindowDimensions();
   const { ingredients, addIngredient, updateIngredient } = usePantry();
 
   // Estados del flujo
@@ -69,6 +75,8 @@ export default function ScannerScreen() {
     'Preparando imagen...'
   );
   const [saveSummary, setSaveSummary] = useState<ScannerSaveSummary | null>(null);
+  // Altura del teclado: el pie fijo se oculta y el contenido gana espacio para seguir siendo alcanzable
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
 
   // Control de peticiones concurrentes, generación y cancelación
   const isMountedRef = useRef<boolean>(true);
@@ -124,6 +132,19 @@ export default function ScannerScreen() {
         abortControllerRef.current = null;
       }
       isSubmittingRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const showSubscription = Keyboard.addListener('keyboardDidShow', (event) => {
+      setKeyboardHeight(event.endCoordinates.height);
+    });
+    const hideSubscription = Keyboard.addListener('keyboardDidHide', () => {
+      setKeyboardHeight(0);
+    });
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
     };
   }, []);
 
@@ -558,33 +579,65 @@ export default function ScannerScreen() {
   );
   const canSave =
     selectedItems.length > 0 && itemsWithMissingQuantity.length === 0 && !isSaving;
-  // Conteos de presentación para el resumen de revisión (no alteran el guardado)
-  const reviewPendingCount = scannedItems.filter((i) => i.needsReview).length;
-  const duplicatesCount = scannedItems.filter((i) => i.duplicateMatch).length;
   const allSelected = scannedItems.length > 0 && selectedItems.length === scannedItems.length;
   const noneSelected = selectedItems.length === 0;
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
-      {/* Header unificado */}
-      <Header
-        elevated
-        title="Escáner Inteligente"
-        subtitle="Detecta ingredientes con tu cámara e IA"
-        showBack
-        onBack={() => {
-          if (step === 'review' || step === 'preview' || step === 'error') {
-            handleResetScanner();
-          } else {
-            router.back();
-          }
-        }}
-      />
+      {/* Encabezado propio: la referencia lleva un mosaico de ícono que el Header común no admite */}
+      <View style={styles.headerRow} testID="scanner-header">
+        <Pressable
+          onPress={() => {
+            if (step === 'review' || step === 'preview' || step === 'error') {
+              handleResetScanner();
+            } else {
+              router.back();
+            }
+          }}
+          accessibilityRole="button"
+          accessibilityLabel="Volver"
+          accessibilityHint="Regresar a la pantalla anterior"
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          style={({ pressed }) => [styles.headerBack, pressed && styles.headerBackPressed]}
+        >
+          <MaterialCommunityIcons name="arrow-left" size={24} color={colors.textPrimary} />
+        </Pressable>
+        <View
+          style={styles.headerIconTile}
+          testID="scanner-header-icon"
+          accessible={false}
+          importantForAccessibility="no-hide-descendants"
+        >
+          <MaterialCommunityIcons name="scan-helper" size={30} color="#FFFFFF" />
+          <View style={styles.headerIconCamera}>
+            <MaterialCommunityIcons name="camera" size={14} color="#FFFFFF" />
+          </View>
+        </View>
+        <View style={styles.headerTextCol}>
+          <Text
+            style={[
+              styles.headerTitle,
+              typography.headlineMd,
+              windowWidth < 340 && styles.headerTitleCompact,
+            ]}
+            accessibilityRole="header"
+          >
+            Escáner Inteligente
+          </Text>
+          <Text style={[styles.headerSubtitle, typography.bodySm]}>
+            Detecta ingredientes con tu cámara e IA
+          </Text>
+        </View>
+      </View>
 
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          keyboardHeight > 0 && { paddingBottom: keyboardHeight + spacing.xl },
+        ]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
+        testID="scanner-scroll-view"
       >
         {/* Banner general de error */}
         {errorMessage && step !== 'error' && (
@@ -835,103 +888,48 @@ export default function ScannerScreen() {
            ========================================================================= */}
         {step === 'review' && (
           <View style={styles.reviewContainer} testID="scanner-review-state">
-            {/* Resumen del resultado: miniatura, conteos y selección masiva */}
-            <View style={styles.reviewSummaryCard}>
-              <View style={styles.reviewSummaryTop}>
-                {selectedImage && (
-                  <Image
-                    source={{ uri: selectedImage.uri }}
-                    style={styles.reviewThumb}
-                    resizeMode="cover"
-                    accessibilityLabel="Miniatura de la foto analizada"
-                  />
-                )}
+            {/* Encabezado del resultado: conteo dinámico y selección masiva compacta */}
+            <View style={styles.reviewIntro}>
+              <View style={styles.reviewTitleRow}>
                 <View style={styles.reviewHeadingBlock} testID="scanner-review-heading">
-                  <Text style={[styles.reviewEyebrow, typography.labelSm]}>
-                    RESULTADO DEL ESCÁNER
-                  </Text>
-                  <Text style={[styles.reviewHeading, typography.headlineMd]}>
+                  <Text
+                    style={[
+                      styles.reviewHeading,
+                      typography.headlineMd,
+                      windowWidth < 400 && styles.reviewHeadingCompact,
+                    ]}
+                    accessibilityRole="header"
+                  >
                     {scannedItems.length} alimento{scannedItems.length === 1 ? '' : 's'} detectado{scannedItems.length === 1 ? '' : 's'}
                   </Text>
-                  <Text style={[styles.reviewSubheading, typography.bodySm]}>
-                    Revisa y corrige los datos antes de guardarlos.
-                  </Text>
+                </View>
+                <View style={styles.selectLinksRow}>
+                  <Pressable
+                    testID="scanner-select-all-button"
+                    onPress={() => handleSelectAll(true)}
+                    style={({ pressed }) => [styles.selectLink, pressed && styles.selectLinkPressed]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Seleccionar todos los alimentos detectados"
+                    accessibilityState={{ selected: allSelected }}
+                  >
+                    <Text style={[styles.selectLinkText, typography.labelLg]}>Todos</Text>
+                  </Pressable>
+                  <View style={styles.selectLinkDivider} />
+                  <Pressable
+                    testID="scanner-deselect-all-button"
+                    onPress={() => handleSelectAll(false)}
+                    style={({ pressed }) => [styles.selectLink, pressed && styles.selectLinkPressed]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Quitar la selección de todos los alimentos"
+                    accessibilityState={{ selected: noneSelected }}
+                  >
+                    <Text style={[styles.selectLinkText, typography.labelLg]}>Ninguno</Text>
+                  </Pressable>
                 </View>
               </View>
-
-              <View style={styles.reviewStatsRow}>
-                <View style={styles.reviewStat}>
-                  <MaterialCommunityIcons name="check-circle-outline" size={14} color={colors.primary} />
-                  <Text style={[styles.reviewStatText, typography.labelSm]}>
-                    {selectedItems.length}/{scannedItems.length} seleccionado{scannedItems.length === 1 ? '' : 's'}
-                  </Text>
-                </View>
-                {reviewPendingCount > 0 && (
-                  <View style={[styles.reviewStat, styles.reviewStatWarning]}>
-                    <MaterialCommunityIcons name="help-circle-outline" size={14} color={colors.demoBadgeText} />
-                    <Text style={[styles.reviewStatText, typography.labelSm, styles.reviewStatWarningText]}>
-                      {reviewPendingCount} por revisar
-                    </Text>
-                  </View>
-                )}
-                {duplicatesCount > 0 && (
-                  <View style={styles.reviewStat}>
-                    <MaterialCommunityIcons name="sync" size={14} color={colors.primary} />
-                    <Text style={[styles.reviewStatText, typography.labelSm]}>
-                      {duplicatesCount} ya en tu despensa
-                    </Text>
-                  </View>
-                )}
-              </View>
-
-              <View style={styles.selectToggleRow}>
-                <Pressable
-                  testID="scanner-select-all-button"
-                  onPress={() => handleSelectAll(true)}
-                  style={[styles.selectToggleButton, allSelected && styles.selectToggleButtonActive]}
-                  accessibilityRole="button"
-                  accessibilityLabel="Seleccionar todos los alimentos detectados"
-                  accessibilityState={{ selected: allSelected }}
-                >
-                  <MaterialCommunityIcons
-                    name="checkbox-marked-outline"
-                    size={16}
-                    color={allSelected ? colors.onPrimary : colors.textSecondary}
-                  />
-                  <Text
-                    style={[
-                      styles.toggleText,
-                      typography.labelMd,
-                      allSelected && styles.toggleTextActive,
-                    ]}
-                  >
-                    Todos
-                  </Text>
-                </Pressable>
-                <Pressable
-                  testID="scanner-deselect-all-button"
-                  onPress={() => handleSelectAll(false)}
-                  style={[styles.selectToggleButton, noneSelected && styles.selectToggleButtonActive]}
-                  accessibilityRole="button"
-                  accessibilityLabel="Quitar la selección de todos los alimentos"
-                  accessibilityState={{ selected: noneSelected }}
-                >
-                  <MaterialCommunityIcons
-                    name="checkbox-blank-outline"
-                    size={16}
-                    color={noneSelected ? colors.onPrimary : colors.textSecondary}
-                  />
-                  <Text
-                    style={[
-                      styles.toggleText,
-                      typography.labelMd,
-                      noneSelected && styles.toggleTextActive,
-                    ]}
-                  >
-                    Ninguno
-                  </Text>
-                </Pressable>
-              </View>
+              <Text style={[styles.reviewSubheading, typography.bodyMd]}>
+                Revisa y corrige los datos antes de guardarlos.
+              </Text>
             </View>
 
             {/* Aviso si faltan cantidades */}
@@ -962,43 +960,6 @@ export default function ScannerScreen() {
                   onRemove={handleRemoveItem}
                 />
               ))}
-            </View>
-
-            {/* Acciones de guardado */}
-            <View style={styles.reviewBottomActions}>
-              <Button
-                testID="scanner-confirm-save-button"
-                title={
-                  selectedItems.length === 0
-                    ? 'Selecciona al menos un alimento'
-                    : itemsWithMissingQuantity.length > 0
-                    ? 'Define las cantidades pendientes'
-                    : `Guardar ${selectedItems.length} alimento${selectedItems.length === 1 ? '' : 's'} en mi despensa`
-                }
-                variant="primary"
-                size="lg"
-                fullWidth
-                disabled={!canSave}
-                onPress={() => { void handleConfirmAndSave(); }}
-                leftIcon={
-                  <MaterialCommunityIcons
-                    name="content-save-outline"
-                    size={20}
-                    color={colors.onPrimary}
-                  />
-                }
-                accessibilityLabel="Confirmar y guardar alimentos seleccionados en mi despensa"
-              />
-
-              <Button
-                testID="scanner-retake-from-review-button"
-                title="Descartar y tomar otra foto"
-                variant="outline"
-                size="md"
-                fullWidth
-                onPress={handleResetScanner}
-                accessibilityLabel="Descartar detecciones y tomar otra foto"
-              />
             </View>
           </View>
         )}
@@ -1192,15 +1153,121 @@ export default function ScannerScreen() {
           </View>
         )}
       </ScrollView>
+
+      {/*
+        Acciones de guardado fijas al pie, como en la referencia. Se usan Pressable propios porque el
+        Button común tiene altura fija y una sola línea, y recortaría el texto a 320 dp o con fuente grande.
+      */}
+      {step === 'review' && keyboardHeight === 0 && (
+        <View
+          style={[styles.reviewFooter, { paddingBottom: Math.max(insets.bottom, spacing.sm + 4) }]}
+          testID="scanner-review-footer"
+        >
+          <Pressable
+            testID="scanner-confirm-save-button"
+            disabled={!canSave}
+            onPress={() => { void handleConfirmAndSave(); }}
+            accessibilityRole="button"
+            accessibilityLabel="Confirmar y guardar alimentos seleccionados en mi despensa"
+            accessibilityState={{ disabled: !canSave }}
+            style={({ pressed }) => [
+              styles.saveAction,
+              canSave ? styles.saveActionEnabled : styles.saveActionDisabled,
+              pressed && canSave && styles.actionPressed,
+            ]}
+          >
+            <MaterialCommunityIcons
+              name="content-save-outline"
+              size={22}
+              color={canSave ? colors.onPrimary : colors.textSecondary}
+            />
+            <Text
+              style={[
+                styles.saveActionText,
+                typography.labelLg,
+                !canSave && styles.saveActionTextDisabled,
+              ]}
+            >
+              {selectedItems.length === 0
+                ? 'Selecciona al menos un alimento'
+                : itemsWithMissingQuantity.length > 0
+                ? 'Define las cantidades pendientes'
+                : `Guardar ${selectedItems.length} alimento${selectedItems.length === 1 ? '' : 's'} en mi despensa`}
+            </Text>
+          </Pressable>
+
+          <Pressable
+            testID="scanner-retake-from-review-button"
+            onPress={handleResetScanner}
+            accessibilityRole="button"
+            accessibilityLabel="Descartar detecciones y tomar otra foto"
+            style={({ pressed }) => [styles.discardAction, pressed && styles.actionPressed]}
+          >
+            <MaterialCommunityIcons name="camera-outline" size={20} color={palette.accent} />
+            <Text style={[styles.discardActionText, typography.labelLg]}>
+              Descartar y tomar otra foto
+            </Text>
+          </Pressable>
+        </View>
+      )}
     </SafeAreaView>
   );
 }
 
-const createStyles = (colors: AppColors) =>
-  StyleSheet.create({
+const createStyles = (colors: AppColors) => {
+  const palette = getScannerPalette(colors);
+  return StyleSheet.create({
     safeArea: {
       flex: 1,
       backgroundColor: colors.canvas,
+      ...palette.canvasGradient,
+    },
+    headerRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm + 4,
+      paddingHorizontal: spacing.margin,
+      paddingVertical: spacing.sm,
+      minHeight: 56,
+    },
+    headerBack: {
+      width: 44,
+      height: 44,
+      marginLeft: -spacing.sm,
+      marginRight: -spacing.xs,
+      borderRadius: radius.full,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    headerBackPressed: {
+      backgroundColor: colors.surfaceContainer,
+    },
+    headerIconTile: {
+      width: 48,
+      height: 48,
+      borderRadius: radius.lg,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: '#5B4498',
+      backgroundImage: 'linear-gradient(150deg, #8166CC 0%, #4F3A91 100%)',
+    },
+    headerIconCamera: {
+      position: 'absolute',
+    },
+    headerTextCol: {
+      flex: 1,
+      minWidth: 0,
+    },
+    headerTitle: {
+      color: colors.textPrimary,
+      fontWeight: '700',
+    },
+    headerTitleCompact: {
+      fontSize: 18,
+      lineHeight: 24,
+    },
+    headerSubtitle: {
+      color: colors.textSecondary,
     },
     scrollContent: {
       padding: spacing.margin,
@@ -1419,96 +1486,54 @@ const createStyles = (colors: AppColors) =>
     reviewContainer: {
       gap: spacing.md,
     },
-    reviewSummaryCard: {
-      backgroundColor: colors.surface,
-      borderRadius: radius.xl,
-      borderWidth: 1,
-      borderColor: colors.borderLight,
-      padding: spacing.md,
-      gap: spacing.sm + 4,
-      shadowColor: colors.cardShadow,
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.06,
-      shadowRadius: 12,
-      elevation: 2,
+    reviewIntro: {
+      gap: 2,
     },
-    reviewSummaryTop: {
+    reviewTitleRow: {
       flexDirection: 'row',
+      flexWrap: 'wrap',
       alignItems: 'center',
-      gap: spacing.sm + 4,
-    },
-    reviewThumb: {
-      width: 64,
-      height: 64,
-      borderRadius: radius.lg,
-      backgroundColor: colors.surfaceContainer,
+      justifyContent: 'space-between',
+      columnGap: spacing.sm,
     },
     reviewHeadingBlock: {
       flexGrow: 1,
       flexShrink: 1,
-      flexBasis: 0,
       minWidth: 0,
-      gap: 2,
-    },
-    reviewEyebrow: {
-      color: colors.primary,
-      letterSpacing: 0.6,
     },
     reviewHeading: {
       color: colors.textPrimary,
       fontWeight: '700',
     },
+    reviewHeadingCompact: {
+      fontSize: 18,
+      lineHeight: 24,
+    },
     reviewSubheading: {
       color: colors.textSecondary,
     },
-    reviewStatsRow: {
-      flexDirection: 'row',
-      flexWrap: 'wrap',
-      gap: spacing.xs,
-    },
-    reviewStat: {
+    selectLinksRow: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 4,
-      paddingHorizontal: spacing.sm + 2,
-      paddingVertical: 5,
-      borderRadius: radius.full,
-      backgroundColor: colors.primaryFixed,
+      gap: 2,
     },
-    reviewStatWarning: {
-      backgroundColor: colors.demoBadgeBackground,
-    },
-    reviewStatText: {
-      color: colors.primary,
-    },
-    reviewStatWarningText: {
-      color: colors.demoBadgeText,
-    },
-    selectToggleRow: {
-      flexDirection: 'row',
-      gap: spacing.xs,
-      padding: 3,
-      borderRadius: radius.full,
-      backgroundColor: colors.surfaceContainerLow,
-    },
-    selectToggleButton: {
-      flex: 1,
-      flexDirection: 'row',
+    selectLink: {
+      minHeight: 44,
+      minWidth: 44,
+      paddingHorizontal: 2,
       alignItems: 'center',
       justifyContent: 'center',
-      gap: 6,
-      minHeight: 44,
-      borderRadius: radius.full,
     },
-    selectToggleButtonActive: {
-      backgroundColor: colors.primaryAction,
+    selectLinkPressed: {
+      opacity: 0.6,
     },
-    toggleText: {
-      color: colors.textSecondary,
+    selectLinkText: {
+      color: palette.accent,
     },
-    toggleTextActive: {
-      color: colors.onPrimary,
-      fontWeight: '700',
+    selectLinkDivider: {
+      width: 1,
+      height: 18,
+      backgroundColor: palette.controlBorder,
     },
     missingQuantityBanner: {
       flexDirection: 'row',
@@ -1527,9 +1552,66 @@ const createStyles = (colors: AppColors) =>
     cardsList: {
       gap: spacing.md,
     },
-    reviewBottomActions: {
-      gap: spacing.xs,
-      marginTop: spacing.sm,
+    reviewFooter: {
+      gap: spacing.sm,
+      paddingHorizontal: spacing.margin,
+      paddingTop: spacing.sm + 4,
+      backgroundColor: palette.isDark ? '#1C1730' : colors.surface,
+      borderTopLeftRadius: radius.xl,
+      borderTopRightRadius: radius.xl,
+      borderWidth: 1,
+      borderBottomWidth: 0,
+      borderColor: palette.cardBorder,
+      boxShadow: palette.isDark
+        ? '0px -6px 20px rgba(0, 0, 0, 0.45)'
+        : '0px -4px 16px rgba(91, 75, 138, 0.14)',
+    },
+    saveAction: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: spacing.sm,
+      minHeight: 54,
+      paddingVertical: spacing.sm,
+      paddingHorizontal: spacing.md,
+      borderRadius: radius.lg + 2,
+    },
+    saveActionEnabled: {
+      backgroundColor: palette.cta,
+      ...palette.ctaGradient,
+    },
+    saveActionDisabled: {
+      backgroundColor: colors.surfaceContainerHigh,
+    },
+    saveActionText: {
+      flexShrink: 1,
+      color: colors.onPrimary,
+      fontWeight: '700',
+      fontSize: 15,
+      textAlign: 'center',
+    },
+    saveActionTextDisabled: {
+      color: colors.textSecondary,
+    },
+    discardAction: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: spacing.sm,
+      minHeight: 48,
+      paddingVertical: spacing.xs,
+      paddingHorizontal: spacing.md,
+      borderRadius: radius.lg + 2,
+      borderWidth: 1.5,
+      borderColor: palette.fieldBorder,
+    },
+    discardActionText: {
+      flexShrink: 1,
+      color: colors.textPrimary,
+      textAlign: 'center',
+    },
+    actionPressed: {
+      opacity: 0.82,
     },
     completedContainer: {
       paddingVertical: spacing.lg,
@@ -1607,3 +1689,4 @@ const createStyles = (colors: AppColors) =>
       marginTop: spacing.sm,
     },
   });
+};

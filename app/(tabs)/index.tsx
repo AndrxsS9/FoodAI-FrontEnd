@@ -9,7 +9,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { MaterialIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Button, Card, Chip, Input } from '../../src/components/common';
 import { RecipeImage } from '../../src/components/recipe/RecipeImage';
@@ -23,13 +23,16 @@ import {
   resolveDailyRecommendationState,
 } from '../../src/utils/dailyRecommendation';
 import {
-  AppColors,
+  AppColors, getAppSurfaces,
   radius,
   spacing,
   useTypography,
   useAppTheme,
   useThemeStyles,
 } from '../../src/theme';
+
+/** Las píldoras sobre la imagen son claras en ambos temas: su contenido debe ser oscuro. */
+const META_PILL_FOREGROUND = '#1C1C19';
 
 export default function HomeScreen() {
   const { colors } = useAppTheme();
@@ -145,18 +148,18 @@ export default function HomeScreen() {
 
   const renderStateCard = (config: {
     testID: string;
-    icon: React.ComponentProps<typeof MaterialIcons>['name'];
+    icon: React.ComponentProps<typeof MaterialCommunityIcons>['name'];
     title: string;
     message: string;
     actionTestID: string;
     actionTitle: string;
-    actionIcon: React.ComponentProps<typeof MaterialIcons>['name'];
+    actionIcon: React.ComponentProps<typeof MaterialCommunityIcons>['name'];
     onAction: () => void;
     actionHint: string;
   }) => (
     <Card variant="outlined" style={styles.emptyRecipeCard} testID={config.testID}>
       <View style={styles.emptyRecipeIconBox}>
-        <MaterialIcons name={config.icon} size={32} color={colors.outline} />
+        <MaterialCommunityIcons name={config.icon} size={32} color={colors.outline} />
       </View>
       <Text style={[styles.emptyRecipeTitle, typography.headlineMd]} accessibilityRole="header">
         {config.title}
@@ -169,7 +172,7 @@ export default function HomeScreen() {
         size="md"
         onPress={config.onAction}
         accessibilityHint={config.actionHint}
-        leftIcon={<MaterialIcons name={config.actionIcon} size={18} color={colors.onPrimary} />}
+        leftIcon={<MaterialCommunityIcons name={config.actionIcon} size={18} color={colors.onPrimary} />}
       />
     </Card>
   );
@@ -214,7 +217,7 @@ export default function HomeScreen() {
             pressed && styles.avatarPressed,
           ]}
         >
-          <MaterialIcons name="person" size={20} color={colors.onPrimary} />
+          <MaterialCommunityIcons name="account" size={20} color={colors.onPrimary} />
         </Pressable>
       </View>
 
@@ -272,7 +275,7 @@ export default function HomeScreen() {
         <Card variant="elevated" style={styles.scannerCard}>
           <View style={styles.scannerHeader}>
             <View style={styles.scannerIconBox}>
-              <MaterialIcons name="photo-camera" size={26} color={colors.primary} />
+              <MaterialCommunityIcons name="camera-outline" size={26} color={colors.primary} />
             </View>
             <View style={styles.scannerHeaderText}>
               <Text style={[styles.cardTitle, typography.headlineMd]}>
@@ -301,7 +304,7 @@ export default function HomeScreen() {
             />
             <View style={styles.viewfinderOverlay}>
               <View style={styles.viewfinderReticle}>
-                <MaterialIcons name="center-focus-strong" size={30} color={colors.primary} />
+                <MaterialCommunityIcons name="image-filter-center-focus" size={30} color={colors.primary} />
               </View>
             </View>
           </Pressable>
@@ -315,7 +318,7 @@ export default function HomeScreen() {
             onPress={() => router.push('/escaner' as any)}
             accessibilityLabel="Tomar foto de los alimentos"
             accessibilityHint="Abre el escáner fotográfico con IA"
-            leftIcon={<MaterialIcons name="add-a-photo" size={20} color={colors.onPrimary} />}
+            leftIcon={<MaterialCommunityIcons name="camera-plus-outline" size={20} color={colors.onPrimary} />}
           />
         </Card>
 
@@ -335,7 +338,7 @@ export default function HomeScreen() {
           <View style={styles.cardHeaderRow}>
             <View style={styles.iconTitleRow}>
               <View style={styles.pantryIconBox}>
-                <MaterialIcons name="kitchen" size={22} color={colors.primary} />
+                <MaterialCommunityIcons name="fridge-outline" size={22} color={colors.primary} />
               </View>
               <Text style={[styles.cardTitle, typography.headlineMd]}>
                 Tu despensa
@@ -348,7 +351,7 @@ export default function HomeScreen() {
               >
                 {summary.totalCount} producto{summary.totalCount === 1 ? '' : 's'}
               </Text>
-              <MaterialIcons name="chevron-right" size={18} color={colors.primary} />
+              <MaterialCommunityIcons name="chevron-right" size={18} color={colors.primary} />
             </View>
           </View>
 
@@ -366,7 +369,7 @@ export default function HomeScreen() {
               {/* Urgent alert notice */}
               <View style={styles.urgentBanner} testID="home-urgent-banner">
                 <View style={styles.urgentBannerLeft}>
-                  <MaterialIcons name="schedule" size={18} color={colors.secondary} />
+                  <MaterialCommunityIcons name="clock-outline" size={18} color={colors.secondary} />
                   <Text style={[styles.urgentBannerTitle, typography.labelSm]}>
                     {summary.urgentCount} consumir pronto
                   </Text>
@@ -394,7 +397,7 @@ export default function HomeScreen() {
               {/* All items are up to date notice */}
               <View style={styles.okBanner} testID="home-pantry-all-ok-banner">
                 <View style={styles.okBannerLeft}>
-                  <MaterialIcons name="check-circle" size={18} color={colors.primary} />
+                  <MaterialCommunityIcons name="check-circle" size={18} color={colors.primary} />
                   <Text style={[styles.okBannerTitle, typography.labelSm]}>
                     Todos al día
                   </Text>
@@ -424,7 +427,7 @@ export default function HomeScreen() {
           <View style={styles.budgetGlow} pointerEvents="none" />
           <View style={styles.budgetRow}>
             <View style={styles.budgetIconBox}>
-              <MaterialIcons name="savings" size={26} color={colors.onTertiaryContainer} />
+              <MaterialCommunityIcons name="piggy-bank-outline" size={26} color={colors.primary} />
             </View>
             <View style={styles.budgetCol}>
               <View style={styles.budgetLabelRow}>
@@ -450,7 +453,7 @@ export default function HomeScreen() {
               onPress={handleOpenBudgetModal}
               accessibilityLabel="Ajustar presupuesto disponible"
               accessibilityHint="Abre un formulario para actualizar el presupuesto disponible"
-              leftIcon={<MaterialIcons name="tune" size={16} color={colors.textPrimary} />}
+              leftIcon={<MaterialCommunityIcons name="tune" size={16} color={colors.textPrimary} />}
             />
           </View>
         </Card>
@@ -460,7 +463,7 @@ export default function HomeScreen() {
           <View style={styles.sectionHeaderRow}>
             <View style={styles.sectionTitleCol}>
               <View style={styles.sectionTitleRow}>
-                <MaterialIcons name="auto-awesome" size={20} color={colors.tertiary} />
+                <MaterialCommunityIcons name="creation" size={20} color={colors.tertiary} />
                 <Text style={[styles.sectionTitle, typography.headlineMd]}>
                   Recomendación del día
                 </Text>
@@ -496,26 +499,26 @@ export default function HomeScreen() {
           ) : recommendation.kind === 'empty-pantry' ? (
             renderStateCard({
               testID: 'home-recommendation-empty-pantry',
-              icon: 'kitchen',
+              icon: 'fridge-outline',
               title: 'Tu despensa está vacía',
               message:
                 'Registra o escanea tus alimentos para recibir una recomendación basada en lo que realmente tienes.',
               actionTestID: 'home-recommendation-go-pantry-button',
               actionTitle: 'Ir a mi despensa',
-              actionIcon: 'add-circle-outline',
+              actionIcon: 'plus-circle-outline',
               onAction: goToPantry,
               actionHint: 'Abre la pantalla de despensa para registrar ingredientes',
             })
           ) : recommendation.kind === 'demo' ? (
             renderStateCard({
               testID: 'home-recommendation-demo-state',
-              icon: 'auto-awesome',
+              icon: 'creation',
               title: 'Aún no tienes una recomendación personalizada',
               message:
                 'Genera recetas con IA a partir de tu despensa y presupuesto. Las recetas de ejemplo no se muestran aquí porque no están calculadas para ti.',
               actionTestID: 'home-recommendation-generate-button',
               actionTitle: 'Generar recomendaciones',
-              actionIcon: 'restaurant-menu',
+              actionIcon: 'silverware-fork-knife',
               onAction: goToRecipeGeneration,
               actionHint: 'Abre Recetas, donde puedes generar recomendaciones con IA',
             })
@@ -535,12 +538,12 @@ export default function HomeScreen() {
           ) : recommendation.kind === 'error' ? (
             renderStateCard({
               testID: 'home-recommendation-error-state',
-              icon: 'error-outline',
+              icon: 'alert-circle-outline',
               title: 'No se pudo generar tu recomendación',
               message: recommendation.message,
               actionTestID: 'home-recommendation-generate-button',
               actionTitle: 'Ir a Recetas para reintentar',
-              actionIcon: 'restaurant-menu',
+              actionIcon: 'silverware-fork-knife',
               onAction: goToRecipeGeneration,
               actionHint: 'Abre Recetas, donde puedes reintentar la generación',
             })
@@ -567,7 +570,7 @@ export default function HomeScreen() {
                     accessibilityRole="text"
                     accessibilityLabel={`Afinidad estimada por IA: ${recommendedRecipe.convenience}`}
                   >
-                    <MaterialIcons name="verified" size={16} color={colors.tertiaryContainer} importantForAccessibility="no" accessibilityElementsHidden={true} />
+                    <MaterialCommunityIcons name="check-decagram" size={16} color={colors.onTertiaryContainer} importantForAccessibility="no" accessibilityElementsHidden={true} />
                     <Text style={[styles.convenienceText, typography.labelSm]}>
                       {typeof recommendedRecipe.convenience === 'number'
                         ? `${recommendedRecipe.convenience}% conveniente`
@@ -579,13 +582,13 @@ export default function HomeScreen() {
                 {/* Time & Servings pills */}
                 <View style={styles.recipeMetaRow}>
                   <View style={styles.recipeMetaPill}>
-                    <MaterialIcons name="timer" size={14} color={colors.textPrimary} />
+                    <MaterialCommunityIcons name="timer-outline" size={14} color={META_PILL_FOREGROUND} />
                     <Text style={[styles.recipeMetaText, typography.labelSm]}>
                       {recommendedRecipe.totalMinutes} min
                     </Text>
                   </View>
                   <View style={styles.recipeMetaPill}>
-                    <MaterialIcons name="group" size={14} color={colors.textPrimary} />
+                    <MaterialCommunityIcons name="account-group" size={14} color={META_PILL_FOREGROUND} />
                     <Text style={[styles.recipeMetaText, typography.labelSm]}>
                       {recommendedRecipe.servings} persona{recommendedRecipe.servings === 1 ? '' : 's'}
                     </Text>
@@ -609,7 +612,7 @@ export default function HomeScreen() {
                       style={[styles.highlightRow, styles.highlightRowNeutral]}
                       testID="home-recommendation-coverage"
                     >
-                      <MaterialIcons name="kitchen" size={20} color={colors.primary} />
+                      <MaterialCommunityIcons name="fridge-outline" size={20} color={colors.primary} />
                       <Text style={[styles.highlightText, typography.bodySm]}>
                         Ya tienes {recommendedScore.availableCount} de{' '}
                         {recommendedScore.availableCount + recommendedScore.missingCount} ingredientes
@@ -623,7 +626,7 @@ export default function HomeScreen() {
                       style={[styles.highlightRow, styles.highlightRowPrimary]}
                       testID="home-recommendation-cost"
                     >
-                      <MaterialIcons name="savings" size={20} color={colors.primary} />
+                      <MaterialCommunityIcons name="piggy-bank-outline" size={20} color={colors.primary} />
                       <Text style={[styles.highlightText, typography.bodySm]}>
                         No necesitas comprar ingredientes adicionales
                       </Text>
@@ -633,7 +636,7 @@ export default function HomeScreen() {
                       style={[styles.highlightRow, styles.highlightRowPrimary]}
                       testID="home-recommendation-cost"
                     >
-                      <MaterialIcons name="savings" size={20} color={colors.primary} />
+                      <MaterialCommunityIcons name="piggy-bank-outline" size={20} color={colors.primary} />
                       <Text style={[styles.highlightText, typography.bodySm]}>
                         Solo necesitas aproximadamente{' '}
                         <Text style={[styles.highlightBold, { color: colors.primary }]}>
@@ -646,7 +649,7 @@ export default function HomeScreen() {
                       style={[styles.highlightRow, styles.highlightRowWarning]}
                       testID="home-recommendation-cost"
                     >
-                      <MaterialIcons name="warning-amber" size={20} color={colors.onErrorContainer} />
+                      <MaterialCommunityIcons name="alert-outline" size={20} color={colors.onErrorContainer} />
                       <Text style={[styles.highlightText, typography.bodySm]}>
                         Compra estimada de{' '}
                         <Text style={styles.highlightBold}>
@@ -659,7 +662,7 @@ export default function HomeScreen() {
 
                   {recommendedRecipe.reason ? (
                     <View style={[styles.highlightRow, styles.highlightRowSecondary]}>
-                      <MaterialIcons name="recycling" size={20} color={colors.secondary} />
+                      <MaterialCommunityIcons name="recycle" size={20} color={colors.secondary} />
                       <Text style={[styles.highlightText, typography.bodySm]}>
                         {recommendedRecipe.reason}
                       </Text>
@@ -689,20 +692,20 @@ export default function HomeScreen() {
                   }}
                   accessibilityLabel={`Ver receta de ${recommendedRecipe.name}`}
                   accessibilityHint="Muestra los pasos detallados de la receta"
-                  rightIcon={<MaterialIcons name="arrow-forward" size={18} color={colors.onPrimary} />}
+                  rightIcon={<MaterialCommunityIcons name="arrow-right" size={18} color={colors.onPrimary} />}
                 />
               </View>
             </Card>
           ) : (
             renderStateCard({
               testID: 'home-empty-recipe-state',
-              icon: 'menu-book',
+              icon: 'book-open-variant',
               title: 'Sin recomendaciones disponibles',
               message:
                 'Aún no hay recetas generadas para tu despensa y presupuesto actuales. Genera recomendaciones con IA desde Recetas.',
               actionTestID: 'home-recommendation-generate-button',
               actionTitle: 'Generar recomendaciones',
-              actionIcon: 'restaurant-menu',
+              actionIcon: 'silverware-fork-knife',
               onAction: goToRecipeGeneration,
               actionHint: 'Abre Recetas, donde puedes generar recomendaciones con IA',
             })
@@ -723,7 +726,7 @@ export default function HomeScreen() {
             accessibilityLabel="Diálogo de ajuste de presupuesto"
           >
             <View style={styles.modalIconBox}>
-              <MaterialIcons name="account-balance-wallet" size={28} color={colors.primary} />
+              <MaterialCommunityIcons name="wallet-outline" size={28} color={colors.primary} />
             </View>
 
             <Text style={[styles.modalTitle, typography.headlineMd]}>
@@ -785,7 +788,7 @@ const createStyles = (colors: AppColors) =>
   StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: colors.canvas,
+    ...getAppSurfaces(colors).canvas,
   },
   header: {
     flexDirection: 'row',
@@ -793,13 +796,6 @@ const createStyles = (colors: AppColors) =>
     justifyContent: 'space-between',
     paddingHorizontal: spacing.margin,
     paddingVertical: spacing.sm,
-    backgroundColor: colors.canvas,
-    shadowColor: colors.cardShadow,
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 2,
-    zIndex: 2,
   },
   headerBrand: {
     flexDirection: 'row',
@@ -1101,7 +1097,7 @@ const createStyles = (colors: AppColors) =>
     marginRight: 4,
   },
   budgetCard: {
-    backgroundColor: colors.tertiaryFixed,
+    ...getAppSurfaces(colors).card,
     padding: spacing.md,
     position: 'relative',
     overflow: 'hidden',
@@ -1113,11 +1109,12 @@ const createStyles = (colors: AppColors) =>
     width: 120,
     height: 120,
     borderRadius: radius.full,
-    backgroundColor: colors.tertiary,
-    opacity: 0.45,
+    backgroundColor: colors.iconTile,
+    opacity: 0.55,
   },
   budgetRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: spacing.sm,
@@ -1126,25 +1123,17 @@ const createStyles = (colors: AppColors) =>
     width: 48,
     height: 48,
     borderRadius: radius.lg,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.iconTile,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: colors.cardShadow,
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
-    shadowRadius: 4,
-    elevation: 1,
   },
   adjustButton: {
-    backgroundColor: colors.surface,
-    shadowColor: colors.cardShadow,
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
-    elevation: 1,
+    marginLeft: 'auto',
   },
   budgetCol: {
-    flex: 1,
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 150,
   },
   budgetLabelRow: {
     flexDirection: 'row',
@@ -1153,17 +1142,17 @@ const createStyles = (colors: AppColors) =>
     marginBottom: 4,
   },
   budgetLabel: {
-    color: colors.onTertiaryContainer,
+    color: colors.textSecondary,
     letterSpacing: 0.5,
   },
   budgetAmount: {
-    color: colors.onTertiaryFixed,
+    color: colors.textPrimary,
     fontWeight: '700',
     fontSize: 26,
     lineHeight: 32,
   },
   budgetCurrency: {
-    color: colors.onTertiaryContainer,
+    color: colors.textSecondary,
     fontWeight: '500',
   },
   recommendationSection: {
@@ -1255,7 +1244,7 @@ const createStyles = (colors: AppColors) =>
     borderRadius: radius.full,
   },
   recipeMetaText: {
-    color: '#1C1C19',
+    color: META_PILL_FOREGROUND,
     fontWeight: '600',
     fontSize: 11,
   },

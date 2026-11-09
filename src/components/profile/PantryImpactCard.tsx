@@ -4,8 +4,8 @@
  */
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
-import { AppColors, radius, spacing, useTypography, useThemeColors, useThemeStyles } from '../../theme';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { AppColors, getAppSurfaces, spacing, useTypography, useThemeColors, useThemeStyles } from '../../theme';
 import { PantrySummary } from '../../types/pantry';
 
 export interface PantryImpactCardProps {
@@ -25,7 +25,7 @@ export function PantryImpactCard({ summary }: PantryImpactCardProps) {
           <Text style={[styles.impactCardLabel, typography.labelSm]}>
             Despensa al día
           </Text>
-          <MaterialIcons name="inventory-2" size={18} color={colors.outline} />
+          <MaterialCommunityIcons name="package-variant-closed" size={18} color={colors.outline} />
         </View>
         <View style={styles.impactValueRow}>
           <Text style={[styles.impactValueBig, typography.headlineLg]}>
@@ -46,7 +46,7 @@ export function PantryImpactCard({ summary }: PantryImpactCardProps) {
           <Text style={[styles.impactCardLabel, typography.labelSm]}>
             Por consumir pronto
           </Text>
-          <MaterialIcons name="schedule" size={18} color={colors.outline} />
+          <MaterialCommunityIcons name="clock-outline" size={18} color={colors.outline} />
         </View>
         <View style={styles.impactValueRow}>
           <Text style={[styles.impactValueBig, typography.headlineLg]}>
@@ -73,16 +73,10 @@ const createStyles = (colors: AppColors) =>
   },
   impactCard: {
     flex: 1,
-    backgroundColor: colors.surfaceContainerLow,
-    borderRadius: radius.lg,
+    ...getAppSurfaces(colors).tile,
     padding: spacing.md,
     justifyContent: 'space-between',
     minHeight: 104,
-    shadowColor: colors.primary,
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.03,
-    shadowRadius: 6,
-    elevation: 1,
   },
   impactCardHeader: {
     flexDirection: 'row',

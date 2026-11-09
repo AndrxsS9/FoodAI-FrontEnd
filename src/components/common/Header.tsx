@@ -7,7 +7,7 @@ import {
   View,
   ViewStyle,
 } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { AppColors, radius, spacing, useTypography, useAppTheme, useThemeStyles } from '../../theme';
 
 export interface HeaderProps {
@@ -55,7 +55,7 @@ export const Header: React.FC<HeaderProps> = ({
               pressed && styles.backButtonPressed,
             ]}
           >
-            <MaterialIcons name="arrow-back" size={22} color={colors.textPrimary} />
+            <MaterialCommunityIcons name="arrow-left" size={22} color={colors.textPrimary} />
           </Pressable>
         )}
 

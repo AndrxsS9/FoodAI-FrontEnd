@@ -663,10 +663,10 @@ describe('Barra de pestañas flotante', () => {
 
   const renderSurface = async () => render(mockScreenOptions.tabBarBackground());
 
-  it('conserva las cuatro rutas, sus títulos y etiquetas accesibles', async () => {
+  it('conserva las rutas, sus títulos y etiquetas accesibles', async () => {
     await renderTabs();
 
-    expect(Object.keys(mockRegisteredTabs).sort()).toEqual(['despensa', 'index', 'perfil', 'plan']);
+    expect(Object.keys(mockRegisteredTabs).sort()).toEqual(['despensa', 'index', 'perfil', 'plan', 'recetas']);
     expect(mockRegisteredTabs.plan.title).toBe('Plan');
     expect(mockRegisteredTabs.despensa.tabBarAccessibilityLabel).toBe('Pestaña Despensa');
   });
@@ -745,8 +745,8 @@ describe('Barra de pestañas flotante', () => {
       await renderTabs();
       const style = mockScreenOptions.tabBarStyle;
       const margin = mockScreenOptions.tabBarItemStyle.marginHorizontal;
-      const perTab = (width - 2 * style.paddingHorizontal) / 4 - 2 * margin;
-      expect(perTab).toBeGreaterThanOrEqual(60);
+      const perTab = (width - 2 * style.paddingHorizontal) / 5 - 2 * margin;
+      expect(perTab).toBeGreaterThanOrEqual(56);
       expect(style.height).toBeLessThan(120);
     });
   });

@@ -25,9 +25,11 @@ import {
   ImageStyle,
   ImageSourcePropType,
   ActivityIndicator,
+  useWindowDimensions,
 } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { AppColors } from '../../theme/colors';
+import { getAppSurfaces } from '../../theme/surfaces';
 import { radius } from '../../theme/radius';
 import { spacing } from '../../theme/spacing';
 import { useTypography } from '../../theme/typography';
@@ -166,6 +168,7 @@ export const RecipeImage = memo(function RecipeImage({
   const typography = useTypography();
   const { colors } = useAppTheme();
   const styles = useThemeStyles(createStyles);
+  const { width: windowWidth } = useWindowDimensions();
   const [loadError, setLoadError] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -197,6 +200,9 @@ export const RecipeImage = memo(function RecipeImage({
         testID={fallbackTestID || (testID ? `${testID}-fallback` : undefined)}
         accessible={false}
       >
+        {/* Respaldo de marca: decorativo y sin simular una foto del plato */}
+        <View style={styles.fallbackGlowTop} pointerEvents="none" />
+        <View style={styles.fallbackGlowBottom} pointerEvents="none" />
         <View
           style={styles.fallbackVisual}
           accessible={true}
@@ -209,7 +215,7 @@ export const RecipeImage = memo(function RecipeImage({
             importantForAccessibility="no"
             accessibilityElementsHidden={true}
           >
-            <MaterialIcons name="restaurant" size={36} color={colors.primary} />
+            <MaterialCommunityIcons name="silverware-fork-knife" size={32} color={BRAND_FOREGROUND} />
           </View>
 
           <Text style={[styles.fallbackTitle, typography.labelSm]}>FoodAI Receta</Text>
@@ -266,6 +272,8 @@ export const RecipeImage = memo(function RecipeImage({
         </View>
       )}
 
+      {children}
+
       {isReference && (
         // Visible para todos; oculta a lectores de pantalla porque la etiqueta de la imagen ya lo indica
         <View
@@ -275,15 +283,27 @@ export const RecipeImage = memo(function RecipeImage({
           importantForAccessibility="no-hide-descendants"
           accessibilityElementsHidden={true}
         >
-          <MaterialIcons name="image" size={12} color={colors.textPrimary} />
-          <Text style={[styles.referenceBadgeText, typography.labelSm]}>Imagen de referencia</Text>
+          {/* A 320 dp el ícono cede su espacio para no solaparse con la insignia de conveniencia */}
+          {windowWidth >= 340 && (
+            <MaterialCommunityIcons name="image-outline" size={12} color={colors.textPrimary} />
+          )}
+          <Text
+            style={[
+              styles.referenceBadgeText,
+              typography.labelSm,
+              windowWidth < 340 && styles.referenceBadgeTextCompact,
+            ]}
+          >
+            Imagen de referencia
+          </Text>
         </View>
       )}
-
-      {children}
     </View>
   );
 });
+
+/** Primer plano sobre el mosaico de marca: el mismo púrpura en ambos temas. */
+const BRAND_FOREGROUND = '#FFFFFF';
 
 const createStyles = (colors: AppColors) =>
   StyleSheet.create({
@@ -299,9 +319,27 @@ const createStyles = (colors: AppColors) =>
     fallbackContainer: {
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: colors.surfaceContainerLow,
+      ...getAppSurfaces(colors).brand,
       padding: spacing.md,
       gap: spacing.xs,
+    },
+    fallbackGlowTop: {
+      position: 'absolute',
+      top: -46,
+      right: -30,
+      width: 150,
+      height: 150,
+      borderRadius: radius.full,
+      backgroundColor: 'rgba(255, 255, 255, 0.10)',
+    },
+    fallbackGlowBottom: {
+      position: 'absolute',
+      bottom: -60,
+      left: -36,
+      width: 170,
+      height: 170,
+      borderRadius: radius.full,
+      backgroundColor: 'rgba(255, 255, 255, 0.07)',
     },
     fallbackVisual: {
       alignItems: 'center',
@@ -312,13 +350,13 @@ const createStyles = (colors: AppColors) =>
       width: 60,
       height: 60,
       borderRadius: radius.full,
-      backgroundColor: colors.surfaceContainerHighest,
+      backgroundColor: 'rgba(255, 255, 255, 0.16)',
       alignItems: 'center',
       justifyContent: 'center',
       marginBottom: 2,
     },
     fallbackTitle: {
-      color: colors.primary,
+      color: BRAND_FOREGROUND,
       fontWeight: '700',
       letterSpacing: 0.5,
     },
@@ -351,6 +389,10 @@ const createStyles = (colors: AppColors) =>
       color: colors.textPrimary,
       fontSize: 10,
       fontWeight: '700',
+    },
+    referenceBadgeTextCompact: {
+      fontSize: 9,
+      letterSpacing: 0,
     },
     loadingContainer: {
       ...StyleSheet.absoluteFill,

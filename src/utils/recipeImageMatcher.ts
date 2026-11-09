@@ -121,6 +121,7 @@ const LEGUME_TOKENS = new Set([
 const POTATO_TOKENS = new Set(['papa', 'papas', 'yuca', 'batata', 'camote', 'arracacha']);
 const VEGETABLE_TOKENS = new Set(['verduras', 'vegetales']);
 const BEEF_TOKENS = new Set(['carne', 'res', 'ternera']);
+const CUT_HEADS = new Set(['tiras', 'trozos', 'cubos', 'cubitos', 'pedazos', 'bocados']);
 
 interface MatchContext {
   /** Tokens del nombre tras descartar el relleno inicial. */
@@ -232,6 +233,12 @@ function matchPreparationHead(head: readonly string[]): RecipeImageKey | null {
   }
   if (prep === 'pure') {
     return POTATO_TOKENS.has(main) ? 'potatoes' : null;
+  }
+  // Cortes de un ingrediente único ("tiras de pollo"): es ese ingrediente, no otro plato
+  if (CUT_HEADS.has(prep)) {
+    if (main === 'pollo') return 'chicken';
+    if (FISH_TOKENS.has(main)) return 'fish';
+    return null;
   }
   return null;
 }

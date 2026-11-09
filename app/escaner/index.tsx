@@ -26,14 +26,13 @@ import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { Button, Card } from '../../src/components/common';
 import { DetectedIngredientCard } from '../../src/components/scanner';
-import { getScannerPalette } from '../../src/components/scanner/DetectedIngredientCard';
 import { usePantry } from '../../src/context/PantryContext';
 import {
   formatScannerDiagnostic,
   scannerApi,
   ScannerApiError,
 } from '../../src/services/api/scannerApi';
-import { AppColors, radius, spacing, useAppTheme, useThemeStyles, useTypography } from '../../src/theme';
+import { AppColors, getAppSurfaces, radius, spacing, useAppTheme, useThemeStyles, useTypography } from '../../src/theme';
 import { IngredientCategory, IngredientUnit } from '../../src/types/pantry';
 import {
   ScannedIngredientAction,
@@ -52,6 +51,7 @@ import {
   combineIngredientQuantities,
   mapDetectedToScannedItems,
 } from '../../src/utils/ingredientMapper';
+import { returnToTab } from '../../src/utils/tabNavigation';
 
 export default function ScannerScreen() {
   const typography = useTypography();
@@ -59,7 +59,6 @@ export default function ScannerScreen() {
   const { colors } = useAppTheme();
   const styles = useThemeStyles(createStyles);
   const insets = useSafeAreaInsets();
-  const palette = getScannerPalette(colors);
   const { width: windowWidth } = useWindowDimensions();
   const { ingredients, addIngredient, updateIngredient } = usePantry();
 
@@ -1035,7 +1034,7 @@ export default function ScannerScreen() {
                   variant="primary"
                   size="lg"
                   fullWidth
-                  onPress={() => router.replace('/(tabs)/despensa')}
+                  onPress={() => returnToTab(router, '/(tabs)/despensa')}
                   leftIcon={
                     <MaterialCommunityIcons
                       name="fridge-outline"
@@ -1069,7 +1068,7 @@ export default function ScannerScreen() {
                   variant="ghost"
                   size="md"
                   fullWidth
-                  onPress={() => router.replace('/(tabs)')}
+                  onPress={() => returnToTab(router, '/(tabs)')}
                   accessibilityLabel="Volver a la pantalla de Inicio"
                 />
               </View>
@@ -1203,7 +1202,7 @@ export default function ScannerScreen() {
             accessibilityLabel="Descartar detecciones y tomar otra foto"
             style={({ pressed }) => [styles.discardAction, pressed && styles.actionPressed]}
           >
-            <MaterialCommunityIcons name="camera-outline" size={20} color={palette.accent} />
+            <MaterialCommunityIcons name="camera-outline" size={20} color={colors.primary} />
             <Text style={[styles.discardActionText, typography.labelLg]}>
               Descartar y tomar otra foto
             </Text>
@@ -1215,12 +1214,11 @@ export default function ScannerScreen() {
 }
 
 const createStyles = (colors: AppColors) => {
-  const palette = getScannerPalette(colors);
+  const surfaces = getAppSurfaces(colors);
   return StyleSheet.create({
     safeArea: {
       flex: 1,
-      backgroundColor: colors.canvas,
-      ...palette.canvasGradient,
+      ...surfaces.canvas,
     },
     headerRow: {
       flexDirection: 'row',
@@ -1248,8 +1246,7 @@ const createStyles = (colors: AppColors) => {
       borderRadius: radius.lg,
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: '#5B4498',
-      backgroundImage: 'linear-gradient(150deg, #8166CC 0%, #4F3A91 100%)',
+      ...surfaces.brand,
     },
     headerIconCamera: {
       position: 'absolute',
@@ -1528,12 +1525,12 @@ const createStyles = (colors: AppColors) => {
       opacity: 0.6,
     },
     selectLinkText: {
-      color: palette.accent,
+      color: colors.primary,
     },
     selectLinkDivider: {
       width: 1,
       height: 18,
-      backgroundColor: palette.controlBorder,
+      backgroundColor: colors.controlBorder,
     },
     missingQuantityBanner: {
       flexDirection: 'row',
@@ -1556,15 +1553,10 @@ const createStyles = (colors: AppColors) => {
       gap: spacing.sm,
       paddingHorizontal: spacing.margin,
       paddingTop: spacing.sm + 4,
-      backgroundColor: palette.isDark ? '#1C1730' : colors.surface,
+      ...surfaces.dock,
       borderTopLeftRadius: radius.xl,
       borderTopRightRadius: radius.xl,
-      borderWidth: 1,
       borderBottomWidth: 0,
-      borderColor: palette.cardBorder,
-      boxShadow: palette.isDark
-        ? '0px -6px 20px rgba(0, 0, 0, 0.45)'
-        : '0px -4px 16px rgba(91, 75, 138, 0.14)',
     },
     saveAction: {
       flexDirection: 'row',
@@ -1577,8 +1569,7 @@ const createStyles = (colors: AppColors) => {
       borderRadius: radius.lg + 2,
     },
     saveActionEnabled: {
-      backgroundColor: palette.cta,
-      ...palette.ctaGradient,
+      ...surfaces.cta,
     },
     saveActionDisabled: {
       backgroundColor: colors.surfaceContainerHigh,
@@ -1603,7 +1594,7 @@ const createStyles = (colors: AppColors) => {
       paddingHorizontal: spacing.md,
       borderRadius: radius.lg + 2,
       borderWidth: 1.5,
-      borderColor: palette.fieldBorder,
+      borderColor: colors.fieldBorder,
     },
     discardActionText: {
       flexShrink: 1,

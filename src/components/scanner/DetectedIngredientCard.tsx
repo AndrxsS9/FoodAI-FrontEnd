@@ -29,8 +29,9 @@ import {
 import { areUnitsCompatibleForAddition } from '../../utils/ingredientMapper';
 import {
   AppColors,
-  darkColors,
+  getAppSurfaces,
   radius,
+  shadowStyle,
   spacing,
   useTypography,
   useAppTheme,
@@ -40,38 +41,6 @@ import { getCategoryVisual } from '../pantry/categoryVisuals';
 
 /** Área táctil mínima cómoda para controles interactivos (44 pt / dp). */
 export const MIN_TOUCH_TARGET = 44;
-
-/**
- * Superficies de la revisión del escáner. En oscuro siguen la referencia aprobada (púrpura profundo);
- * en claro se apoyan en los tokens del tema. `backgroundImage` es una mejora progresiva: donde el
- * degradado no se pinte queda el color sólido de `cardBackground`.
- */
-export const getScannerPalette = (colors: AppColors) => {
-  const isDark = colors === darkColors;
-  return {
-    isDark,
-    canvasGradient: isDark
-      ? { backgroundImage: 'linear-gradient(180deg, #2A1F49 0%, #17131F 26%, #131217 55%)' }
-      : {},
-    cardBackground: isDark ? '#231B38' : colors.surface,
-    cardGradient: isDark
-      ? { backgroundImage: 'linear-gradient(155deg, #2E2350 0%, #1E1830 62%, #1A1529 100%)' }
-      : {},
-    cardBorder: isDark ? '#46386F' : colors.primaryFixed,
-    divider: isDark ? '#3A2E5C' : colors.borderLight,
-    fieldBackground: isDark ? '#171225' : colors.canvas,
-    fieldBorder: isDark ? '#7561B0' : colors.primaryContainer,
-    controlBorder: isDark ? '#55467F' : colors.outlineVariant,
-    accent: isDark ? '#CDB6FF' : colors.primary,
-    selected: isDark ? '#BFA2F2' : colors.primaryAction,
-    hintBackground: isDark ? '#3A2C60' : colors.primaryFixed,
-    hintText: isDark ? '#D9CCFF' : colors.onPrimaryFixed,
-    cta: isDark ? '#B99AF0' : colors.primaryAction,
-    ctaGradient: isDark
-      ? { backgroundImage: 'linear-gradient(180deg, #CDB0F7 0%, #AE8BE8 100%)' }
-      : { backgroundImage: 'linear-gradient(180deg, #5B4B8A 0%, #433371 100%)' },
-  };
-};
 
 export interface DetectedIngredientCardProps {
   item: ScannedIngredientItem;
@@ -97,7 +66,6 @@ export function DetectedIngredientCard({
   const typography = useTypography();
   const { colors, activeColorScheme } = useAppTheme();
   const styles = useThemeStyles(createStyles);
-  const palette = getScannerPalette(colors);
   const { width: windowWidth, fontScale } = useWindowDimensions();
   // En pantallas estrechas o con fuente grande el ancho se reserva para que el nombre siga legible
   const showCategoryTile = windowWidth >= 340 && fontScale <= 1.3;
@@ -509,14 +477,14 @@ export function DetectedIngredientCard({
         accessibilityLabel="Cambiar categoría de alimento"
         accessibilityState={{ expanded: isEditingDetails }}
       >
-        <MaterialCommunityIcons name="tag-outline" size={18} color={palette.accent} />
+        <MaterialCommunityIcons name="tag-outline" size={18} color={colors.primary} />
         <Text style={[styles.expandDetailsText, typography.labelLg]}>
           {isEditingDetails ? 'Ocultar categorías' : 'Cambiar categoría'}
         </Text>
         <MaterialCommunityIcons
           name={isEditingDetails ? 'chevron-up' : 'chevron-down'}
           size={18}
-          color={palette.accent}
+          color={colors.primary}
         />
       </Pressable>
 
@@ -568,14 +536,9 @@ export function DetectedIngredientCard({
 }
 
 const createStyles = (colors: AppColors) => {
-  const palette = getScannerPalette(colors);
   return StyleSheet.create({
     cardContainer: {
-      backgroundColor: palette.cardBackground,
-      ...palette.cardGradient,
-      borderRadius: radius.lg + 4,
-      borderWidth: 1,
-      borderColor: palette.cardBorder,
+      ...getAppSurfaces(colors).card,
       paddingHorizontal: spacing.sm + 6,
       paddingVertical: spacing.sm + 4,
       gap: spacing.sm + 4,
@@ -607,14 +570,14 @@ const createStyles = (colors: AppColors) => {
       height: 26,
       borderRadius: radius.md,
       borderWidth: 2,
-      borderColor: palette.controlBorder,
+      borderColor: colors.controlBorder,
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: palette.fieldBackground,
+      backgroundColor: colors.fieldBackground,
     },
     checkboxActive: {
-      backgroundColor: palette.selected,
-      borderColor: palette.selected,
+      backgroundColor: colors.selected,
+      borderColor: colors.selected,
     },
     categoryTile: {
       width: 52,
@@ -654,13 +617,13 @@ const createStyles = (colors: AppColors) => {
       height: 38,
       borderRadius: radius.md + 2,
       borderWidth: 1,
-      borderColor: palette.controlBorder,
+      borderColor: colors.controlBorder,
       alignItems: 'center',
       justifyContent: 'center',
     },
     headerDivider: {
       height: 1,
-      backgroundColor: palette.divider,
+      backgroundColor: colors.divider,
     },
     badgesRow: {
       flexDirection: 'row',
@@ -718,8 +681,8 @@ const createStyles = (colors: AppColors) => {
       color: colors.textPrimary,
     },
     fieldHint: {
-      color: palette.hintText,
-      backgroundColor: palette.hintBackground,
+      color: colors.hintText,
+      backgroundColor: colors.hintBackground,
       paddingHorizontal: spacing.sm + 2,
       paddingVertical: 3,
       borderRadius: radius.full,
@@ -735,9 +698,9 @@ const createStyles = (colors: AppColors) => {
       gap: spacing.sm + 4,
       minHeight: 52,
       borderWidth: 1.5,
-      borderColor: palette.fieldBorder,
+      borderColor: colors.fieldBorder,
       borderRadius: radius.md + 6,
-      backgroundColor: palette.fieldBackground,
+      backgroundColor: colors.fieldBackground,
       paddingHorizontal: spacing.md,
     },
     quantityInputContainerError: {
@@ -756,7 +719,7 @@ const createStyles = (colors: AppColors) => {
     quantityDivider: {
       width: 1,
       height: 24,
-      backgroundColor: palette.controlBorder,
+      backgroundColor: colors.controlBorder,
     },
     quantityUnitSuffix: {
       flexShrink: 1,
@@ -787,12 +750,12 @@ const createStyles = (colors: AppColors) => {
       paddingVertical: spacing.xs,
       borderRadius: radius.full,
       borderWidth: 1,
-      borderColor: palette.controlBorder,
+      borderColor: colors.controlBorder,
     },
     unitChipPillSelected: {
-      backgroundColor: palette.selected,
-      borderColor: palette.selected,
-      boxShadow: palette.isDark ? '0px 2px 10px rgba(191, 162, 242, 0.45)' : undefined,
+      backgroundColor: colors.selected,
+      borderColor: colors.selected,
+      ...shadowStyle(colors.shadowSelected),
     },
     unitChipText: {
       color: colors.textPrimary,
@@ -815,7 +778,7 @@ const createStyles = (colors: AppColors) => {
       flex: 1,
     },
     duplicateSection: {
-      backgroundColor: palette.fieldBackground,
+      backgroundColor: colors.fieldBackground,
       borderRadius: radius.lg,
       padding: spacing.sm + 4,
       gap: spacing.sm,
@@ -847,7 +810,7 @@ const createStyles = (colors: AppColors) => {
       paddingHorizontal: spacing.sm,
       borderRadius: radius.md + 4,
       borderWidth: 1.5,
-      borderColor: palette.controlBorder,
+      borderColor: colors.controlBorder,
       backgroundColor: 'transparent',
     },
     actionOptionButtonActive: {
@@ -868,11 +831,11 @@ const createStyles = (colors: AppColors) => {
       flexDirection: 'row',
       alignItems: 'center',
       gap: 6,
-      backgroundColor: palette.cardBackground,
+      backgroundColor: colors.surface,
       padding: spacing.sm,
       borderRadius: radius.md,
       borderWidth: 1,
-      borderColor: palette.controlBorder,
+      borderColor: colors.controlBorder,
     },
     incompatibleNoticeText: {
       color: colors.textSecondary,
@@ -890,10 +853,10 @@ const createStyles = (colors: AppColors) => {
       paddingHorizontal: spacing.md,
       borderRadius: radius.full,
       borderWidth: 1,
-      borderColor: palette.controlBorder,
+      borderColor: colors.controlBorder,
     },
     expandDetailsText: {
-      color: palette.accent,
+      color: colors.primary,
     },
     categoryPickerContainer: {
       gap: spacing.sm,
@@ -912,7 +875,7 @@ const createStyles = (colors: AppColors) => {
       paddingVertical: spacing.xs,
       borderRadius: radius.full,
       borderWidth: 1,
-      borderColor: palette.controlBorder,
+      borderColor: colors.controlBorder,
       backgroundColor: 'transparent',
     },
     categorySelectChipText: {

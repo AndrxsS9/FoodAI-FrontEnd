@@ -20,13 +20,13 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { MaterialIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useAuthSafe } from '../../src/context/AuthContext';
 import { useBudget } from '../../src/context/BudgetContext';
 import { usePantry } from '../../src/context/PantryContext';
 import {
-  AppColors,
+  AppColors, getAppSurfaces,
   radius,
   spacing,
   useTypography,
@@ -228,7 +228,7 @@ export default function PerfilScreen() {
             accessibilityRole="image"
             accessibilityLabel="Icono de perfil de usuario"
           >
-            <MaterialIcons name="person" size={20} color={colors.onPrimary} />
+            <MaterialCommunityIcons name="account" size={20} color={colors.onPrimary} />
           </View>
         </View>
       </View>
@@ -246,7 +246,7 @@ export default function PerfilScreen() {
             accessibilityLabel={successFeedback}
             testID="preferences-saved-feedback"
           >
-            <MaterialIcons name="check-circle" size={20} color={colors.success} />
+            <MaterialCommunityIcons name="check-circle" size={20} color={colors.success} />
             <Text style={[styles.successFeedbackText, typography.labelMd]}>
               {successFeedback}
             </Text>
@@ -255,7 +255,7 @@ export default function PerfilScreen() {
               accessibilityLabel="Cerrar notificación"
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <MaterialIcons name="close" size={18} color={colors.success} />
+              <MaterialCommunityIcons name="close" size={18} color={colors.success} />
             </Pressable>
           </View>
         )}
@@ -268,7 +268,7 @@ export default function PerfilScreen() {
             accessibilityLabel={`Error de almacenamiento: ${storageError}`}
             testID="global-storage-error-banner"
           >
-            <MaterialIcons name="error-outline" size={20} color={colors.error} />
+            <MaterialCommunityIcons name="alert-circle-outline" size={20} color={colors.error} />
             <Text style={[styles.errorBannerText, typography.bodySm]}>
               {storageError}
             </Text>
@@ -277,7 +277,7 @@ export default function PerfilScreen() {
               accessibilityLabel="Cerrar mensaje de error"
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <MaterialIcons name="close" size={18} color={colors.error} />
+              <MaterialCommunityIcons name="close" size={18} color={colors.error} />
             </Pressable>
           </View>
         )}
@@ -360,7 +360,7 @@ const createStyles = (colors: AppColors) =>
   StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: colors.canvas,
+    ...getAppSurfaces(colors).canvas,
   },
   header: {
     flexDirection: 'row',
@@ -368,14 +368,7 @@ const createStyles = (colors: AppColors) =>
     justifyContent: 'space-between',
     paddingHorizontal: spacing.margin,
     paddingVertical: spacing.sm,
-    backgroundColor: colors.canvas,
     minHeight: 64,
-    shadowColor: colors.cardShadow,
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 2,
-    zIndex: 2,
   },
   headerBrand: {
     flexDirection: 'row',

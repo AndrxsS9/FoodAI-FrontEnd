@@ -11,7 +11,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { AppColors, radius, spacing, useTypography, useThemeColors, useThemeStyles } from '../../theme';
 import { Button } from '../common';
 
@@ -55,7 +55,7 @@ export function LogoutDialog({
           <ActivityIndicator size="small" color={colors.secondary} />
         ) : (
           <>
-            <MaterialIcons name="logout" size={18} color={colors.secondary} />
+            <MaterialCommunityIcons name="logout" size={18} color={colors.secondary} />
             <Text style={[styles.logoutButtonText, typography.labelMd]}>
               Cerrar sesión
             </Text>
@@ -88,7 +88,7 @@ export function LogoutDialog({
 
           <View style={styles.dialogCard}>
             <View style={styles.dialogIconBox}>
-              <MaterialIcons name="logout" size={32} color={colors.secondary} />
+              <MaterialCommunityIcons name="logout" size={32} color={colors.secondary} />
             </View>
 
             <Text

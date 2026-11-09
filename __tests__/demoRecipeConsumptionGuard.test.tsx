@@ -664,9 +664,9 @@ describe('Bloque 4 — Modo Cocina con recetas demo y reales desde el plan', () 
     const errorBadge = rendered.getByTestId('cooking-deduction-error');
     expect(errorBadge.props.accessibilityRole).toBe('alert');
     expect(rendered.getByText(INVALID_RECIPE_CONSUMPTION_ERROR)).toBeTruthy();
-    expect(rendered.getByTestId('icon-error-outline')).toBeTruthy();
+    expect(rendered.getByTestId('icon-alert-circle-outline')).toBeTruthy();
     expect(rendered.queryByTestId('cooking-deduction-success')).toBeNull();
-    expect(rendered.queryByTestId('icon-task-alt')).toBeNull();
+    expect(rendered.queryByTestId('icon-check-circle-outline')).toBeNull();
     expect(rendered.queryByTestId('cooking-already-deducted-badge')).toBeNull();
 
     expect(probe.plan?.days[0].isCompleted).toBe(false);
@@ -688,7 +688,7 @@ describe('Bloque 4 — Modo Cocina con recetas demo y reales desde el plan', () 
       expect(rendered.getByText(/¡Descuento exitoso! Se descontaron 2 ingredientes\./)).toBeTruthy();
     });
     expect(rendered.getByTestId('cooking-deduction-success')).toBeTruthy();
-    expect(rendered.getByTestId('icon-task-alt')).toBeTruthy();
+    expect(rendered.getByTestId('icon-check-circle-outline')).toBeTruthy();
     expect(rendered.queryByTestId('cooking-deduction-error')).toBeNull();
     await waitFor(() => expect(probe.plan?.days[0].isCompleted).toBe(true));
     expect(qty(probe.ingredients, 'p-pollo')).toBe(700);

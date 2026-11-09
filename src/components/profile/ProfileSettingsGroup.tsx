@@ -18,9 +18,9 @@ import {
   Text,
   View,
 } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import {
-  AppColors,
+  AppColors, getAppSurfaces,
   ThemeMode,
   radius,
   spacing,
@@ -33,7 +33,7 @@ import { Button } from '../common';
 interface AppearanceOption {
   id: ThemeMode;
   label: string;
-  icon: keyof typeof MaterialIcons.glyphMap;
+  icon: keyof typeof MaterialCommunityIcons.glyphMap;
   hint: string;
 }
 
@@ -41,13 +41,13 @@ const APPEARANCE_OPTIONS: AppearanceOption[] = [
   {
     id: 'light',
     label: 'Claro',
-    icon: 'light-mode',
+    icon: 'white-balance-sunny',
     hint: 'Paleta luminosa con fondo marfil cálido',
   },
   {
     id: 'dark',
     label: 'Oscuro',
-    icon: 'dark-mode',
+    icon: 'weather-night',
     hint: 'Paleta nocturna con tonos oscuros elegantes',
   },
   {
@@ -88,7 +88,7 @@ export function ProfileSettingsGroup() {
       <View style={styles.appearanceSection} testID="theme-selector-group">
         <View style={styles.appearanceHeader}>
           <View style={styles.settingsIconBox}>
-            <MaterialIcons name="palette" size={20} color={styles.iconColor.color} />
+            <MaterialCommunityIcons name="palette-outline" size={20} color={styles.iconColor.color} />
           </View>
           <View style={styles.settingsTextCol}>
             <Text style={[styles.settingsRowTitle, typography.labelLg]}>
@@ -106,7 +106,7 @@ export function ProfileSettingsGroup() {
             accessibilityRole="alert"
             testID="theme-save-error-banner"
           >
-            <MaterialIcons name="error-outline" size={16} color={styles.errorIconColor.color} />
+            <MaterialCommunityIcons name="alert-circle-outline" size={16} color={styles.errorIconColor.color} />
             <Text style={[styles.appearanceErrorText, typography.labelSm]}>
               {appearanceError}
             </Text>
@@ -115,7 +115,7 @@ export function ProfileSettingsGroup() {
               accessibilityLabel="Cerrar mensaje de error"
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <MaterialIcons name="close" size={14} color={styles.errorIconColor.color} />
+              <MaterialCommunityIcons name="close" size={14} color={styles.errorIconColor.color} />
             </Pressable>
           </View>
         )}
@@ -145,7 +145,7 @@ export function ProfileSettingsGroup() {
                   pressed && styles.optionButtonPressed,
                 ]}
               >
-                <MaterialIcons
+                <MaterialCommunityIcons
                   name={option.icon}
                   size={22}
                   color={isSelected ? styles.selectedColor.color : styles.unselectedColor.color}
@@ -182,7 +182,7 @@ export function ProfileSettingsGroup() {
       >
         <View style={styles.settingsRowLeft}>
           <View style={styles.settingsIconBox}>
-            <MaterialIcons name="settings" size={20} color={styles.iconColor.color} />
+            <MaterialCommunityIcons name="cog-outline" size={20} color={styles.iconColor.color} />
           </View>
           <View style={styles.settingsTextCol}>
             <Text style={[styles.settingsRowTitle, typography.labelLg]}>
@@ -193,7 +193,7 @@ export function ProfileSettingsGroup() {
             </Text>
           </View>
         </View>
-        <MaterialIcons name="chevron-right" size={22} color={styles.chevronColor.color} />
+        <MaterialCommunityIcons name="chevron-right" size={22} color={styles.chevronColor.color} />
       </Pressable>
 
       <View style={styles.rowDivider} />
@@ -211,8 +211,8 @@ export function ProfileSettingsGroup() {
       >
         <View style={styles.settingsRowLeft}>
           <View style={styles.settingsIconBox}>
-            <MaterialIcons
-              name="help-outline"
+            <MaterialCommunityIcons
+              name="help-circle-outline"
               size={20}
               color={styles.iconColor.color}
             />
@@ -226,7 +226,7 @@ export function ProfileSettingsGroup() {
             </Text>
           </View>
         </View>
-        <MaterialIcons name="chevron-right" size={22} color={styles.chevronColor.color} />
+        <MaterialCommunityIcons name="chevron-right" size={22} color={styles.chevronColor.color} />
       </Pressable>
 
       <View style={styles.rowDivider} />
@@ -244,7 +244,7 @@ export function ProfileSettingsGroup() {
       >
         <View style={styles.settingsRowLeft}>
           <View style={styles.settingsIconBox}>
-            <MaterialIcons name="info" size={20} color={styles.iconColor.color} />
+            <MaterialCommunityIcons name="information" size={20} color={styles.iconColor.color} />
           </View>
           <View style={styles.settingsTextCol}>
             <Text style={[styles.settingsRowTitle, typography.labelLg]}>
@@ -261,7 +261,7 @@ export function ProfileSettingsGroup() {
               v1.0.0
             </Text>
           </View>
-          <MaterialIcons name="chevron-right" size={22} color={styles.chevronColor.color} />
+          <MaterialCommunityIcons name="chevron-right" size={22} color={styles.chevronColor.color} />
         </View>
       </Pressable>
 
@@ -283,13 +283,13 @@ export function ProfileSettingsGroup() {
           <View style={styles.infoDialogCard}>
             <View style={styles.infoDialogHeader}>
               <View style={styles.infoDialogIconBox}>
-                <MaterialIcons
+                <MaterialCommunityIcons
                   name={
                     activeInfoModal === 'config'
-                      ? 'settings'
+                      ? 'cog-outline'
                       : activeInfoModal === 'help'
-                      ? 'help-outline'
-                      : 'info'
+                      ? 'help-circle-outline'
+                      : 'information'
                   }
                   size={24}
                   color={styles.selectedColor.color}
@@ -366,14 +366,8 @@ export function ProfileSettingsGroup() {
 const createStyles = (colors: AppColors) =>
   StyleSheet.create({
     card: {
-      backgroundColor: colors.surface,
-      borderRadius: radius.xl,
+      ...getAppSurfaces(colors).card,
       overflow: 'hidden',
-      shadowColor: colors.cardShadow,
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.04,
-      shadowRadius: 8,
-      elevation: 2,
       width: '100%',
     },
 

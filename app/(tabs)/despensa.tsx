@@ -29,7 +29,7 @@ import {
   IngredientFormSaveData,
 } from '../../src/components/pantry';
 import { usePantry } from '../../src/context/PantryContext';
-import { AppColors, radius, spacing, useAppTheme, useThemeStyles, useTypography } from '../../src/theme';
+import { AppColors, getAppSurfaces, radius, spacing, useAppTheme, useThemeStyles, useTypography } from '../../src/theme';
 import { Ingredient } from '../../src/types/pantry';
 
 export default function DespensaScreen() {
@@ -583,7 +583,7 @@ const createStyles = (colors: AppColors) =>
   StyleSheet.create({
     safeArea: {
       flex: 1,
-      backgroundColor: colors.canvas,
+      ...getAppSurfaces(colors).canvas,
     },
     header: {
       flexDirection: 'row',
@@ -591,10 +591,6 @@ const createStyles = (colors: AppColors) =>
       justifyContent: 'space-between',
       paddingHorizontal: spacing.margin,
       paddingVertical: spacing.sm,
-      backgroundColor: colors.canvas,
-      borderBottomWidth: 1,
-      borderBottomColor: colors.borderLight,
-      zIndex: 2,
     },
     headerBrand: {
       flexDirection: 'row',
@@ -853,7 +849,7 @@ const createStyles = (colors: AppColors) =>
     savingsCtaButton: {
       minHeight: 52,
       borderRadius: radius.md + 6,
-      backgroundColor: colors.primaryAction,
+      ...getAppSurfaces(colors).cta,
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',

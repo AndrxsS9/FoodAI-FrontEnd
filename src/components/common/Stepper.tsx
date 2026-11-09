@@ -6,7 +6,7 @@ import {
   View,
   ViewStyle,
 } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { AppColors, radius, spacing, useTypography, useAppTheme, useThemeStyles } from '../../theme';
 
 export interface StepperProps {
@@ -141,8 +141,8 @@ export const Stepper: React.FC<StepperProps> = ({
           pressed && canDecrement && styles.buttonPressed,
         ]}
       >
-        <MaterialIcons
-          name="remove"
+        <MaterialCommunityIcons
+          name="minus"
           size={18}
           color={canDecrement ? colors.textPrimary : colors.textTertiary}
         />
@@ -177,8 +177,8 @@ export const Stepper: React.FC<StepperProps> = ({
           pressed && canIncrement && styles.buttonPressed,
         ]}
       >
-        <MaterialIcons
-          name="add"
+        <MaterialCommunityIcons
+          name="plus"
           size={18}
           color={canIncrement ? colors.textPrimary : colors.textTertiary}
         />

@@ -11,8 +11,8 @@ import {
   Text,
   View,
 } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
-import { AppColors, radius, spacing, useTypography, useThemeColors, useThemeStyles } from '../../theme';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { AppColors, getAppSurfaces, radius, spacing, useTypography, useThemeColors, useThemeStyles } from '../../theme';
 import { formatCopCurrency } from '../../types/recipe';
 
 export interface CulinaryPreferencesSectionProps {
@@ -45,7 +45,7 @@ export function CulinaryPreferencesSection({
             Preferencias de hogar · Pautas para calcular cantidades y costos sugeridos
           </Text>
         </View>
-        <MaterialIcons name="tune" size={20} color={colors.primary} />
+        <MaterialCommunityIcons name="tune" size={20} color={colors.primary} />
       </View>
 
       {/* Indicador sutil de carga si está hidratando */}
@@ -82,7 +82,7 @@ export function CulinaryPreferencesSection({
         >
           <View style={styles.preferenceRowLeft}>
             <View style={styles.preferenceIconBox}>
-              <MaterialIcons name="group" size={18} color={colors.primary} />
+              <MaterialCommunityIcons name="account-group" size={18} color={colors.primary} />
             </View>
             <View style={styles.preferenceLabelCol}>
               <Text style={[styles.preferenceTitle, typography.labelMd]}>
@@ -120,7 +120,7 @@ export function CulinaryPreferencesSection({
         >
           <View style={styles.preferenceRowLeft}>
             <View style={styles.preferenceIconBox}>
-              <MaterialIcons name="payments" size={18} color={colors.primary} />
+              <MaterialCommunityIcons name="cash-multiple" size={18} color={colors.primary} />
             </View>
             <View style={styles.preferenceLabelCol}>
               <Text style={[styles.preferenceTitle, typography.labelMd]}>
@@ -157,7 +157,7 @@ export function CulinaryPreferencesSection({
         >
           <View style={styles.preferenceRowLeft}>
             <View style={styles.preferenceIconBox}>
-              <MaterialIcons name="timer" size={18} color={colors.primary} />
+              <MaterialCommunityIcons name="timer-outline" size={18} color={colors.primary} />
             </View>
             <View style={styles.preferenceLabelCol}>
               <Text style={[styles.preferenceTitle, typography.labelMd]}>
@@ -202,7 +202,7 @@ export function CulinaryPreferencesSection({
             style={{ marginRight: spacing.xs }}
           />
         ) : (
-          <MaterialIcons name="edit" size={18} color={colors.primary} />
+          <MaterialCommunityIcons name="pencil-outline" size={18} color={colors.primary} />
         )}
         <Text
           style={[
@@ -221,15 +221,9 @@ export function CulinaryPreferencesSection({
 const createStyles = (colors: AppColors) =>
   StyleSheet.create({
   card: {
-    backgroundColor: colors.surface,
+    ...getAppSurfaces(colors).card,
     padding: spacing.md,
-    borderRadius: radius.xl,
     gap: spacing.md,
-    shadowColor: colors.primary,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 2,
     width: '100%',
   },
   sectionHeaderRow: {

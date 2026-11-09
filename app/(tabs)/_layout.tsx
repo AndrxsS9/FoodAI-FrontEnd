@@ -3,18 +3,20 @@ import { StyleSheet, Platform, Text, useWindowDimensions, View } from 'react-nat
 import { Tabs } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { radius, useTypography, useAppTheme } from '../../src/theme';
+import { gradientStyle, radius, shadowStyle, useTypography, useAppTheme } from '../../src/theme';
 
 type IconName = ComponentProps<typeof MaterialCommunityIcons>['name'];
 
 /** Geometría de la barra flotante (dp). */
-const BAR_BASE_HEIGHT = 68;
-const BAR_SIDE_MARGIN = 12;
+const BAR_BASE_HEIGHT = 72;
+const BAR_SIDE_MARGIN = 10;
 const BAR_TOP_GAP = 6;
-const BAR_INNER_PADDING = 6;
+const BAR_INNER_PADDING = 4;
+const BAR_SIDE_MARGIN_NARROW = 6;
+const BAR_INNER_PADDING_NARROW = 2;
 const BAR_MIN_BOTTOM_GAP = 10;
-/** Límite de escalado de la etiqueta: por encima no cabría «Despensa» en cuatro pestañas a 320 dp. */
-const MAX_LABEL_FONT_SCALE = 1.4;
+/** Límite de escalado de la etiqueta: por encima no cabría «Despensa» en cinco pestañas a 320 dp. */
+const MAX_LABEL_FONT_SCALE = 1.3;
 
 interface TabIconProps {
   focused: boolean;
@@ -42,21 +44,43 @@ function TabIcon({ focused, color, pillColor, activeIcon, inactiveIcon }: TabIco
   );
 }
 
+/** Pestaña central: un círculo de acción la destaca sin cambiar su área táctil ni sus etiquetas. */
+function RecipesTabIcon({ focused }: { focused: boolean }) {
+  const { colors } = useAppTheme();
+  return (
+    <View
+      testID="tab-recetas-emphasis"
+      style={[
+        styles.centralIcon,
+        { backgroundColor: colors.cta },
+        gradientStyle(colors.gradientCta),
+        focused && { borderColor: colors.tabActive },
+      ]}
+    >
+      <MaterialCommunityIcons
+        name={focused ? 'chef-hat' : 'silverware-fork-knife'}
+        size={22}
+        color={colors.onPrimary}
+      />
+    </View>
+  );
+}
+
 export default function TabsLayout() {
   const insets = useSafeAreaInsets();
   const typography = useTypography();
   const { width: windowWidth, fontScale } = useWindowDimensions();
-  const { colors: activeColors, activeColorScheme } = useAppTheme();
-  const isDark = activeColorScheme === 'dark';
+  const { colors: activeColors } = useAppTheme();
 
-  const pillColor = isDark ? '#46337A' : activeColors.primaryFixed;
-  const activeTint = isDark ? '#D9C7FF' : activeColors.primary;
+  const pillColor = activeColors.tabPill;
   const bottomGap = Math.max(insets.bottom, BAR_MIN_BOTTOM_GAP);
-  const sideGap = BAR_SIDE_MARGIN + Math.max(insets.left, insets.right);
+  const isNarrow = windowWidth < 340;
+  const sideGap = (isNarrow ? BAR_SIDE_MARGIN_NARROW : BAR_SIDE_MARGIN) + Math.max(insets.left, insets.right);
+  const innerPadding = isNarrow ? BAR_INNER_PADDING_NARROW : BAR_INNER_PADDING;
   const labelScale = Math.min(Math.max(fontScale, 1), MAX_LABEL_FONT_SCALE);
   const barHeight = BAR_BASE_HEIGHT + Math.round((labelScale - 1) * 30);
-  // Con cuatro pestañas a 320 dp cada una dispone de unos 70 dp
-  const labelFontSize = windowWidth < 340 ? 11 : 12;
+  // Con cinco pestañas a 320 dp cada una dispone de unos 60 dp
+  const labelFontSize = isNarrow ? 9.5 : 11;
 
   return (
     <Tabs
@@ -65,7 +89,7 @@ export default function TabsLayout() {
         // En Android, si la ventana se redimensiona con el teclado, la barra subiría sobre él
         // y taparía las acciones de los formularios; se oculta mientras el teclado está abierto.
         tabBarHideOnKeyboard: Platform.OS === 'android',
-        tabBarActiveTintColor: activeTint,
+        tabBarActiveTintColor: activeColors.tabActive,
         tabBarInactiveTintColor: activeColors.textSecondary,
         tabBarActiveBackgroundColor: pillColor,
         // La barra sigue en el flujo y reserva su espacio: ninguna pantalla queda debajo de ella. La
@@ -79,7 +103,7 @@ export default function TabsLayout() {
           height: BAR_TOP_GAP + barHeight + bottomGap,
           paddingTop: BAR_TOP_GAP + BAR_INNER_PADDING,
           paddingBottom: bottomGap + BAR_INNER_PADDING,
-          paddingHorizontal: sideGap + BAR_INNER_PADDING,
+          paddingHorizontal: sideGap + innerPadding,
         },
         tabBarBackground: () => (
           <View
@@ -91,14 +115,11 @@ export default function TabsLayout() {
                 bottom: bottomGap,
                 left: sideGap,
                 right: sideGap,
-                backgroundColor: isDark ? '#231B38' : activeColors.surface,
-                borderColor: isDark ? '#46386F' : activeColors.primaryFixed,
-                // boxShadow en vez de elevation: en Android la elevación pintaría la superficie sobre las pestañas
-                boxShadow: isDark
-                  ? '0px 8px 22px rgba(0, 0, 0, 0.5)'
-                  : '0px 6px 18px rgba(91, 75, 138, 0.18)',
+                backgroundColor: activeColors.surface,
+                borderColor: activeColors.cardBorder,
               },
-              isDark && styles.barSurfaceGradient,
+              gradientStyle(activeColors.gradientCard),
+              shadowStyle(activeColors.shadowFloat),
             ]}
           />
         ),
@@ -118,6 +139,7 @@ export default function TabsLayout() {
             {children}
           </Text>
         ),
+        tabBarIconStyle: styles.barIconArea,
         tabBarItemStyle: styles.barItem,
       }}
     >
@@ -151,6 +173,14 @@ export default function TabsLayout() {
               inactiveIcon="fridge-outline"
             />
           ),
+        }}
+      />
+      <Tabs.Screen
+        name="recetas"
+        options={{
+          title: 'Recetas',
+          tabBarAccessibilityLabel: 'Pestaña Recetas',
+          tabBarIcon: ({ focused }) => <RecipesTabIcon focused={focused} />,
         }}
       />
       <Tabs.Screen
@@ -195,24 +225,36 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     borderWidth: 1,
   },
-  barSurfaceGradient: {
-    backgroundImage: 'linear-gradient(160deg, #2E2350 0%, #1E1830 100%)',
-  },
   barItem: {
-    borderRadius: 22,
-    marginHorizontal: 2,
+    borderRadius: 20,
+    marginHorizontal: 1,
     overflow: 'hidden',
   },
+  barIconArea: {
+    height: 34,
+    width: 44,
+  },
   iconPill: {
-    width: 48,
-    height: 28,
+    width: 44,
+    height: 30,
     borderRadius: radius.full,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  centralIcon: {
+    width: 38,
+    height: 34,
+    borderRadius: radius.full,
+    borderWidth: 1.5,
+    borderColor: 'transparent',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   label: {
-    letterSpacing: 0.1,
+    letterSpacing: 0,
     textAlign: 'center',
+    // El botón de pestaña reserva 5 dp por lado que aquí hacen falta para «Despensa»
+    marginHorizontal: -5,
   },
   labelActive: {
     fontWeight: '700',

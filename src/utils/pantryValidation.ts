@@ -4,9 +4,15 @@
 import {
   INGREDIENT_CATEGORIES,
   INGREDIENT_UNITS,
+  INGREDIENT_UNIT_NAMES,
   IngredientCategory,
   IngredientUnit,
 } from '../types/pantry';
+import {
+  classifyIngredient,
+  getUnitDimension,
+  suggestIngredientMeasurement,
+} from './ingredientMapper';
 
 /** Límite superior documentado para la cantidad de un ingrediente. */
 export const MAX_INGREDIENT_QUANTITY = 100000;
@@ -112,8 +118,141 @@ export interface IngredientFormData {
   expirationDateText?: string;
 }
 
+// ---------------------------------------------------------------------------
+// Validación semántica (Fase 28A)
+// ---------------------------------------------------------------------------
+
+export type SemanticWarningCode =
+  | 'category_mismatch'
+  | 'liquid_measured_by_mass'
+  | 'solid_measured_by_volume'
+  | 'countable_measured_by_volume';
+
+/**
+ * Advertencia sobre una combinación sospechosa de nombre, categoría y unidad.
+ * NUNCA bloquea por sí sola: la interfaz debe pedir confirmación explícita.
+ */
+export interface IngredientSemanticWarning {
+  code: SemanticWarningCode;
+  field: 'category' | 'unit';
+  message: string;
+  /** Categoría recomendada (solo para `category_mismatch`). */
+  suggestedCategory?: IngredientCategory;
+  /** Unidades recomendadas (solo para advertencias de unidad). */
+  suggestedUnits?: IngredientUnit[];
+}
+
+export interface SemanticCheckInput {
+  name: string;
+  unit: IngredientUnit;
+  category: IngredientCategory;
+}
+
+function unitLabel(unit: IngredientUnit): string {
+  return INGREDIENT_UNIT_NAMES[unit].toLowerCase();
+}
+
+/**
+ * Detecta combinaciones sospechosas (ej. leche líquida en kilogramos, arroz como lácteo,
+ * huevos en litros). Solo opera con clasificaciones de confianza alta; los nombres
+ * desconocidos o ambiguos nunca generan advertencias. Las unidades de cocina
+ * (cucharada, cucharadita, taza) y «desconocida» no se consideran sospechosas aquí.
+ */
+export function detectIngredientSemanticWarnings(
+  input: SemanticCheckInput
+): IngredientSemanticWarning[] {
+  const trimmedName = (input.name ?? '').trim();
+  if (!trimmedName) return [];
+
+  const classification = classifyIngredient(trimmedName);
+  if (classification.confidence !== 'high' || !classification.category) return [];
+
+  const warnings: IngredientSemanticWarning[] = [];
+
+  if (
+    INGREDIENT_CATEGORIES.includes(input.category) &&
+    !classification.acceptableCategories.includes(input.category)
+  ) {
+    warnings.push({
+      code: 'category_mismatch',
+      field: 'category',
+      message: `«${trimmedName}» suele pertenecer a ${classification.category}, pero elegiste ${input.category}.`,
+      suggestedCategory: classification.category,
+    });
+  }
+
+  const dimension = getUnitDimension(input.unit);
+  const presentation = classification.presentation;
+  const suggestedUnits = suggestIngredientMeasurement(trimmedName).suggestedUnits;
+
+  if (presentation === 'liquid' && dimension === 'mass') {
+    warnings.push({
+      code: 'liquid_measured_by_mass',
+      field: 'unit',
+      message: `«${trimmedName}» parece un líquido y lo estás midiendo en ${unitLabel(input.unit)}. Si es en polvo o sólido, acláralo en el nombre (por ejemplo, «en polvo»).`,
+      suggestedUnits,
+    });
+  } else if (
+    (presentation === 'solid' || presentation === 'powder' || presentation === 'piece') &&
+    dimension === 'volume'
+  ) {
+    warnings.push({
+      code: 'solid_measured_by_volume',
+      field: 'unit',
+      message: `«${trimmedName}» es un alimento ${presentation === 'powder' ? 'en polvo' : 'sólido'} y lo estás midiendo en ${unitLabel(input.unit)}. FoodAI no convierte masa en volumen.`,
+      suggestedUnits,
+    });
+  } else if (presentation === 'unit' && dimension === 'volume') {
+    warnings.push({
+      code: 'countable_measured_by_volume',
+      field: 'unit',
+      message: `«${trimmedName}» se cuenta por unidades; medirlo en ${unitLabel(input.unit)} parece un error.`,
+      suggestedUnits,
+    });
+  }
+
+  return warnings;
+}
+
+/**
+ * Firma estable de una combinación revisada: permite exigir una nueva confirmación
+ * cuando el usuario cambia el nombre, la unidad o la categoría tras confirmar.
+ */
+export function getSemanticCheckSignature(input: SemanticCheckInput): string {
+  return [(input.name ?? '').trim().toLowerCase(), input.unit, input.category].join('|');
+}
+
+/** Datos mínimos de un ítem en revisión del escáner para la validación semántica. */
+export interface ScannedSemanticInput extends SemanticCheckInput {
+  action?: 'create' | 'add_to_existing';
+  semanticReviewSignature?: string;
+}
+
+/**
+ * Advertencias aplicables a un alimento detectado por el escáner. Cuando se suma a un
+ * registro existente, la categoría no se guarda, por lo que solo se revisa la unidad.
+ */
+export function getScannedItemSemanticWarnings(
+  item: ScannedSemanticInput
+): IngredientSemanticWarning[] {
+  const warnings = detectIngredientSemanticWarnings(item);
+  return item.action === 'add_to_existing'
+    ? warnings.filter((w) => w.field !== 'category')
+    : warnings;
+}
+
+/** Indica si el usuario ya confirmó explícitamente la combinación actual del ítem. */
+export function isScannedItemSemanticallyConfirmed(item: ScannedSemanticInput): boolean {
+  return item.semanticReviewSignature === getSemanticCheckSignature(item);
+}
+
 export interface ValidationResult {
   isValid: boolean;
+  /**
+   * Advertencias semánticas no bloqueantes (Fase 28A). No afectan `isValid`;
+   * la interfaz decide cómo solicitar confirmación.
+   */
+  warnings: IngredientSemanticWarning[];
   errors: {
     name?: string;
     quantity?: string;
@@ -202,8 +341,18 @@ export function validateIngredientForm(data: IngredientFormData): ValidationResu
 
   const isValid = Object.keys(errors).length === 0;
 
+  const warnings =
+    trimmedName && !errors.unit && !errors.category
+      ? detectIngredientSemanticWarnings({
+          name: trimmedName,
+          unit: data.unit,
+          category: data.category,
+        })
+      : [];
+
   return {
     isValid,
+    warnings,
     errors,
     sanitizedData: isValid && quantityParsed.ok
       ? {

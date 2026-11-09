@@ -51,6 +51,11 @@ import {
   combineIngredientQuantities,
   mapDetectedToScannedItems,
 } from '../../src/utils/ingredientMapper';
+import {
+  getScannedItemSemanticWarnings,
+  getSemanticCheckSignature,
+  isScannedItemSemanticallyConfirmed,
+} from '../../src/utils/pantryValidation';
 import { returnToTab } from '../../src/utils/tabNavigation';
 
 export default function ScannerScreen() {
@@ -429,6 +434,17 @@ export default function ScannerScreen() {
     );
   };
 
+  // Confirmación explícita de una combinación inusual; cualquier edición posterior la invalida
+  const handleConfirmWarnings = (id: string) => {
+    setScannedItems((prev) =>
+      prev.map((item) =>
+        item.id === id
+          ? { ...item, semanticReviewSignature: getSemanticCheckSignature(item) }
+          : item
+      )
+    );
+  };
+
   const handleRemoveItem = (id: string) => {
     setScannedItems((prev) => prev.filter((item) => item.id !== id));
   };
@@ -576,8 +592,15 @@ export default function ScannerScreen() {
   const itemsWithMissingQuantity = selectedItems.filter(
     (i) => i.quantity === null || i.quantity <= 0
   );
+  const itemsWithUnconfirmedWarnings = selectedItems.filter(
+    (i) =>
+      getScannedItemSemanticWarnings(i).length > 0 && !isScannedItemSemanticallyConfirmed(i)
+  );
   const canSave =
-    selectedItems.length > 0 && itemsWithMissingQuantity.length === 0 && !isSaving;
+    selectedItems.length > 0 &&
+    itemsWithMissingQuantity.length === 0 &&
+    itemsWithUnconfirmedWarnings.length === 0 &&
+    !isSaving;
   const allSelected = scannedItems.length > 0 && selectedItems.length === scannedItems.length;
   const noneSelected = selectedItems.length === 0;
 
@@ -944,6 +967,19 @@ export default function ScannerScreen() {
               </View>
             )}
 
+            {/* Aviso si hay combinaciones inusuales sin confirmar */}
+            {itemsWithUnconfirmedWarnings.length > 0 && (
+              <View
+                style={styles.missingQuantityBanner}
+                testID="scanner-semantic-warning-notice"
+              >
+                <MaterialCommunityIcons name="alert-outline" size={18} color={colors.demoBadgeText} />
+                <Text style={[styles.missingQuantityText, typography.bodySm]}>
+                  Hay {itemsWithUnconfirmedWarnings.length} alimento{itemsWithUnconfirmedWarnings.length === 1 ? '' : 's'} con una unidad o categoría inusual. Corrígelo o confirma que los datos son correctos.
+                </Text>
+              </View>
+            )}
+
             {/* Lista de tarjetas interactivas */}
             <View style={styles.cardsList}>
               {scannedItems.map((item) => (
@@ -957,6 +993,7 @@ export default function ScannerScreen() {
                   onChangeCategory={handleChangeCategory}
                   onChangeAction={handleChangeAction}
                   onRemove={handleRemoveItem}
+                  onConfirmWarnings={handleConfirmWarnings}
                 />
               ))}
             </View>
@@ -1191,6 +1228,8 @@ export default function ScannerScreen() {
                 ? 'Selecciona al menos un alimento'
                 : itemsWithMissingQuantity.length > 0
                 ? 'Define las cantidades pendientes'
+                : itemsWithUnconfirmedWarnings.length > 0
+                ? 'Revisa las unidades o categorías'
                 : `Guardar ${selectedItems.length} alimento${selectedItems.length === 1 ? '' : 's'} en mi despensa`}
             </Text>
           </Pressable>

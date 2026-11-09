@@ -28,6 +28,7 @@ export * from './typography';
 export * from './spacing';
 export * from './radius';
 export * from './shadows';
+export * from './surfaces';
 export * from '../context/ThemeContext';
 export {
   type ThemeStorageAdapter,

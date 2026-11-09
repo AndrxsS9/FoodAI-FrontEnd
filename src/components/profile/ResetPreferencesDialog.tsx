@@ -10,7 +10,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { AppColors, radius, spacing, useTypography, useThemeColors, useThemeStyles } from '../../theme';
 import { Button } from '../common';
 
@@ -56,8 +56,8 @@ export function ResetPreferencesDialog({
         }
         testID="btn-reset-preferences"
       >
-        <MaterialIcons
-          name="restart-alt"
+        <MaterialCommunityIcons
+          name="restart"
           size={20}
           color={isLoading || isResetting ? colors.outline : colors.secondary}
         />
@@ -97,7 +97,7 @@ export function ResetPreferencesDialog({
 
           <View style={styles.dialogCard}>
             <View style={styles.dialogIconBox}>
-              <MaterialIcons name="restart-alt" size={32} color={colors.secondary} />
+              <MaterialCommunityIcons name="restart" size={32} color={colors.secondary} />
             </View>
 
             <Text

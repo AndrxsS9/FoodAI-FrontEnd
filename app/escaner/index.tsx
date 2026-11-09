@@ -11,18 +11,20 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
+  Keyboard,
   Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { MaterialIcons } from '@expo/vector-icons';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import { Button, Card, Header } from '../../src/components/common';
+import { Button, Card } from '../../src/components/common';
 import { DetectedIngredientCard } from '../../src/components/scanner';
 import { usePantry } from '../../src/context/PantryContext';
 import {
@@ -30,7 +32,7 @@ import {
   scannerApi,
   ScannerApiError,
 } from '../../src/services/api/scannerApi';
-import { AppColors, radius, spacing, useAppTheme, useThemeStyles, useTypography } from '../../src/theme';
+import { AppColors, getAppSurfaces, radius, spacing, useAppTheme, useThemeStyles, useTypography } from '../../src/theme';
 import { IngredientCategory, IngredientUnit } from '../../src/types/pantry';
 import {
   ScannedIngredientAction,
@@ -49,12 +51,15 @@ import {
   combineIngredientQuantities,
   mapDetectedToScannedItems,
 } from '../../src/utils/ingredientMapper';
+import { returnToTab } from '../../src/utils/tabNavigation';
 
 export default function ScannerScreen() {
   const typography = useTypography();
   const router = useRouter();
   const { colors } = useAppTheme();
   const styles = useThemeStyles(createStyles);
+  const insets = useSafeAreaInsets();
+  const { width: windowWidth } = useWindowDimensions();
   const { ingredients, addIngredient, updateIngredient } = usePantry();
 
   // Estados del flujo
@@ -69,6 +74,8 @@ export default function ScannerScreen() {
     'Preparando imagen...'
   );
   const [saveSummary, setSaveSummary] = useState<ScannerSaveSummary | null>(null);
+  // Altura del teclado: el pie fijo se oculta y el contenido gana espacio para seguir siendo alcanzable
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
 
   // Control de peticiones concurrentes, generación y cancelación
   const isMountedRef = useRef<boolean>(true);
@@ -124,6 +131,19 @@ export default function ScannerScreen() {
         abortControllerRef.current = null;
       }
       isSubmittingRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const showSubscription = Keyboard.addListener('keyboardDidShow', (event) => {
+      setKeyboardHeight(event.endCoordinates.height);
+    });
+    const hideSubscription = Keyboard.addListener('keyboardDidHide', () => {
+      setKeyboardHeight(0);
+    });
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
     };
   }, []);
 
@@ -558,33 +578,70 @@ export default function ScannerScreen() {
   );
   const canSave =
     selectedItems.length > 0 && itemsWithMissingQuantity.length === 0 && !isSaving;
+  const allSelected = scannedItems.length > 0 && selectedItems.length === scannedItems.length;
+  const noneSelected = selectedItems.length === 0;
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
-      {/* Header unificado */}
-      <Header
-        elevated
-        title="Escáner Inteligente"
-        subtitle="Detecta ingredientes con tu cámara e IA"
-        showBack
-        onBack={() => {
-          if (step === 'review' || step === 'preview' || step === 'error') {
-            handleResetScanner();
-          } else {
-            router.back();
-          }
-        }}
-      />
+      {/* Encabezado propio: la referencia lleva un mosaico de ícono que el Header común no admite */}
+      <View style={styles.headerRow} testID="scanner-header">
+        <Pressable
+          onPress={() => {
+            if (step === 'review' || step === 'preview' || step === 'error') {
+              handleResetScanner();
+            } else {
+              router.back();
+            }
+          }}
+          accessibilityRole="button"
+          accessibilityLabel="Volver"
+          accessibilityHint="Regresar a la pantalla anterior"
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          style={({ pressed }) => [styles.headerBack, pressed && styles.headerBackPressed]}
+        >
+          <MaterialCommunityIcons name="arrow-left" size={24} color={colors.textPrimary} />
+        </Pressable>
+        <View
+          style={styles.headerIconTile}
+          testID="scanner-header-icon"
+          accessible={false}
+          importantForAccessibility="no-hide-descendants"
+        >
+          <MaterialCommunityIcons name="scan-helper" size={30} color="#FFFFFF" />
+          <View style={styles.headerIconCamera}>
+            <MaterialCommunityIcons name="camera" size={14} color="#FFFFFF" />
+          </View>
+        </View>
+        <View style={styles.headerTextCol}>
+          <Text
+            style={[
+              styles.headerTitle,
+              typography.headlineMd,
+              windowWidth < 340 && styles.headerTitleCompact,
+            ]}
+            accessibilityRole="header"
+          >
+            Escáner Inteligente
+          </Text>
+          <Text style={[styles.headerSubtitle, typography.bodySm]}>
+            Detecta ingredientes con tu cámara e IA
+          </Text>
+        </View>
+      </View>
 
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          keyboardHeight > 0 && { paddingBottom: keyboardHeight + spacing.xl },
+        ]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
+        testID="scanner-scroll-view"
       >
         {/* Banner general de error */}
         {errorMessage && step !== 'error' && (
           <View style={styles.errorBanner} testID="scanner-top-error-banner">
-            <MaterialIcons name="error-outline" size={20} color={colors.error} />
+            <MaterialCommunityIcons name="alert-circle-outline" size={20} color={colors.error} />
             <Text style={[styles.errorBannerText, typography.bodySm]}>
               {errorMessage}
             </Text>
@@ -592,7 +649,7 @@ export default function ScannerScreen() {
               onPress={() => setErrorMessage(null)}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <MaterialIcons name="close" size={16} color={colors.error} />
+              <MaterialCommunityIcons name="close" size={16} color={colors.error} />
             </Pressable>
           </View>
         )}
@@ -623,8 +680,8 @@ export default function ScannerScreen() {
                     <View style={[styles.viewfinderCorner, styles.cornerBottomRight]} />
                   </View>
                   <View style={styles.viewfinderReticle}>
-                    <MaterialIcons
-                      name="photo-camera"
+                    <MaterialCommunityIcons
+                      name="camera-outline"
                       size={36}
                       color={colors.primary}
                     />
@@ -650,8 +707,8 @@ export default function ScannerScreen() {
                   onPress={() => { void handleLaunchCamera(); }}
                   accessibilityLabel="Tomar fotografía con la cámara"
                   leftIcon={
-                    <MaterialIcons
-                      name="add-a-photo"
+                    <MaterialCommunityIcons
+                      name="camera-plus-outline"
                       size={20}
                       color={colors.onPrimary}
                     />
@@ -667,8 +724,8 @@ export default function ScannerScreen() {
                   onPress={() => { void handleLaunchGallery(); }}
                   accessibilityLabel="Seleccionar fotografía de la galería"
                   leftIcon={
-                    <MaterialIcons
-                      name="photo-library"
+                    <MaterialCommunityIcons
+                      name="image-multiple-outline"
                       size={20}
                       color={colors.primary}
                     />
@@ -681,15 +738,15 @@ export default function ScannerScreen() {
             <Card variant="flat" style={styles.tipsCard}>
               <View style={styles.tipsHeaderRow}>
                 <View style={styles.tipsIconCircle}>
-                  <MaterialIcons name="lightbulb" size={18} color={colors.primary} />
+                  <MaterialCommunityIcons name="lightbulb-on-outline" size={18} color={colors.primary} />
                 </View>
                 <Text style={[styles.tipsTitle, typography.headlineMd]}>
                   Consejos para una detección óptima
                 </Text>
               </View>
               <View style={styles.tipItem}>
-                <MaterialIcons
-                  name="check-circle"
+                <MaterialCommunityIcons
+                  name="check-circle-outline"
                   size={16}
                   color={colors.primary}
                 />
@@ -698,8 +755,8 @@ export default function ScannerScreen() {
                 </Text>
               </View>
               <View style={styles.tipItem}>
-                <MaterialIcons
-                  name="check-circle"
+                <MaterialCommunityIcons
+                  name="check-circle-outline"
                   size={16}
                   color={colors.primary}
                 />
@@ -708,8 +765,8 @@ export default function ScannerScreen() {
                 </Text>
               </View>
               <View style={styles.tipItem}>
-                <MaterialIcons
-                  name="check-circle"
+                <MaterialCommunityIcons
+                  name="check-circle-outline"
                   size={16}
                   color={colors.primary}
                 />
@@ -738,7 +795,7 @@ export default function ScannerScreen() {
 
               <View style={styles.previewInfo}>
                 <View style={styles.previewBadgeRow}>
-                  <MaterialIcons name="check" size={16} color={colors.primary} />
+                  <MaterialCommunityIcons name="check" size={16} color={colors.primary} />
                   <Text style={[styles.previewBadgeText, typography.labelSm]}>
                     Foto lista para analizar
                   </Text>
@@ -757,8 +814,8 @@ export default function ScannerScreen() {
                   fullWidth
                   onPress={() => { void handleStartAnalysis(); }}
                   leftIcon={
-                    <MaterialIcons
-                      name="auto-awesome"
+                    <MaterialCommunityIcons
+                      name="creation"
                       size={20}
                       color={colors.onPrimary}
                     />
@@ -830,44 +887,48 @@ export default function ScannerScreen() {
            ========================================================================= */}
         {step === 'review' && (
           <View style={styles.reviewContainer} testID="scanner-review-state">
-            {/* Header informativo */}
-            <View style={styles.reviewTopSummary}>
-              <View style={styles.reviewHeadingBlock} testID="scanner-review-heading">
-                <Text style={[styles.reviewHeading, typography.headlineMd]}>
-                  {scannedItems.length} alimento{scannedItems.length === 1 ? '' : 's'} detectado{scannedItems.length === 1 ? '' : 's'}
-                </Text>
-                <Text style={[styles.reviewSubheading, typography.bodySm]}>
-                  Revisa y corrige los datos antes de guardarlos.
-                </Text>
-              </View>
-
-              <View style={styles.selectToggleRow}>
-                <Pressable
-                  testID="scanner-select-all-button"
-                  onPress={() => handleSelectAll(true)}
-                  style={styles.selectToggleButton}
-                  accessibilityRole="button"
-                  accessibilityLabel="Seleccionar todos los alimentos detectados"
-                >
-                  <Text style={[styles.toggleText, typography.labelSm]}>
-                    Todos
+            {/* Encabezado del resultado: conteo dinámico y selección masiva compacta */}
+            <View style={styles.reviewIntro}>
+              <View style={styles.reviewTitleRow}>
+                <View style={styles.reviewHeadingBlock} testID="scanner-review-heading">
+                  <Text
+                    style={[
+                      styles.reviewHeading,
+                      typography.headlineMd,
+                      windowWidth < 400 && styles.reviewHeadingCompact,
+                    ]}
+                    accessibilityRole="header"
+                  >
+                    {scannedItems.length} alimento{scannedItems.length === 1 ? '' : 's'} detectado{scannedItems.length === 1 ? '' : 's'}
                   </Text>
-                </Pressable>
-                <Text style={styles.toggleDivider} importantForAccessibility="no">
-                  |
-                </Text>
-                <Pressable
-                  testID="scanner-deselect-all-button"
-                  onPress={() => handleSelectAll(false)}
-                  style={styles.selectToggleButton}
-                  accessibilityRole="button"
-                  accessibilityLabel="Quitar la selección de todos los alimentos"
-                >
-                  <Text style={[styles.toggleText, typography.labelSm]}>
-                    Ninguno
-                  </Text>
-                </Pressable>
+                </View>
+                <View style={styles.selectLinksRow}>
+                  <Pressable
+                    testID="scanner-select-all-button"
+                    onPress={() => handleSelectAll(true)}
+                    style={({ pressed }) => [styles.selectLink, pressed && styles.selectLinkPressed]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Seleccionar todos los alimentos detectados"
+                    accessibilityState={{ selected: allSelected }}
+                  >
+                    <Text style={[styles.selectLinkText, typography.labelLg]}>Todos</Text>
+                  </Pressable>
+                  <View style={styles.selectLinkDivider} />
+                  <Pressable
+                    testID="scanner-deselect-all-button"
+                    onPress={() => handleSelectAll(false)}
+                    style={({ pressed }) => [styles.selectLink, pressed && styles.selectLinkPressed]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Quitar la selección de todos los alimentos"
+                    accessibilityState={{ selected: noneSelected }}
+                  >
+                    <Text style={[styles.selectLinkText, typography.labelLg]}>Ninguno</Text>
+                  </Pressable>
+                </View>
               </View>
+              <Text style={[styles.reviewSubheading, typography.bodyMd]}>
+                Revisa y corrige los datos antes de guardarlos.
+              </Text>
             </View>
 
             {/* Aviso si faltan cantidades */}
@@ -876,7 +937,7 @@ export default function ScannerScreen() {
                 style={styles.missingQuantityBanner}
                 testID="scanner-missing-quantity-notice"
               >
-                <MaterialIcons name="warning" size={18} color={colors.onErrorContainer} />
+                <MaterialCommunityIcons name="alert-outline" size={18} color={colors.demoBadgeText} />
                 <Text style={[styles.missingQuantityText, typography.bodySm]}>
                   Hay {itemsWithMissingQuantity.length} alimento{itemsWithMissingQuantity.length === 1 ? '' : 's'} sin cantidad definida. Ingresa un número positivo en cada uno para poder guardarlo.
                 </Text>
@@ -898,43 +959,6 @@ export default function ScannerScreen() {
                   onRemove={handleRemoveItem}
                 />
               ))}
-            </View>
-
-            {/* Acciones de guardado */}
-            <View style={styles.reviewBottomActions}>
-              <Button
-                testID="scanner-confirm-save-button"
-                title={
-                  selectedItems.length === 0
-                    ? 'Selecciona al menos un alimento'
-                    : itemsWithMissingQuantity.length > 0
-                    ? 'Define las cantidades pendientes'
-                    : `Guardar ${selectedItems.length} alimento${selectedItems.length === 1 ? '' : 's'} en mi despensa`
-                }
-                variant="primary"
-                size="lg"
-                fullWidth
-                disabled={!canSave}
-                onPress={() => { void handleConfirmAndSave(); }}
-                leftIcon={
-                  <MaterialIcons
-                    name="save"
-                    size={20}
-                    color={colors.onPrimary}
-                  />
-                }
-                accessibilityLabel="Confirmar y guardar alimentos seleccionados en mi despensa"
-              />
-
-              <Button
-                testID="scanner-retake-from-review-button"
-                title="Descartar y tomar otra foto"
-                variant="outline"
-                size="md"
-                fullWidth
-                onPress={handleResetScanner}
-                accessibilityLabel="Descartar detecciones y tomar otra foto"
-              />
             </View>
           </View>
         )}
@@ -963,7 +987,7 @@ export default function ScannerScreen() {
           <View style={styles.completedContainer} testID="scanner-completed-state">
             <Card variant="elevated" style={styles.completedCard}>
               <View style={styles.successIconBox}>
-                <MaterialIcons name="check-circle" size={54} color={colors.success} />
+                <MaterialCommunityIcons name="check-circle" size={54} color={colors.success} />
               </View>
 
               <Text style={[styles.completedTitle, typography.headlineMd]}>
@@ -977,7 +1001,7 @@ export default function ScannerScreen() {
               <View style={styles.summaryStatsBox}>
                 {saveSummary.savedCount > 0 && (
                   <View style={styles.statRow}>
-                    <MaterialIcons name="add-circle" size={18} color={colors.primary} />
+                    <MaterialCommunityIcons name="plus-circle-outline" size={18} color={colors.primary} />
                     <Text style={[styles.statText, typography.bodyMd]}>
                       <Text style={{ fontWeight: '700' }}>{saveSummary.savedCount}</Text> alimento{saveSummary.savedCount === 1 ? '' : 's'} nuevo{saveSummary.savedCount === 1 ? '' : 's'} agregado{saveSummary.savedCount === 1 ? '' : 's'}.
                     </Text>
@@ -986,7 +1010,7 @@ export default function ScannerScreen() {
 
                 {saveSummary.updatedCount > 0 && (
                   <View style={styles.statRow}>
-                    <MaterialIcons name="sync" size={18} color={colors.tertiary} />
+                    <MaterialCommunityIcons name="sync" size={18} color={colors.tertiary} />
                     <Text style={[styles.statText, typography.bodyMd]}>
                       <Text style={{ fontWeight: '700' }}>{saveSummary.updatedCount}</Text> alimento{saveSummary.updatedCount === 1 ? '' : 's'} existente{saveSummary.updatedCount === 1 ? '' : 's'} actualizado{saveSummary.updatedCount === 1 ? '' : 's'}.
                     </Text>
@@ -995,7 +1019,7 @@ export default function ScannerScreen() {
 
                 {saveSummary.failedCount > 0 && (
                   <View style={styles.statRow}>
-                    <MaterialIcons name="error" size={18} color={colors.error} />
+                    <MaterialCommunityIcons name="alert-circle" size={18} color={colors.error} />
                     <Text style={[styles.statText, typography.bodySm, { color: colors.error }]}>
                       {saveSummary.failedCount} no se pudieron guardar ({saveSummary.failedNames.join(', ')}).
                     </Text>
@@ -1010,10 +1034,10 @@ export default function ScannerScreen() {
                   variant="primary"
                   size="lg"
                   fullWidth
-                  onPress={() => router.replace('/(tabs)/despensa')}
+                  onPress={() => returnToTab(router, '/(tabs)/despensa')}
                   leftIcon={
-                    <MaterialIcons
-                      name="kitchen"
+                    <MaterialCommunityIcons
+                      name="fridge-outline"
                       size={20}
                       color={colors.onPrimary}
                     />
@@ -1029,8 +1053,8 @@ export default function ScannerScreen() {
                   fullWidth
                   onPress={handleResetScanner}
                   leftIcon={
-                    <MaterialIcons
-                      name="photo-camera"
+                    <MaterialCommunityIcons
+                      name="camera-outline"
                       size={20}
                       color={colors.primary}
                     />
@@ -1044,7 +1068,7 @@ export default function ScannerScreen() {
                   variant="ghost"
                   size="md"
                   fullWidth
-                  onPress={() => router.replace('/(tabs)')}
+                  onPress={() => returnToTab(router, '/(tabs)')}
                   accessibilityLabel="Volver a la pantalla de Inicio"
                 />
               </View>
@@ -1059,7 +1083,7 @@ export default function ScannerScreen() {
           <View style={styles.errorStateContainer} testID="scanner-error-state">
             <Card variant="outlined" style={styles.errorStateCard}>
               <View style={styles.errorIconBox}>
-                <MaterialIcons name="error-outline" size={48} color={colors.error} />
+                <MaterialCommunityIcons name="alert-circle-outline" size={48} color={colors.error} />
               </View>
 
               <Text style={[styles.errorStateTitle, typography.headlineMd]}>
@@ -1090,7 +1114,7 @@ export default function ScannerScreen() {
                     fullWidth
                     onPress={() => { void handleStartAnalysis(); }}
                     leftIcon={
-                      <MaterialIcons
+                      <MaterialCommunityIcons
                         name="refresh"
                         size={20}
                         color={colors.onPrimary}
@@ -1107,8 +1131,8 @@ export default function ScannerScreen() {
                   fullWidth
                   onPress={handleResetScanner}
                   leftIcon={
-                    <MaterialIcons
-                      name="photo-camera"
+                    <MaterialCommunityIcons
+                      name="camera-outline"
                       size={20}
                       color={colors.primary}
                     />
@@ -1128,15 +1152,119 @@ export default function ScannerScreen() {
           </View>
         )}
       </ScrollView>
+
+      {/*
+        Acciones de guardado fijas al pie, como en la referencia. Se usan Pressable propios porque el
+        Button común tiene altura fija y una sola línea, y recortaría el texto a 320 dp o con fuente grande.
+      */}
+      {step === 'review' && keyboardHeight === 0 && (
+        <View
+          style={[styles.reviewFooter, { paddingBottom: Math.max(insets.bottom, spacing.sm + 4) }]}
+          testID="scanner-review-footer"
+        >
+          <Pressable
+            testID="scanner-confirm-save-button"
+            disabled={!canSave}
+            onPress={() => { void handleConfirmAndSave(); }}
+            accessibilityRole="button"
+            accessibilityLabel="Confirmar y guardar alimentos seleccionados en mi despensa"
+            accessibilityState={{ disabled: !canSave }}
+            style={({ pressed }) => [
+              styles.saveAction,
+              canSave ? styles.saveActionEnabled : styles.saveActionDisabled,
+              pressed && canSave && styles.actionPressed,
+            ]}
+          >
+            <MaterialCommunityIcons
+              name="content-save-outline"
+              size={22}
+              color={canSave ? colors.onPrimary : colors.textSecondary}
+            />
+            <Text
+              style={[
+                styles.saveActionText,
+                typography.labelLg,
+                !canSave && styles.saveActionTextDisabled,
+              ]}
+            >
+              {selectedItems.length === 0
+                ? 'Selecciona al menos un alimento'
+                : itemsWithMissingQuantity.length > 0
+                ? 'Define las cantidades pendientes'
+                : `Guardar ${selectedItems.length} alimento${selectedItems.length === 1 ? '' : 's'} en mi despensa`}
+            </Text>
+          </Pressable>
+
+          <Pressable
+            testID="scanner-retake-from-review-button"
+            onPress={handleResetScanner}
+            accessibilityRole="button"
+            accessibilityLabel="Descartar detecciones y tomar otra foto"
+            style={({ pressed }) => [styles.discardAction, pressed && styles.actionPressed]}
+          >
+            <MaterialCommunityIcons name="camera-outline" size={20} color={colors.primary} />
+            <Text style={[styles.discardActionText, typography.labelLg]}>
+              Descartar y tomar otra foto
+            </Text>
+          </Pressable>
+        </View>
+      )}
     </SafeAreaView>
   );
 }
 
-const createStyles = (colors: AppColors) =>
-  StyleSheet.create({
+const createStyles = (colors: AppColors) => {
+  const surfaces = getAppSurfaces(colors);
+  return StyleSheet.create({
     safeArea: {
       flex: 1,
-      backgroundColor: colors.canvas,
+      ...surfaces.canvas,
+    },
+    headerRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm + 4,
+      paddingHorizontal: spacing.margin,
+      paddingVertical: spacing.sm,
+      minHeight: 56,
+    },
+    headerBack: {
+      width: 44,
+      height: 44,
+      marginLeft: -spacing.sm,
+      marginRight: -spacing.xs,
+      borderRadius: radius.full,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    headerBackPressed: {
+      backgroundColor: colors.surfaceContainer,
+    },
+    headerIconTile: {
+      width: 48,
+      height: 48,
+      borderRadius: radius.lg,
+      alignItems: 'center',
+      justifyContent: 'center',
+      ...surfaces.brand,
+    },
+    headerIconCamera: {
+      position: 'absolute',
+    },
+    headerTextCol: {
+      flex: 1,
+      minWidth: 0,
+    },
+    headerTitle: {
+      color: colors.textPrimary,
+      fontWeight: '700',
+    },
+    headerTitleCompact: {
+      fontSize: 18,
+      lineHeight: 24,
+    },
+    headerSubtitle: {
+      color: colors.textSecondary,
     },
     scrollContent: {
       padding: spacing.margin,
@@ -1355,63 +1483,126 @@ const createStyles = (colors: AppColors) =>
     reviewContainer: {
       gap: spacing.md,
     },
-    reviewTopSummary: {
+    reviewIntro: {
+      gap: 2,
+    },
+    reviewTitleRow: {
       flexDirection: 'row',
       flexWrap: 'wrap',
+      alignItems: 'center',
       justifyContent: 'space-between',
-      alignItems: 'flex-end',
       columnGap: spacing.sm,
     },
     reviewHeadingBlock: {
       flexGrow: 1,
       flexShrink: 1,
-      flexBasis: 200,
-      gap: 2,
+      minWidth: 0,
     },
     reviewHeading: {
       color: colors.textPrimary,
       fontWeight: '700',
     },
+    reviewHeadingCompact: {
+      fontSize: 18,
+      lineHeight: 24,
+    },
     reviewSubheading: {
       color: colors.textSecondary,
     },
-    selectToggleRow: {
+    selectLinksRow: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: 2,
-      marginRight: -spacing.sm,
     },
-    selectToggleButton: {
+    selectLink: {
       minHeight: 44,
-      paddingHorizontal: spacing.sm,
+      minWidth: 44,
+      paddingHorizontal: 2,
+      alignItems: 'center',
       justifyContent: 'center',
     },
-    toggleText: {
-      color: colors.primary,
-      fontWeight: '700',
+    selectLinkPressed: {
+      opacity: 0.6,
     },
-    toggleDivider: {
-      color: colors.outline,
+    selectLinkText: {
+      color: colors.primary,
+    },
+    selectLinkDivider: {
+      width: 1,
+      height: 18,
+      backgroundColor: colors.controlBorder,
     },
     missingQuantityBanner: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: spacing.xs,
-      backgroundColor: colors.errorContainer,
-      padding: spacing.sm,
-      borderRadius: radius.md,
+      gap: spacing.sm,
+      backgroundColor: colors.demoBadgeBackground,
+      paddingVertical: spacing.sm + 2,
+      paddingHorizontal: spacing.sm + 4,
+      borderRadius: radius.lg,
     },
     missingQuantityText: {
-      color: colors.onErrorContainer,
+      color: colors.demoBadgeText,
       flex: 1,
       lineHeight: 18,
     },
     cardsList: {
       gap: spacing.md,
     },
-    reviewBottomActions: {
-      gap: spacing.xs,
-      marginTop: spacing.sm,
+    reviewFooter: {
+      gap: spacing.sm,
+      paddingHorizontal: spacing.margin,
+      paddingTop: spacing.sm + 4,
+      ...surfaces.dock,
+      borderTopLeftRadius: radius.xl,
+      borderTopRightRadius: radius.xl,
+      borderBottomWidth: 0,
+    },
+    saveAction: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: spacing.sm,
+      minHeight: 54,
+      paddingVertical: spacing.sm,
+      paddingHorizontal: spacing.md,
+      borderRadius: radius.lg + 2,
+    },
+    saveActionEnabled: {
+      ...surfaces.cta,
+    },
+    saveActionDisabled: {
+      backgroundColor: colors.surfaceContainerHigh,
+    },
+    saveActionText: {
+      flexShrink: 1,
+      color: colors.onPrimary,
+      fontWeight: '700',
+      fontSize: 15,
+      textAlign: 'center',
+    },
+    saveActionTextDisabled: {
+      color: colors.textSecondary,
+    },
+    discardAction: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: spacing.sm,
+      minHeight: 48,
+      paddingVertical: spacing.xs,
+      paddingHorizontal: spacing.md,
+      borderRadius: radius.lg + 2,
+      borderWidth: 1.5,
+      borderColor: colors.fieldBorder,
+    },
+    discardActionText: {
+      flexShrink: 1,
+      color: colors.textPrimary,
+      textAlign: 'center',
+    },
+    actionPressed: {
+      opacity: 0.82,
     },
     completedContainer: {
       paddingVertical: spacing.lg,
@@ -1489,3 +1680,4 @@ const createStyles = (colors: AppColors) =>
       marginTop: spacing.sm,
     },
   });
+};

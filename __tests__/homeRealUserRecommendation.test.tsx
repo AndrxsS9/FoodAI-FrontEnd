@@ -14,7 +14,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import HomeScreen from '../app/(tabs)/index';
-import RecipeDiscoveryScreen from '../app/recetas/index';
+import RecipeDiscoveryScreen from '../app/(tabs)/recetas';
 import RecipeDetailScreen from '../app/recetas/[id]';
 import { ThemeProvider, TypographyProvider } from '../src/theme';
 import { AuthProvider, useAuth } from '../src/context/AuthContext';

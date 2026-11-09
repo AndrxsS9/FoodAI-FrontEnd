@@ -35,7 +35,7 @@ import { BudgetProvider, useBudget, BudgetContextValue } from '../src/context/Bu
 import { RecipeProvider, useRecipes, RecipeContextValue } from '../src/context/RecipeContext';
 import { ThemeProvider, TypographyProvider } from '../src/theme';
 import HomeScreen from '../app/(tabs)/index';
-import RecipeDiscoveryScreen from '../app/recetas/index';
+import RecipeDiscoveryScreen from '../app/(tabs)/recetas';
 
 jest.mock('expo-router', () => ({
   useRouter: () => ({ push: jest.fn(), replace: jest.fn(), back: jest.fn(), canGoBack: () => true }),

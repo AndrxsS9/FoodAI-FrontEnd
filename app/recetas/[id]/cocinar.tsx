@@ -21,7 +21,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { MaterialIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Button, Card } from '../../../src/components/common';
 import { useRecipes } from '../../../src/context/RecipeContext';
@@ -30,13 +30,14 @@ import { usePantrySafe } from '../../../src/context/PantryContext';
 import { calculatePantryDeduction } from '../../../src/utils/pantryConsumption';
 import { formatCopCurrency } from '../../../src/types/recipe';
 import {
-  AppColors,
+  AppColors, getAppSurfaces,
   radius,
   spacing,
   useTypography,
   useAppTheme,
   useThemeStyles,
 } from '../../../src/theme';
+import { returnToTab } from '../../../src/utils/tabNavigation';
 
 interface StepCountdownCardProps {
   stepDuration: { stepIndex: number; minutes?: number; action?: string };
@@ -95,7 +96,7 @@ function StepCountdownCard({ stepDuration }: StepCountdownCardProps) {
     <Card variant="outlined" style={styles.stepTimerCard} testID="cooking-step-countdown-card">
       <View style={styles.stepTimerHeaderRow}>
         <View style={styles.stepTimerTitleBox}>
-          <MaterialIcons name="hourglass-top" size={20} color={colors.primary} />
+          <MaterialCommunityIcons name="timer-sand" size={20} color={colors.primary} />
           <View>
             <Text style={[styles.stepTimerTitle, typography.labelMd]}>
               Temporizador del paso
@@ -122,7 +123,7 @@ function StepCountdownCard({ stepDuration }: StepCountdownCardProps) {
 
       {isCompleted && (
         <View style={styles.stepTimerCompletedBadge} testID="cooking-countdown-completed">
-          <MaterialIcons name="check-circle" size={16} color={colors.primary} />
+          <MaterialCommunityIcons name="check-circle" size={16} color={colors.primary} />
           <Text style={[styles.stepTimerCompletedText, typography.labelSm]}>
             ¡Tiempo del paso completado!
           </Text>
@@ -137,8 +138,8 @@ function StepCountdownCard({ stepDuration }: StepCountdownCardProps) {
           size="sm"
           onPress={handleToggle}
           leftIcon={
-            <MaterialIcons
-              name={isRunning ? 'pause' : 'play-arrow'}
+            <MaterialCommunityIcons
+              name={isRunning ? 'pause' : 'play'}
               size={18}
               color={colors.onPrimary}
             />
@@ -150,7 +151,7 @@ function StepCountdownCard({ stepDuration }: StepCountdownCardProps) {
           variant="outline"
           size="sm"
           onPress={handleReset}
-          leftIcon={<MaterialIcons name="replay" size={18} color={colors.primary} />}
+          leftIcon={<MaterialCommunityIcons name="replay" size={18} color={colors.primary} />}
         />
       </View>
     </Card>
@@ -359,14 +360,14 @@ export default function GuidedCookingScreen() {
             onPress={handleBack}
             style={styles.closeButton}
           >
-            <MaterialIcons name="close" size={22} color={colors.textPrimary} />
+            <MaterialCommunityIcons name="close" size={22} color={colors.textPrimary} />
           </Pressable>
           <Text style={[styles.headerTitle, typography.headlineMd]}>Modo Cocina</Text>
         </View>
 
         <View style={styles.centerContainer} testID="cooking-not-found-state">
           <Card variant="outlined" style={styles.emptyCard}>
-            <MaterialIcons name="error-outline" size={48} color={colors.error} />
+            <MaterialCommunityIcons name="alert-circle-outline" size={48} color={colors.error} />
             <Text style={[styles.emptyTitle, typography.headlineMd]}>
               Receta no encontrada
             </Text>
@@ -378,7 +379,7 @@ export default function GuidedCookingScreen() {
               title="Volver a recetas"
               variant="primary"
               size="md"
-              onPress={() => router.replace('/recetas' as any)}
+              onPress={() => returnToTab(router, '/recetas')}
             />
           </Card>
         </View>
@@ -398,14 +399,14 @@ export default function GuidedCookingScreen() {
             onPress={handleBack}
             style={styles.closeButton}
           >
-            <MaterialIcons name="close" size={22} color={colors.textPrimary} />
+            <MaterialCommunityIcons name="close" size={22} color={colors.textPrimary} />
           </Pressable>
           <Text style={[styles.headerTitle, typography.headlineMd]}>Modo Cocina</Text>
         </View>
 
         <View style={styles.centerContainer} testID="cooking-no-steps-state">
           <Card variant="outlined" style={styles.emptyCard}>
-            <MaterialIcons name="info-outline" size={48} color={colors.outline} />
+            <MaterialCommunityIcons name="information-outline" size={48} color={colors.outline} />
             <Text style={[styles.emptyTitle, typography.headlineMd]}>
               Sin instrucciones de preparación
             </Text>
@@ -443,7 +444,7 @@ export default function GuidedCookingScreen() {
             onPress={handleBack}
             style={styles.closeButton}
           >
-            <MaterialIcons name="close" size={22} color={colors.textPrimary} />
+            <MaterialCommunityIcons name="close" size={22} color={colors.textPrimary} />
           </Pressable>
           <Text
             style={[styles.headerTitle, typography.headlineMd]}
@@ -468,8 +469,8 @@ export default function GuidedCookingScreen() {
             accessibilityRole="button"
             accessibilityLabel={`Temporizador de cocina: ${formatTimer(timerSeconds)}. Presiona para pausar o iniciar, mantén presionado para reiniciar.`}
           >
-            <MaterialIcons
-              name={isTimerRunning ? 'pause' : 'timer'}
+            <MaterialCommunityIcons
+              name={isTimerRunning ? 'pause' : 'timer-outline'}
               size={18}
               color={isTimerRunning ? colors.onPrimary : colors.primary}
             />
@@ -558,7 +559,7 @@ export default function GuidedCookingScreen() {
 
           {/* Consejo culinario contextual */}
           <View style={styles.tipBox} testID="cooking-step-tip">
-            <MaterialIcons name="lightbulb" size={20} color={colors.secondary} style={styles.tipIcon} />
+            <MaterialCommunityIcons name="lightbulb-on-outline" size={20} color={colors.secondary} style={styles.tipIcon} />
             <Text style={[styles.tipText, typography.bodySm]}>
               <Text style={styles.tipBold}>Consejo: </Text>
               Mantén el fuego controlado y los utensilios secos antes de incorporar los alimentos.
@@ -578,7 +579,7 @@ export default function GuidedCookingScreen() {
         <View style={styles.stepIngredientsSection}>
           <View style={styles.stepIngredientsHeader}>
             <View style={styles.stepIngredientsLeft}>
-              <MaterialIcons name="restaurant" size={18} color={colors.outline} />
+              <MaterialCommunityIcons name="silverware-fork-knife" size={18} color={colors.outline} />
               <Text style={[styles.stepIngredientsTitle, typography.labelMd]}>
                 Ingredientes de referencia
               </Text>
@@ -628,7 +629,7 @@ export default function GuidedCookingScreen() {
             disabled={isFirstStep}
             onPress={handlePrevStep}
             leftIcon={
-              <MaterialIcons
+              <MaterialCommunityIcons
                 name="chevron-left"
                 size={22}
                 color={isFirstStep ? colors.outlineVariant : colors.textPrimary}
@@ -647,7 +648,7 @@ export default function GuidedCookingScreen() {
             fullWidth
             onPress={handleNextStep}
             rightIcon={
-              <MaterialIcons
+              <MaterialCommunityIcons
                 name={isLastStep ? 'check-circle' : 'chevron-right'}
                 size={22}
                 color={colors.onPrimary}
@@ -668,7 +669,7 @@ export default function GuidedCookingScreen() {
               showsVerticalScrollIndicator={false}
             >
               <View style={styles.finishIconCircle}>
-                <MaterialIcons name="dinner-dining" size={40} color={colors.primary} />
+                <MaterialCommunityIcons name="food-variant" size={40} color={colors.primary} />
               </View>
 
               <Text style={[styles.finishTitle, typography.headlineXl]}>
@@ -704,7 +705,7 @@ export default function GuidedCookingScreen() {
               {/* Deducción en Despensa (Fase 6A) */}
               {isDeducted ? (
                 <View style={styles.deductedBadge} testID="cooking-already-deducted-badge">
-                  <MaterialIcons name="check-circle" size={18} color={colors.primary} />
+                  <MaterialCommunityIcons name="check-circle" size={18} color={colors.primary} />
                   <Text style={[styles.deductedBadgeText, typography.labelSm]}>
                     Ingredientes ya descontados de tu despensa
                   </Text>
@@ -712,7 +713,7 @@ export default function GuidedCookingScreen() {
               ) : pantry ? (
                 <View style={styles.deductionSection} testID="cooking-deduction-section">
                   <View style={styles.deductionHeaderRow}>
-                    <MaterialIcons name="inventory" size={18} color={colors.primary} />
+                    <MaterialCommunityIcons name="clipboard-list-outline" size={18} color={colors.primary} />
                     <Text style={[styles.deductionTitle, typography.labelMd]}>
                       Descuento en despensa
                     </Text>
@@ -729,7 +730,7 @@ export default function GuidedCookingScreen() {
                     <View style={styles.deductibleList} testID="cooking-deductible-list">
                       {deductionPlan.deductibleItems.map((item, idx) => (
                         <View key={`deduct-${idx}`} style={styles.deductibleRow} testID={`cooking-deduct-item-${idx}`}>
-                          <MaterialIcons name="remove-circle-outline" size={16} color={colors.primary} />
+                          <MaterialCommunityIcons name="minus-circle-outline" size={16} color={colors.primary} />
                           <Text style={[styles.deductibleText, typography.bodySm]}>
                             {item.recipeIngredientName}: -{item.deductQuantity} {item.pantryUnit || item.recipeUnit} (quedan {item.stockAfter} {item.pantryUnit || item.recipeUnit})
                           </Text>
@@ -749,7 +750,7 @@ export default function GuidedCookingScreen() {
                       </Text>
                       {deductionPlan.reviewItems.map((item, idx) => (
                         <View key={`review-${idx}`} style={styles.reviewRow} testID={`cooking-review-item-${idx}`}>
-                          <MaterialIcons name="info-outline" size={14} color={colors.secondary} />
+                          <MaterialCommunityIcons name="information-outline" size={14} color={colors.secondary} />
                           <Text style={[styles.reviewText, typography.bodySm]}>
                             {item.recipeIngredientName} ({item.message})
                           </Text>
@@ -772,14 +773,14 @@ export default function GuidedCookingScreen() {
                       deductionPlan.deductibleItems.length === 0
                     }
                     onPress={handleConfirmDeduction}
-                    leftIcon={<MaterialIcons name="done" size={18} color={colors.onPrimary} />}
+                    leftIcon={<MaterialCommunityIcons name="check" size={18} color={colors.onPrimary} />}
                   />
                 </View>
               ) : null}
 
               {deductionFeedback?.tone === 'success' && (
                 <View style={styles.deductionSuccessBadge} testID="cooking-deduction-success">
-                  <MaterialIcons name="task-alt" size={16} color={colors.primary} />
+                  <MaterialCommunityIcons name="check-circle-outline" size={16} color={colors.primary} />
                   <Text style={[styles.deductionSuccessText, typography.labelSm]}>
                     {deductionFeedback.message}
                   </Text>
@@ -792,7 +793,7 @@ export default function GuidedCookingScreen() {
                   testID="cooking-deduction-error"
                   accessibilityRole="alert"
                 >
-                  <MaterialIcons name="error-outline" size={16} color={colors.error} />
+                  <MaterialCommunityIcons name="alert-circle-outline" size={16} color={colors.error} />
                   <Text style={[styles.deductionErrorText, typography.labelSm]}>
                     {deductionFeedback.message}
                   </Text>
@@ -806,7 +807,7 @@ export default function GuidedCookingScreen() {
                   variant="primary"
                   size="md"
                   fullWidth
-                  onPress={() => router.replace('/(tabs)/despensa')}
+                  onPress={() => returnToTab(router, '/(tabs)/despensa')}
                 />
                 <Button
                   testID="cooking-finish-review-button"
@@ -829,7 +830,7 @@ const createStyles = (colors: AppColors) =>
   StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: colors.canvas,
+    ...getAppSurfaces(colors).canvas,
   },
   header: {
     flexDirection: 'row',
@@ -837,13 +838,6 @@ const createStyles = (colors: AppColors) =>
     justifyContent: 'space-between',
     paddingHorizontal: spacing.margin,
     paddingVertical: spacing.sm,
-    backgroundColor: colors.canvas,
-    shadowColor: colors.cardShadow,
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 2,
-    zIndex: 2,
   },
   headerLeft: {
     flexDirection: 'row',

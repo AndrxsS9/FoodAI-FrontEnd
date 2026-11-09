@@ -6,7 +6,7 @@ import {
   View,
   ViewStyle,
 } from 'react-native';
-import { radius, spacing, useAppTheme } from '../../theme';
+import { gradientStyle, radius, spacing, useAppTheme } from '../../theme';
 
 export type CardVariant = 'elevated' | 'flat' | 'outlined';
 
@@ -35,15 +35,14 @@ export const Card: React.FC<CardProps> = ({
   testID,
   style,
 }) => {
-  const { colors, activeColorScheme } = useAppTheme();
-  const isDark = activeColorScheme === 'dark';
+  const { colors } = useAppTheme();
 
   const variantStyles = useMemo<Record<CardVariant, ViewStyle>>(
     () => ({
       elevated: {
         backgroundColor: colors.surface,
-        borderWidth: isDark ? 1 : 0,
-        borderColor: isDark ? colors.border : 'transparent',
+        borderWidth: 1,
+        borderColor: colors.cardBorder,
         shadowColor: colors.cardShadow,
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.08,
@@ -57,17 +56,23 @@ export const Card: React.FC<CardProps> = ({
       outlined: {
         backgroundColor: colors.surface,
         borderWidth: 1,
-        borderColor: colors.borderLight,
+        borderColor: colors.cardBorder,
       },
     }),
-    [colors, isDark]
+    [colors]
   );
 
   const paddingValue = typeof padding === 'number' ? padding : spacing[padding];
   const flattenedCustomStyle = StyleSheet.flatten(style) || {};
+  // Un fondo propio (avisos de error, destacados) no debe quedar tapado por el degradado de la tarjeta
+  const keepsCardSurface =
+    variant !== 'flat' &&
+    (flattenedCustomStyle.backgroundColor === undefined ||
+      flattenedCustomStyle.backgroundColor === colors.surface);
   const combinedStyle: ViewStyle = {
     ...styles.base,
     ...variantStyles[variant],
+    ...(keepsCardSurface ? gradientStyle(colors.gradientCard) : null),
     padding: paddingValue,
     ...(disabled ? styles.disabled : {}),
     ...flattenedCustomStyle,

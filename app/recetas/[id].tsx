@@ -18,11 +18,12 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { MaterialIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Button, Card } from '../../src/components/common';
 import { RecipeImage } from '../../src/components/recipe/RecipeImage';
 import { getRecipeImageSource } from '../../src/utils/recipeImageCatalog';
+import { returnToTab } from '../../src/utils/tabNavigation';
 import { usePantry } from '../../src/context/PantryContext';
 import { useRecipes } from '../../src/context/RecipeContext';
 import { useMealPlanSafe } from '../../src/context/MealPlanContext';
@@ -30,7 +31,7 @@ import {
   formatCopCurrency,
   formatIngredientQuantity,
 } from '../../src/types/recipe';
-import { AppColors, radius, spacing, useAppTheme, useThemeStyles, useTypography } from '../../src/theme';
+import { AppColors, getAppSurfaces, radius, spacing, useAppTheme, useThemeStyles, useTypography } from '../../src/theme';
 
 export default function RecipeDetailScreen() {
   const typography = useTypography();
@@ -71,7 +72,7 @@ export default function RecipeDetailScreen() {
 
   const handleBack = () => {
     if (params.fromPlan === 'true') {
-      router.replace('/(tabs)/plan' as any);
+      returnToTab(router, '/(tabs)/plan');
       return;
     }
     if (router.canGoBack()) {
@@ -108,14 +109,14 @@ export default function RecipeDetailScreen() {
             onPress={handleBack}
             style={styles.backButton}
           >
-            <MaterialIcons name="arrow-back" size={22} color={colors.textPrimary} />
+            <MaterialCommunityIcons name="arrow-left" size={22} color={colors.textPrimary} />
           </Pressable>
           <Text style={[styles.headerTitle, typography.headlineMd]}>Detalle de receta</Text>
         </View>
 
         <View style={styles.notFoundContainer} testID="recipe-not-found-state">
           <Card variant="outlined" style={styles.notFoundCard}>
-            <MaterialIcons name="search-off" size={48} color={colors.outline} />
+            <MaterialCommunityIcons name="magnify-close" size={48} color={colors.outline} />
             <Text style={[styles.notFoundTitle, typography.headlineMd]}>
               Receta no encontrada
             </Text>
@@ -127,7 +128,7 @@ export default function RecipeDetailScreen() {
               title="Volver al catálogo de recetas"
               variant="primary"
               size="md"
-              onPress={() => router.replace('/recetas' as any)}
+              onPress={() => returnToTab(router, '/recetas')}
             />
           </Card>
         </View>
@@ -151,7 +152,7 @@ export default function RecipeDetailScreen() {
               pressed && styles.backButtonPressed,
             ]}
           >
-            <MaterialIcons name="arrow-back" size={22} color={colors.textPrimary} />
+            <MaterialCommunityIcons name="arrow-left" size={22} color={colors.textPrimary} />
           </Pressable>
           <Text
             style={[styles.headerTitle, typography.headlineMd]}
@@ -170,7 +171,7 @@ export default function RecipeDetailScreen() {
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           style={styles.avatarButton}
         >
-          <MaterialIcons name="person" size={20} color={colors.onPrimary} />
+          <MaterialCommunityIcons name="account" size={20} color={colors.onPrimary} />
         </Pressable>
       </View>
 
@@ -187,7 +188,7 @@ export default function RecipeDetailScreen() {
             accessibilityRole="text"
           >
             <View style={styles.demoBadge}>
-              <MaterialIcons name="science" size={14} color={colors.primary} />
+              <MaterialCommunityIcons name="flask-outline" size={14} color={colors.primary} />
               <Text style={[styles.demoBadgeText, typography.labelSm]}>
                 {demoMeta.badgeLabel}
               </Text>
@@ -214,7 +215,7 @@ export default function RecipeDetailScreen() {
 
             {/* Badge de afinidad / conveniencia */}
             <View style={styles.conveniencePill}>
-              <MaterialIcons name="stars" size={16} color={colors.onTertiaryContainer} importantForAccessibility="no" accessibilityElementsHidden={true} />
+              <MaterialCommunityIcons name="star-circle-outline" size={16} color={colors.onTertiaryContainer} importantForAccessibility="no" accessibilityElementsHidden={true} />
               <Text style={[styles.conveniencePillText, typography.labelMd]}>
                 {String(recipe.convenience)}
               </Text>
@@ -241,7 +242,7 @@ export default function RecipeDetailScreen() {
         <View style={styles.metricsRow} testID="recipe-quick-metrics">
           <View style={styles.metricCardCol}>
             <View style={styles.metricIconBox}>
-              <MaterialIcons name="timer" size={20} color={colors.primary} />
+              <MaterialCommunityIcons name="timer-outline" size={20} color={colors.primary} />
             </View>
             <Text style={[styles.metricLabel, typography.labelSm]}>Tiempo</Text>
             <Text style={[styles.metricMain, typography.labelLg]}>
@@ -251,7 +252,7 @@ export default function RecipeDetailScreen() {
 
           <View style={styles.metricCardCol}>
             <View style={styles.metricIconBox}>
-              <MaterialIcons name="group" size={20} color={colors.primary} />
+              <MaterialCommunityIcons name="account-group" size={20} color={colors.primary} />
             </View>
             <Text style={[styles.metricLabel, typography.labelSm]}>Porciones</Text>
             <Text style={[styles.metricMain, typography.labelLg]}>
@@ -261,7 +262,7 @@ export default function RecipeDetailScreen() {
 
           <View style={styles.metricCardCol}>
             <View style={[styles.metricIconBox, { backgroundColor: colors.errorContainer }]}>
-              <MaterialIcons name="payments" size={20} color={colors.secondary} />
+              <MaterialCommunityIcons name="cash-multiple" size={20} color={colors.secondary} />
             </View>
             <Text style={[styles.metricLabel, typography.labelSm]}>Compra aprox.</Text>
             <Text
@@ -281,7 +282,7 @@ export default function RecipeDetailScreen() {
           <View style={styles.timingBreakdownRow} testID="recipe-timing-breakdown">
             {recipe.prepMinutes !== undefined && (
               <View style={styles.timingItem} testID="recipe-prep-minutes">
-                <MaterialIcons name="hourglass-empty" size={16} color={colors.primary} />
+                <MaterialCommunityIcons name="timer-sand-empty" size={16} color={colors.primary} />
                 <Text style={[styles.timingText, typography.labelSm]}>
                   Preparación: <Text style={styles.timingValue}>{recipe.prepMinutes} min</Text>
                 </Text>
@@ -289,7 +290,7 @@ export default function RecipeDetailScreen() {
             )}
             {recipe.cookMinutes !== undefined && (
               <View style={styles.timingItem} testID="recipe-cook-minutes">
-                <MaterialIcons name="local-fire-department" size={16} color={colors.secondary} />
+                <MaterialCommunityIcons name="fire" size={16} color={colors.secondary} />
                 <Text style={[styles.timingText, typography.labelSm]}>
                   Cocción: <Text style={styles.timingValue}>{recipe.cookMinutes} min</Text>
                 </Text>
@@ -302,8 +303,8 @@ export default function RecipeDetailScreen() {
         <Card variant="elevated" style={styles.budgetStatusCard}>
           <View style={styles.budgetStatusRow}>
             <View style={styles.budgetStatusLeft}>
-              <MaterialIcons
-                name={recipe.withinBudget ? 'check-circle' : 'warning'}
+              <MaterialCommunityIcons
+                name={recipe.withinBudget ? 'check-circle' : 'alert'}
                 size={20}
                 color={recipe.withinBudget ? colors.primary : colors.secondary}
               />
@@ -320,7 +321,7 @@ export default function RecipeDetailScreen() {
 
           {recipe.reason ? (
             <View style={styles.reasonCardBox}>
-              <MaterialIcons name="lightbulb" size={18} color={colors.secondary} />
+              <MaterialCommunityIcons name="lightbulb-on-outline" size={18} color={colors.hintText} />
               <Text style={[styles.reasonCardText, typography.bodySm]}>
                 {recipe.reason}
               </Text>
@@ -333,7 +334,7 @@ export default function RecipeDetailScreen() {
           <View style={styles.sectionHeaderRow}>
             <View style={styles.sectionTitleRow}>
               <View style={styles.sectionIconCircle}>
-                <MaterialIcons name="kitchen" size={18} color={colors.primary} />
+                <MaterialCommunityIcons name="fridge-outline" size={18} color={colors.primary} />
               </View>
               <Text style={[styles.sectionTitle, typography.headlineMd]}>
                 Ya tienes en casa
@@ -341,7 +342,7 @@ export default function RecipeDetailScreen() {
             </View>
             <View style={styles.countBadge}>
               <Text style={[styles.countBadgeText, typography.labelSm]}>
-                {recipe.availableIngredients.length} ingredientes
+                {recipe.availableIngredients.length} ingrediente{recipe.availableIngredients.length === 1 ? '' : 's'}
               </Text>
             </View>
           </View>
@@ -371,8 +372,8 @@ export default function RecipeDetailScreen() {
                   testID={`available-ingredient-${index}`}
                 >
                   <View style={styles.ingredientLeft}>
-                    <MaterialIcons
-                      name={isChecked ? 'check-circle' : 'radio-button-unchecked'}
+                    <MaterialCommunityIcons
+                      name={isChecked ? 'check-circle' : 'circle-outline'}
                       size={22}
                       color={isChecked ? colors.primary : colors.outline}
                     />
@@ -408,7 +409,7 @@ export default function RecipeDetailScreen() {
           <View style={styles.sectionHeaderRow}>
             <View style={styles.sectionTitleRow}>
               <View style={[styles.sectionIconCircle, { backgroundColor: colors.errorContainer }]}>
-                <MaterialIcons name="shopping-cart" size={18} color={colors.secondary} />
+                <MaterialCommunityIcons name="cart-outline" size={18} color={colors.secondary} />
               </View>
               <Text style={[styles.sectionTitle, typography.headlineMd, { color: colors.secondary }]}>
                 Necesitas comprar
@@ -423,7 +424,7 @@ export default function RecipeDetailScreen() {
 
           {recipe.missingIngredients.length === 0 ? (
             <Card variant="outlined" style={styles.allReadyCard}>
-              <MaterialIcons name="done-all" size={24} color={colors.primary} />
+              <MaterialCommunityIcons name="check-all" size={24} color={colors.primary} />
               <Text style={[styles.allReadyText, typography.bodyMd]}>
                 ¡Tienes todos los ingredientes necesarios en tu despensa! No requieres compras extra.
               </Text>
@@ -437,7 +438,7 @@ export default function RecipeDetailScreen() {
                   testID={`missing-ingredient-${index}`}
                 >
                   <View style={styles.ingredientLeft}>
-                    <MaterialIcons name="add-shopping-cart" size={20} color={colors.secondary} />
+                    <MaterialCommunityIcons name="cart-plus" size={20} color={colors.secondary} />
                     <View style={styles.ingredientNameCol}>
                       <Text style={[styles.ingredientName, typography.bodyMd]}>
                         {item.name}
@@ -463,7 +464,7 @@ export default function RecipeDetailScreen() {
               {/* Total Price Bar */}
               <View style={styles.totalMissingBar}>
                 <View style={styles.totalMissingLeft}>
-                  <MaterialIcons name="receipt-long" size={20} color={colors.secondary} />
+                  <MaterialCommunityIcons name="receipt-text-outline" size={20} color={colors.secondary} />
                   <Text style={[styles.totalMissingLabel, typography.labelLg]}>
                     Compra estimada
                   </Text>
@@ -481,7 +482,7 @@ export default function RecipeDetailScreen() {
           <View style={styles.sectionHeaderRow}>
             <View style={styles.sectionTitleRow}>
               <View style={styles.sectionIconCircle}>
-                <MaterialIcons name="restaurant-menu" size={18} color={colors.primary} />
+                <MaterialCommunityIcons name="silverware-fork-knife" size={18} color={colors.primary} />
               </View>
               <Text style={[styles.sectionTitle, typography.headlineMd]}>
                 Preparación
@@ -520,7 +521,7 @@ export default function RecipeDetailScreen() {
           size="lg"
           fullWidth
           onPress={handleStartCooking}
-          leftIcon={<MaterialIcons name="restaurant-menu" size={20} color={colors.onPrimary} />}
+          leftIcon={<MaterialCommunityIcons name="silverware-fork-knife" size={20} color={colors.onPrimary} />}
           accessibilityLabel="Iniciar Modo Cocina guiado paso a paso"
           accessibilityHint="Abre la pantalla de cocina interactiva para preparar la receta"
         />
@@ -533,7 +534,7 @@ const createStyles = (colors: AppColors) =>
   StyleSheet.create({
     safeArea: {
       flex: 1,
-      backgroundColor: colors.canvas,
+      ...getAppSurfaces(colors).canvas,
     },
     header: {
       flexDirection: 'row',
@@ -541,13 +542,6 @@ const createStyles = (colors: AppColors) =>
       justifyContent: 'space-between',
       paddingHorizontal: spacing.margin,
       paddingVertical: spacing.sm,
-      backgroundColor: colors.canvas,
-      shadowColor: colors.cardShadow,
-      shadowOffset: { width: 0, height: 1 },
-      shadowOpacity: 0.04,
-      shadowRadius: 8,
-      elevation: 2,
-      zIndex: 2,
     },
     headerLeft: {
       flexDirection: 'row',
@@ -803,13 +797,13 @@ const createStyles = (colors: AppColors) =>
       flexDirection: 'row',
       alignItems: 'flex-start',
       gap: spacing.xs,
-      backgroundColor: colors.errorContainer,
+      backgroundColor: colors.hintBackground,
       padding: spacing.sm,
-      borderRadius: radius.md,
+      borderRadius: radius.md + 4,
       marginTop: spacing.xs,
     },
     reasonCardText: {
-      color: colors.onErrorContainer,
+      color: colors.hintText,
       flex: 1,
       lineHeight: 18,
     },
@@ -828,11 +822,14 @@ const createStyles = (colors: AppColors) =>
     },
     sectionHeaderRow: {
       flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: spacing.xs,
       alignItems: 'center',
       justifyContent: 'space-between',
     },
     sectionTitleRow: {
       flexDirection: 'row',
+      flexShrink: 1,
       alignItems: 'center',
       gap: spacing.xs,
     },

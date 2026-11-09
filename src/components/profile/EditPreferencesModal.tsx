@@ -14,7 +14,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { AppColors, radius, spacing, useTypography, useThemeColors, useThemeStyles } from '../../theme';
 import { Button, Stepper } from '../common';
 import {
@@ -149,7 +149,7 @@ function EditPreferencesForm({
 
           <View style={styles.modalHeaderRow}>
             <View style={styles.modalHeaderTitleBox}>
-              <MaterialIcons name="tune" size={24} color={colors.primary} />
+              <MaterialCommunityIcons name="tune" size={24} color={colors.primary} />
               <Text style={[styles.modalTitleText, typography.headlineMd]}>
                 Editar preferencias
               </Text>
@@ -163,7 +163,7 @@ function EditPreferencesForm({
               disabled={isSaving}
               testID="close-edit-modal-button"
             >
-              <MaterialIcons name="close" size={20} color={colors.textPrimary} />
+              <MaterialCommunityIcons name="close" size={20} color={colors.textPrimary} />
             </Pressable>
           </View>
 
@@ -179,7 +179,7 @@ function EditPreferencesForm({
                 accessibilityRole="alert"
                 testID="edit-preferences-save-error"
               >
-                <MaterialIcons name="error-outline" size={18} color={colors.error} />
+                <MaterialCommunityIcons name="alert-circle-outline" size={18} color={colors.error} />
                 <Text style={[styles.modalErrorBannerText, typography.bodySm]}>
                   {saveError}
                 </Text>
@@ -230,7 +230,7 @@ function EditPreferencesForm({
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                     accessibilityLabel="Borrar presupuesto"
                   >
-                    <MaterialIcons name="cancel" size={18} color={colors.outline} />
+                    <MaterialCommunityIcons name="close-circle-outline" size={18} color={colors.outline} />
                   </Pressable>
                 )}
               </View>
@@ -311,8 +311,8 @@ function EditPreferencesForm({
                   disabled={isSaving}
                   testID="toggle-max-minutes"
                 >
-                  <MaterialIcons
-                    name={hasTimeLimit ? 'check-box' : 'check-box-outline-blank'}
+                  <MaterialCommunityIcons
+                    name={hasTimeLimit ? 'checkbox-marked' : 'checkbox-blank-outline'}
                     size={20}
                     color={hasTimeLimit ? colors.primary : colors.outline}
                   />
@@ -397,7 +397,7 @@ function EditPreferencesForm({
                 </View>
               ) : (
                 <View style={styles.unlimitedTimeNote}>
-                  <MaterialIcons
+                  <MaterialCommunityIcons
                     name="all-inclusive"
                     size={20}
                     color={colors.outline}
@@ -432,7 +432,7 @@ function EditPreferencesForm({
                 style={styles.modalSaveButton}
                 leftIcon={
                   !isSaving ? (
-                    <MaterialIcons
+                    <MaterialCommunityIcons
                       name="check"
                       size={18}
                       color={colors.onPrimary}

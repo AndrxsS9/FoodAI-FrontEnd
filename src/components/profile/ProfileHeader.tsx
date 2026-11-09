@@ -14,8 +14,8 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
-import { AppColors, radius, spacing, useTypography, useThemeColors, useThemeStyles } from '../../theme';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { AppColors, getAppSurfaces, radius, spacing, useTypography, useThemeColors, useThemeStyles } from '../../theme';
 import { AuthUser, getAvatarInitials, getUserDisplayName } from '../../types/auth';
 import { Button } from '../common';
 
@@ -111,12 +111,12 @@ export function ProfileHeader({
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               testID="btn-edit-name"
             >
-              <MaterialIcons name="edit" size={16} color={colors.primary} />
+              <MaterialCommunityIcons name="pencil-outline" size={16} color={colors.primary} />
             </Pressable>
           </View>
 
           <View style={styles.emailRow}>
-            <MaterialIcons name="alternate-email" size={14} color={colors.outline} />
+            <MaterialCommunityIcons name="at" size={14} color={colors.outline} />
             <Text
               style={[styles.emailText, typography.bodySm]}
               numberOfLines={1}
@@ -130,7 +130,7 @@ export function ProfileHeader({
                 accessibilityLabel="Correo electrónico verificado"
                 testID="profile-email-badge"
               >
-                <MaterialIcons name="check-circle" size={12} color={colors.success} />
+                <MaterialCommunityIcons name="check-circle" size={12} color={colors.success} />
                 <Text style={[styles.verifiedBadgeText, typography.labelSm]}>Verificado</Text>
               </View>
             ) : (
@@ -139,7 +139,7 @@ export function ProfileHeader({
                 accessibilityLabel="Correo electrónico sin verificar"
                 testID="profile-email-badge"
               >
-                <MaterialIcons name="schedule" size={12} color={colors.warning} />
+                <MaterialCommunityIcons name="clock-outline" size={12} color={colors.warning} />
                 <Text style={[styles.unverifiedBadgeText, typography.labelSm]}>Sin verificar</Text>
               </View>
             )}
@@ -168,7 +168,7 @@ export function ProfileHeader({
           <View style={styles.dialogCard}>
             <View style={styles.dialogHeader}>
               <View style={styles.dialogIconBox}>
-                <MaterialIcons name="person" size={24} color={colors.primary} />
+                <MaterialCommunityIcons name="account" size={24} color={colors.primary} />
               </View>
               <Text style={[styles.dialogTitle, typography.headlineMd]}>
                 Editar nombre
@@ -181,7 +181,7 @@ export function ProfileHeader({
 
             {submitError && (
               <View style={styles.errorBox} testID="edit-name-submit-error">
-                <MaterialIcons name="error-outline" size={16} color={colors.error} />
+                <MaterialCommunityIcons name="alert-circle-outline" size={16} color={colors.error} />
                 <Text style={[styles.errorText, typography.bodySm]}>{submitError}</Text>
               </View>
             )}
@@ -215,7 +215,7 @@ export function ProfileHeader({
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                     accessibilityLabel="Borrar nombre"
                   >
-                    <MaterialIcons name="cancel" size={18} color={colors.outline} />
+                    <MaterialCommunityIcons name="close-circle-outline" size={18} color={colors.outline} />
                   </Pressable>
                 )}
               </View>
@@ -249,7 +249,7 @@ export function ProfileHeader({
                 style={styles.dialogSaveBtn}
                 leftIcon={
                   !isUpdatingName ? (
-                    <MaterialIcons name="check" size={16} color={colors.onPrimary} />
+                    <MaterialCommunityIcons name="check" size={16} color={colors.onPrimary} />
                   ) : undefined
                 }
               />
@@ -267,17 +267,11 @@ const createStyles = (colors: AppColors) =>
     width: '100%',
   },
   card: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.xl,
+    ...getAppSurfaces(colors).card,
     padding: spacing.md,
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
-    shadowColor: colors.primary,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 2,
   },
   avatarSection: {
     alignItems: 'center',
@@ -294,7 +288,7 @@ const createStyles = (colors: AppColors) =>
     borderColor: 'rgba(243, 201, 105, 0.4)',
   },
   avatarText: {
-    color: colors.primary,
+    color: colors.onTertiary,
     fontWeight: '700',
     letterSpacing: 0.5,
   },

@@ -8,7 +8,7 @@ import {
   View,
   ViewStyle,
 } from 'react-native';
-import { AppColors, radius, spacing, useTypography, useAppTheme, useThemeStyles } from '../../theme';
+import { AppColors, gradientStyle, radius, spacing, useTypography, useAppTheme, useThemeStyles } from '../../theme';
 
 export type ButtonVariant = 'primary' | 'secondary' | 'tertiary' | 'outline' | 'ghost';
 export type ButtonSize = 'sm' | 'md' | 'lg';
@@ -74,6 +74,7 @@ export const Button: React.FC<ButtonProps> = ({
       style={({ pressed }) => [
         styles.base,
         styles[variant],
+        variant === 'primary' && !disabled && styles.primaryGradient,
         styles[size],
         fullWidth && styles.fullWidth,
         pressed && isInteractive && styles[`${variant}Pressed`],
@@ -161,8 +162,9 @@ const createStyles = (colors: AppColors) =>
       shadowRadius: 10,
       elevation: 3,
     },
+    primaryGradient: gradientStyle(colors.gradientCta),
     primaryPressed: {
-      backgroundColor: colors.primary,
+      opacity: 0.88,
     },
     secondary: {
       backgroundColor: colors.secondary,
@@ -177,8 +179,9 @@ const createStyles = (colors: AppColors) =>
       backgroundColor: colors.tertiaryContainer,
     },
     outline: {
-      backgroundColor: colors.surfaceContainer,
-      borderWidth: 0,
+      backgroundColor: 'transparent',
+      borderWidth: 1.5,
+      borderColor: colors.fieldBorder,
     },
     outlinePressed: {
       backgroundColor: colors.surfaceContainerHigh,

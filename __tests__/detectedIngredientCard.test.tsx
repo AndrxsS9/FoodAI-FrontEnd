@@ -292,7 +292,7 @@ describe('DetectedIngredientCard: tema oscuro', () => {
     );
 
     const badge = await findByTestId('detected-review-badge-scan-1');
-    const [badgeIcon] = badge.queryAll((node) => node.props.testID === 'icon-help-outline');
+    const [badgeIcon] = badge.queryAll((node) => node.props.testID === 'icon-help-circle-outline');
     expect(badgeIcon.props.color).toBe(darkColors.demoBadgeText);
 
     const possibleLabel = getByText('¿En despensa?');

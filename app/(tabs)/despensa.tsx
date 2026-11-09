@@ -15,7 +15,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { MaterialIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import {
   Button,
@@ -29,7 +29,7 @@ import {
   IngredientFormSaveData,
 } from '../../src/components/pantry';
 import { usePantry } from '../../src/context/PantryContext';
-import { AppColors, radius, spacing, useAppTheme, useThemeStyles, useTypography } from '../../src/theme';
+import { AppColors, getAppSurfaces, radius, spacing, useAppTheme, useThemeStyles, useTypography } from '../../src/theme';
 import { Ingredient } from '../../src/types/pantry';
 
 export default function DespensaScreen() {
@@ -87,6 +87,12 @@ export default function DespensaScreen() {
 
     return { urgentFiltered: urgent, regularFiltered: regular };
   }, [filteredIngredients, summary.urgentIngredients]);
+
+  // Número de categorías con al menos un alimento (solo presentación)
+  const activeCategoriesCount = useMemo(
+    () => Object.values(summary.categoriesBreakdown).filter((count) => count > 0).length,
+    [summary.categoriesBreakdown]
+  );
 
   // Handlers para registro y edición
   const handleOpenAddModal = () => {
@@ -177,7 +183,7 @@ export default function DespensaScreen() {
             pressed && styles.avatarPressed,
           ]}
         >
-          <MaterialIcons name="person" size={20} color={colors.onPrimary} />
+          <MaterialCommunityIcons name="account-outline" size={20} color={colors.onPrimary} />
         </Pressable>
       </View>
 
@@ -186,15 +192,61 @@ export default function DespensaScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {/* 2. Barra de búsqueda y botones rápidos (Stitch 6) */}
+        {/* 2. Resumen del inventario (solo cuando hay alimentos) */}
+        {!isLoading && ingredients.length > 0 && (
+          <View style={styles.overviewRow} testID="pantry-overview">
+            <View style={styles.overviewTile}>
+              <View style={[styles.overviewIcon, { backgroundColor: colors.primaryFixed }]}>
+                <MaterialCommunityIcons name="fridge-outline" size={18} color={colors.primary} />
+              </View>
+              <Text style={[styles.overviewValue, typography.headlineMd]}>
+                {summary.totalCount}
+              </Text>
+              <Text style={[styles.overviewLabel, typography.labelSm]}>
+                {summary.totalCount === 1 ? 'Alimento' : 'Alimentos'}
+              </Text>
+            </View>
+            <View style={styles.overviewTile}>
+              <View style={[styles.overviewIcon, { backgroundColor: colors.secondaryFixed }]}>
+                <MaterialCommunityIcons
+                  name="clock-alert-outline"
+                  size={18}
+                  color={colors.onSecondaryFixed}
+                />
+              </View>
+              <Text style={[styles.overviewValue, typography.headlineMd]}>
+                {summary.urgentCount}
+              </Text>
+              <Text style={[styles.overviewLabel, typography.labelSm]}>Por vencer</Text>
+            </View>
+            <View style={styles.overviewTile}>
+              <View style={[styles.overviewIcon, { backgroundColor: colors.tertiaryFixed }]}>
+                <MaterialCommunityIcons
+                  name="tag-outline"
+                  size={18}
+                  color={colors.onTertiaryFixed}
+                />
+              </View>
+              <Text style={[styles.overviewValue, typography.headlineMd]}>
+                {activeCategoriesCount}
+              </Text>
+              <Text style={[styles.overviewLabel, typography.labelSm]}>
+                {activeCategoriesCount === 1 ? 'Categoría' : 'Categorías'}
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {/* 3. Barra de búsqueda y botones rápidos (Stitch 6) */}
         <View style={styles.topActionsContainer}>
           <Input
             testID="pantry-search-input"
             placeholder="Buscar en mi despensa..."
             value={searchQuery}
             onChangeText={setSearchQuery}
+            containerStyle={styles.searchContainer}
             leftIcon={
-              <MaterialIcons name="search" size={20} color={colors.outline} />
+              <MaterialCommunityIcons name="magnify" size={20} color={colors.outline} />
             }
             rightIcon={
               searchQuery ? (
@@ -205,7 +257,7 @@ export default function DespensaScreen() {
                   accessibilityLabel="Limpiar búsqueda"
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 >
-                  <MaterialIcons name="clear" size={18} color={colors.outline} />
+                  <MaterialCommunityIcons name="close-circle" size={18} color={colors.outline} />
                 </Pressable>
               ) : undefined
             }
@@ -213,47 +265,43 @@ export default function DespensaScreen() {
           />
 
           <View style={styles.actionButtonsRow}>
-            <View style={styles.actionButtonFlex}>
-              <Button
-                testID="pantry-add-ingredient-button"
-                title="Agregar alimento"
-                variant="primary"
-                size="md"
-                fullWidth
-                onPress={handleOpenAddModal}
-                leftIcon={
-                  <MaterialIcons name="add" size={18} color={colors.onPrimary} />
-                }
-                accessibilityLabel="Agregar nuevo alimento a la despensa"
-              />
-            </View>
+            <Button
+              testID="pantry-add-ingredient-button"
+              title="Agregar"
+              variant="primary"
+              size="md"
+              style={styles.actionButton}
+              onPress={handleOpenAddModal}
+              leftIcon={
+                <MaterialCommunityIcons name="plus" size={20} color={colors.onPrimary} />
+              }
+              accessibilityLabel="Agregar nuevo alimento a la despensa"
+            />
 
-            <View style={styles.actionButtonFlex}>
-              <Button
-                testID="pantry-scan-placeholder-button"
-                title="Escanear nuevos"
-                variant="outline"
-                size="md"
-                fullWidth
-                onPress={() => router.push('/escaner' as any)}
-                leftIcon={
-                  <MaterialIcons
-                    name="photo-camera"
-                    size={18}
-                    color={colors.primary}
-                  />
-                }
-                accessibilityLabel="Escanear nuevos alimentos con la cámara"
-              />
-            </View>
+            <Button
+              testID="pantry-scan-placeholder-button"
+              title="Escanear"
+              variant="outline"
+              size="md"
+              style={styles.actionButton}
+              onPress={() => router.push('/escaner' as any)}
+              leftIcon={
+                <MaterialCommunityIcons
+                  name="camera-outline"
+                  size={20}
+                  color={colors.primary}
+                />
+              }
+              accessibilityLabel="Escanear nuevos alimentos con la cámara"
+            />
           </View>
         </View>
 
-        {/* 3. Estado de error de almacenamiento */}
+        {/* 4. Estado de error de almacenamiento */}
         {storageError && (
           <Card variant="outlined" style={styles.errorCard}>
             <View style={styles.errorRow}>
-              <MaterialIcons name="error-outline" size={24} color={colors.error} />
+              <MaterialCommunityIcons name="alert-circle-outline" size={24} color={colors.error} />
               <View style={styles.errorTextCol}>
                 <Text style={[styles.errorTitle, typography.labelMd]}>
                   Error de almacenamiento
@@ -282,7 +330,7 @@ export default function DespensaScreen() {
           </Card>
         )}
 
-        {/* 4. Estado de carga */}
+        {/* 5. Estado de carga */}
         {isLoading ? (
           <View
             style={styles.loadingContainer}
@@ -296,14 +344,14 @@ export default function DespensaScreen() {
             </Text>
           </View>
         ) : ingredients.length === 0 ? (
-          /* 5. Estado de despensa vacía */
+          /* 6. Estado de despensa vacía */
           <Card
             variant="elevated"
             style={styles.emptyCard}
             testID="pantry-empty-state"
           >
             <View style={styles.emptyIconCircle}>
-              <MaterialIcons name="kitchen" size={40} color={colors.primary} />
+              <MaterialCommunityIcons name="fridge-outline" size={38} color={colors.primary} />
             </View>
             <Text style={[styles.emptyTitle, typography.headlineMd]}>
               Tu despensa está vacía
@@ -322,7 +370,7 @@ export default function DespensaScreen() {
                 fullWidth
                 onPress={handleOpenAddModal}
                 leftIcon={
-                  <MaterialIcons name="add-circle" size={20} color={colors.onPrimary} />
+                  <MaterialCommunityIcons name="plus-circle-outline" size={20} color={colors.onPrimary} />
                 }
               />
             </View>
@@ -330,7 +378,9 @@ export default function DespensaScreen() {
         ) : filteredIngredients.length === 0 ? (
           /* Estado cuando la búsqueda no produce resultados */
           <Card variant="outlined" style={styles.emptyCard} testID="pantry-no-search-results">
-            <MaterialIcons name="search-off" size={36} color={colors.outline} />
+            <View style={[styles.emptyIconCircle, styles.emptyIconCircleMuted]}>
+              <MaterialCommunityIcons name="magnify-close" size={34} color={colors.outline} />
+            </View>
             <Text style={[styles.emptyTitle, typography.headlineMd]}>
               Sin resultados para «{searchQuery}»
             </Text>
@@ -346,16 +396,18 @@ export default function DespensaScreen() {
             />
           </Card>
         ) : (
-          /* 6. Listados de alimentos */
+          /* 7. Listados de alimentos */
           <View style={styles.listContainer}>
-            {/* Sección 6A: Prioridad para cocinar hoy (Urgentes) */}
+            {/* Sección 7A: Prioridad para cocinar hoy (Urgentes) */}
             {urgentFiltered.length > 0 && (
               <View style={styles.sectionContainer} testID="pantry-urgent-section">
                 <View style={styles.sectionHeaderRow}>
                   <View style={styles.sectionTitleRow}>
-                    <View style={styles.urgentPulseDot} />
+                    <View style={[styles.sectionIcon, { backgroundColor: colors.secondaryFixed }]}>
+                      <MaterialCommunityIcons name="fire" size={16} color={colors.onSecondaryFixed} />
+                    </View>
                     <Text
-                      style={[styles.sectionTitle, typography.headlineMd]}
+                      style={[styles.sectionTitle, typography.labelLg]}
                       accessibilityRole="header"
                     >
                       Prioridad para cocinar hoy
@@ -382,20 +434,21 @@ export default function DespensaScreen() {
               </View>
             )}
 
-            {/* Sección 6B: Sugerencia de ahorro (Tarjeta Stitch 6) */}
+            {/* Sección 7B: Sugerencia de ahorro (Tarjeta Stitch 6) */}
             <Card variant="elevated" style={styles.savingsCard}>
               <View style={styles.savingsDecorationPill} />
               <View style={styles.savingsContent}>
                 <View style={styles.savingsIconBox}>
-                  <MaterialIcons name="savings" size={24} color={colors.onTertiaryContainer} />
+                  <MaterialCommunityIcons
+                    name="piggy-bank-outline"
+                    size={24}
+                    color={colors.onTertiaryContainer}
+                  />
                 </View>
                 <View style={styles.savingsTextCol}>
-                  <View style={styles.savingsHeaderRow}>
-                    <Text style={[styles.savingsBadge, typography.labelSm]}>
-                      SUGERENCIA DE AHORRO
-                    </Text>
-                    <View style={styles.savingsDot} />
-                  </View>
+                  <Text style={[styles.savingsBadge, typography.labelSm]}>
+                    SUGERENCIA DE AHORRO
+                  </Text>
                   <Text style={[styles.savingsDesc, typography.bodyMd]}>
                     Tienes {ingredients.length} alimento{ingredients.length === 1 ? '' : 's'} disponible{ingredients.length === 1 ? '' : 's'} para aprovechar antes de realizar compras innecesarias.
                   </Text>
@@ -413,27 +466,34 @@ export default function DespensaScreen() {
                 accessibilityLabel="¿Qué cocinamos con esto?"
               >
                 <View style={styles.savingsCtaLeft}>
-                  <MaterialIcons name="restaurant-menu" size={20} color={colors.onPrimary} />
-                  <Text style={[styles.savingsCtaText, typography.labelMd]}>
+                  <MaterialCommunityIcons name="silverware-fork-knife" size={18} color={colors.onPrimary} />
+                  <Text style={[styles.savingsCtaText, typography.labelLg]}>
                     ¿Qué cocinamos con esto?
                   </Text>
                 </View>
-                <MaterialIcons name="arrow-forward" size={18} color={colors.onPrimary} />
+                <MaterialCommunityIcons name="arrow-right" size={18} color={colors.onPrimary} />
               </Pressable>
             </Card>
 
-            {/* Sección 6C: Alimentos en despensa */}
+            {/* Sección 7C: Alimentos en despensa */}
             <View style={styles.sectionContainer} testID="pantry-regular-section">
               <View style={styles.sectionHeaderRow}>
-                <Text
-                  style={[styles.sectionTitle, typography.headlineMd]}
-                  accessibilityRole="header"
-                >
-                  Disponibles en alacena y nevera
-                </Text>
-                <Text style={[styles.itemsCountLabel, typography.labelSm]}>
-                  {regularFiltered.length} ítem{regularFiltered.length === 1 ? '' : 's'}
-                </Text>
+                <View style={styles.sectionTitleRow}>
+                  <View style={[styles.sectionIcon, { backgroundColor: colors.primaryFixed }]}>
+                    <MaterialCommunityIcons name="basket-outline" size={16} color={colors.primary} />
+                  </View>
+                  <Text
+                    style={[styles.sectionTitle, typography.labelLg]}
+                    accessibilityRole="header"
+                  >
+                    Disponibles en alacena y nevera
+                  </Text>
+                </View>
+                <View style={styles.itemsCountBadge}>
+                  <Text style={[styles.itemsCountLabel, typography.labelSm]}>
+                    {regularFiltered.length} ítem{regularFiltered.length === 1 ? '' : 's'}
+                  </Text>
+                </View>
               </View>
 
               <View style={styles.cardsStack}>
@@ -482,7 +542,7 @@ export default function DespensaScreen() {
           />
           <View style={styles.dialogCard}>
             <View style={styles.dialogIconBox}>
-              <MaterialIcons name="restaurant" size={32} color={colors.primary} />
+              <MaterialCommunityIcons name="chef-hat" size={30} color={colors.primary} />
             </View>
             <Text style={[styles.dialogTitle, typography.headlineMd]}>
               ¿Qué cocinamos con esto?
@@ -490,7 +550,7 @@ export default function DespensaScreen() {
             <Text style={[styles.dialogDesc, typography.bodyMd]}>
               El motor de sugerencias culinarias cruza tus {ingredients.length} alimentos con tu presupuesto para sugerirte recetas ideales y ayudarte a ahorrar.
             </Text>
-            <View style={{ width: '100%', gap: spacing.sm }}>
+            <View style={styles.dialogActions}>
               <Button
                 testID="pantry-discover-recipes-button"
                 title="Descubrir recetas"
@@ -501,7 +561,7 @@ export default function DespensaScreen() {
                   setCookSuggestionVisible(false);
                   router.push('/recetas' as any);
                 }}
-                leftIcon={<MaterialIcons name="restaurant-menu" size={20} color={colors.onPrimary} />}
+                leftIcon={<MaterialCommunityIcons name="silverware-fork-knife" size={18} color={colors.onPrimary} />}
               />
               <Button
                 testID="close-cook-suggestion-button"
@@ -523,7 +583,7 @@ const createStyles = (colors: AppColors) =>
   StyleSheet.create({
     safeArea: {
       flex: 1,
-      backgroundColor: colors.canvas,
+      ...getAppSurfaces(colors).canvas,
     },
     header: {
       flexDirection: 'row',
@@ -531,13 +591,6 @@ const createStyles = (colors: AppColors) =>
       justifyContent: 'space-between',
       paddingHorizontal: spacing.margin,
       paddingVertical: spacing.sm,
-      backgroundColor: colors.canvas,
-      shadowColor: colors.cardShadow,
-      shadowOffset: { width: 0, height: 1 },
-      shadowOpacity: 0.04,
-      shadowRadius: 8,
-      elevation: 2,
-      zIndex: 2,
     },
     headerBrand: {
       flexDirection: 'row',
@@ -564,8 +617,8 @@ const createStyles = (colors: AppColors) =>
       fontWeight: '700',
     },
     avatarButton: {
-      width: 36,
-      height: 36,
+      width: 38,
+      height: 38,
       borderRadius: radius.full,
       backgroundColor: colors.primaryAction,
       alignItems: 'center',
@@ -579,15 +632,48 @@ const createStyles = (colors: AppColors) =>
       paddingBottom: spacing.xxl + 20,
       gap: spacing.md,
     },
+    overviewRow: {
+      flexDirection: 'row',
+      gap: spacing.sm,
+    },
+    overviewTile: {
+      flex: 1,
+      backgroundColor: colors.surface,
+      borderRadius: radius.lg,
+      borderWidth: 1,
+      borderColor: colors.borderLight,
+      paddingVertical: spacing.sm + 4,
+      paddingHorizontal: spacing.sm + 4,
+      gap: 2,
+    },
+    overviewIcon: {
+      width: 32,
+      height: 32,
+      borderRadius: radius.md + 2,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: spacing.xs,
+    },
+    overviewValue: {
+      color: colors.textPrimary,
+      fontWeight: '700',
+    },
+    overviewLabel: {
+      color: colors.textSecondary,
+    },
     topActionsContainer: {
       gap: spacing.sm,
     },
+    searchContainer: {
+      marginBottom: 0,
+    },
     actionButtonsRow: {
       flexDirection: 'row',
-      gap: spacing.xs,
+      gap: spacing.sm,
     },
-    actionButtonFlex: {
+    actionButton: {
       flex: 1,
+      paddingHorizontal: spacing.sm,
     },
     errorCard: {
       backgroundColor: colors.errorContainer,
@@ -630,15 +716,19 @@ const createStyles = (colors: AppColors) =>
       padding: spacing.lg,
       alignItems: 'center',
       gap: spacing.sm,
+      borderRadius: radius.xl,
     },
     emptyIconCircle: {
-      width: 72,
-      height: 72,
+      width: 76,
+      height: 76,
       borderRadius: radius.full,
       backgroundColor: colors.primaryFixed,
       alignItems: 'center',
       justifyContent: 'center',
       marginBottom: spacing.xs,
+    },
+    emptyIconCircleMuted: {
+      backgroundColor: colors.surfaceContainer,
     },
     emptyTitle: {
       color: colors.textPrimary,
@@ -659,28 +749,34 @@ const createStyles = (colors: AppColors) =>
       gap: spacing.lg,
     },
     sectionContainer: {
-      gap: spacing.sm,
+      gap: spacing.sm + 4,
     },
     sectionHeaderRow: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
-      paddingVertical: 2,
+      gap: spacing.sm,
     },
     sectionTitleRow: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: spacing.xs,
+      gap: spacing.sm,
+      flex: 1,
+      minWidth: 0,
     },
-    urgentPulseDot: {
-      width: 9,
-      height: 9,
-      borderRadius: radius.full,
-      backgroundColor: colors.secondary,
+    sectionIcon: {
+      width: 28,
+      height: 28,
+      borderRadius: radius.md,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
     sectionTitle: {
+      flexShrink: 1,
       color: colors.textPrimary,
       fontWeight: '700',
+      fontSize: 16,
+      lineHeight: 22,
     },
     urgentCountBadge: {
       backgroundColor: colors.secondaryFixed,
@@ -692,12 +788,18 @@ const createStyles = (colors: AppColors) =>
       color: colors.onSecondaryFixed,
       fontWeight: '700',
     },
+    itemsCountBadge: {
+      backgroundColor: colors.surfaceContainer,
+      paddingHorizontal: spacing.sm + 2,
+      paddingVertical: 3,
+      borderRadius: radius.full,
+    },
     itemsCountLabel: {
-      color: colors.outline,
-      fontWeight: '600',
+      color: colors.textSecondary,
+      fontWeight: '700',
     },
     cardsStack: {
-      gap: spacing.xs,
+      gap: spacing.sm,
     },
     savingsCard: {
       position: 'relative',
@@ -709,23 +811,23 @@ const createStyles = (colors: AppColors) =>
     },
     savingsDecorationPill: {
       position: 'absolute',
-      top: -28,
-      right: -28,
-      width: 110,
-      height: 110,
+      top: -32,
+      right: -32,
+      width: 120,
+      height: 120,
       borderRadius: radius.full,
       backgroundColor: colors.tertiaryFixed,
-      opacity: 0.6,
+      opacity: 0.5,
     },
     savingsContent: {
       flexDirection: 'row',
       alignItems: 'flex-start',
-      gap: spacing.sm,
+      gap: spacing.sm + 4,
     },
     savingsIconBox: {
-      width: 44,
-      height: 44,
-      borderRadius: radius.md + 4,
+      width: 46,
+      height: 46,
+      borderRadius: radius.md + 6,
       backgroundColor: colors.tertiaryFixed,
       alignItems: 'center',
       justifyContent: 'center',
@@ -733,41 +835,30 @@ const createStyles = (colors: AppColors) =>
     },
     savingsTextCol: {
       flex: 1,
-      gap: 2,
-    },
-    savingsHeaderRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: spacing.xs,
+      gap: 4,
     },
     savingsBadge: {
       color: colors.onTertiaryContainer,
       fontWeight: '700',
-      letterSpacing: 0.5,
-    },
-    savingsDot: {
-      width: 6,
-      height: 6,
-      borderRadius: radius.full,
-      backgroundColor: colors.onTertiaryContainer,
+      letterSpacing: 0.6,
     },
     savingsDesc: {
       color: colors.textPrimary,
       lineHeight: 20,
     },
     savingsCtaButton: {
-      height: 52,
-      borderRadius: radius.md + 4,
-      backgroundColor: colors.primary,
+      minHeight: 52,
+      borderRadius: radius.md + 6,
+      ...getAppSurfaces(colors).cta,
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
       paddingHorizontal: spacing.md,
       elevation: 2,
-      shadowColor: colors.primary,
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.2,
-      shadowRadius: 4,
+      shadowColor: colors.primaryAction,
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.22,
+      shadowRadius: 10,
     },
     savingsCtaPressed: {
       opacity: 0.85,
@@ -776,7 +867,7 @@ const createStyles = (colors: AppColors) =>
     savingsCtaLeft: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: spacing.xs,
+      gap: spacing.sm,
     },
     savingsCtaText: {
       color: colors.onPrimary,
@@ -803,7 +894,7 @@ const createStyles = (colors: AppColors) =>
       width: 60,
       height: 60,
       borderRadius: radius.full,
-      backgroundColor: colors.surfaceContainerLow,
+      backgroundColor: colors.primaryFixed,
       alignItems: 'center',
       justifyContent: 'center',
     },
@@ -816,5 +907,9 @@ const createStyles = (colors: AppColors) =>
       color: colors.textSecondary,
       textAlign: 'center',
       lineHeight: 20,
+    },
+    dialogActions: {
+      width: '100%',
+      gap: spacing.sm,
     },
   });

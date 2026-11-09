@@ -8,7 +8,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Ingredient } from '../../types/pantry';
 import { AppColors, radius, spacing, useTypography, useAppTheme, useThemeStyles } from '../../theme';
 import { Button } from '../common/Button';
@@ -52,7 +52,7 @@ export function DeleteConfirmationModal({
         accessibilityLabel={`Confirmar eliminación de ${ingredient.name}`}
       >
         <View style={styles.iconCircle}>
-          <MaterialIcons name="delete-outline" size={32} color={colors.error} />
+          <MaterialCommunityIcons name="trash-can-outline" size={32} color={colors.error} />
         </View>
 
         <Text style={[styles.title, typography.headlineMd]}>

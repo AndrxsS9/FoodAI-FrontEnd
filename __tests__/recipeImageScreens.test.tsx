@@ -13,7 +13,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import HomeScreen from '../app/(tabs)/index';
-import RecipeDiscoveryScreen from '../app/recetas/index';
+import RecipeDiscoveryScreen from '../app/(tabs)/recetas';
 import RecipeDetailScreen from '../app/recetas/[id]';
 import { ThemeProvider, TypographyProvider } from '../src/theme';
 import { PantryProvider } from '../src/context/PantryContext';

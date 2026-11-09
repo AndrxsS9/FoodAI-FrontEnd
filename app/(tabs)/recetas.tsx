@@ -1,5 +1,7 @@
 /**
- * FoodAI - Pantalla de Descubrimiento y Listado de Recetas (Fase 2C).
+ * FoodAI - Pestaña central de Recetas: descubrimiento y listado (Fase 2C).
+ * Es la única instancia de esta pantalla; `/recetas` resuelve aquí. Las recetas viven en
+ * RecipeContext y solo se generan al pulsar el botón, nunca al abrir la pestaña.
  * Inspirada en la pantalla Stitch «8. Opciones Convenientes».
  *
  * Muestra recetas optimizadas según la despensa del usuario y el presupuesto disponible,
@@ -17,7 +19,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { MaterialIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Button, Card, Chip, Input, Stepper } from '../../src/components/common';
 import { RecipeImage } from '../../src/components/recipe/RecipeImage';
@@ -26,7 +28,7 @@ import { usePantry } from '../../src/context/PantryContext';
 import { useBudget } from '../../src/context/BudgetContext';
 import { useRecipes } from '../../src/context/RecipeContext';
 import { ClientRecipe, formatCopCurrency } from '../../src/types/recipe';
-import { AppColors, radius, spacing, useAppTheme, useThemeStyles, useTypography } from '../../src/theme';
+import { AppColors, getAppSurfaces, radius, spacing, useAppTheme, useThemeStyles, useTypography } from '../../src/theme';
 
 type FilterType = 'all' | 'low-cost' | 'quick' | 'urgent';
 
@@ -125,14 +127,6 @@ export default function RecipeDiscoveryScreen() {
     return result;
   }, [recipes, searchQuery, activeFilter, maxMinutesFilter]);
 
-  const handleBack = () => {
-    if (router.canGoBack()) {
-      router.back();
-    } else {
-      router.replace('/(tabs)');
-    }
-  };
-
   const handleSelectRecipe = (recipe: ClientRecipe) => {
     selectRecipe(recipe);
     router.push(`/recetas/${recipe.id}` as any);
@@ -151,19 +145,6 @@ export default function RecipeDiscoveryScreen() {
       {/* 1. Header con branding e identidad FoodAI */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
-          <Pressable
-            testID="recipes-back-button"
-            accessibilityRole="button"
-            accessibilityLabel="Volver a la pantalla anterior"
-            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-            onPress={handleBack}
-            style={({ pressed }) => [
-              styles.backButton,
-              pressed && styles.backButtonPressed,
-            ]}
-          >
-            <MaterialIcons name="arrow-back" size={22} color={colors.textPrimary} />
-          </Pressable>
           <Image
             source={require('../../assets/images/logo.png')}
             style={styles.logoImage}
@@ -190,7 +171,7 @@ export default function RecipeDiscoveryScreen() {
             pressed && styles.avatarPressed,
           ]}
         >
-          <MaterialIcons name="person" size={20} color={colors.onPrimary} />
+          <MaterialCommunityIcons name="account" size={20} color={colors.onPrimary} />
         </Pressable>
       </View>
 
@@ -208,7 +189,7 @@ export default function RecipeDiscoveryScreen() {
             accessibilityLabel={demoMeta.noticeText}
           >
             <View style={styles.demoBadge}>
-              <MaterialIcons name="science" size={14} color={colors.primary} />
+              <MaterialCommunityIcons name="flask-outline" size={14} color={colors.primary} />
               <Text style={[styles.demoBadgeText, typography.labelSm]}>
                 {demoMeta.badgeLabel}
               </Text>
@@ -227,7 +208,7 @@ export default function RecipeDiscoveryScreen() {
             testID="recipes-empty-pantry-notice"
           >
             <View style={styles.emptyPantryNoticeHeader}>
-              <MaterialIcons name="info-outline" size={20} color={colors.primary} />
+              <MaterialCommunityIcons name="information-outline" size={20} color={colors.primary} />
               <Text style={[styles.emptyPantryNoticeTitle, typography.labelLg]}>
                 Tu despensa no tiene ingredientes registrados
               </Text>
@@ -248,14 +229,14 @@ export default function RecipeDiscoveryScreen() {
         {/* 3. Hero y contexto Stitch 8 */}
         <View style={styles.heroSection}>
           <View style={styles.pantryBadge}>
-            <MaterialIcons name="eco" size={14} color={colors.onTertiaryContainer} />
+            <MaterialCommunityIcons name="leaf" size={14} color={colors.onTertiaryContainer} />
             <Text style={[styles.pantryBadgeText, typography.labelSm]}>
               Aprovecha tu despensa ({summary.totalCount} alimentos disponibles)
             </Text>
           </View>
           {!isDemoMode && recipes.length > 0 && (
             <View style={styles.realAiBadge} testID="recipes-count-badge">
-              <MaterialIcons name="auto-awesome" size={14} color={colors.onTertiaryContainer} />
+              <MaterialCommunityIcons name="creation" size={14} color={colors.onTertiaryContainer} />
               <Text style={[styles.realAiBadgeText, typography.labelSm]}>
                 {recipes.length} receta{recipes.length === 1 ? '' : 's'} generada{recipes.length === 1 ? '' : 's'} con IA
               </Text>
@@ -277,7 +258,7 @@ export default function RecipeDiscoveryScreen() {
           <View style={styles.budgetBarRow}>
             <View style={styles.budgetCol}>
               <View style={styles.budgetLabelRow}>
-                <MaterialIcons name="payments" size={16} color={colors.outline} />
+                <MaterialCommunityIcons name="cash-multiple" size={16} color={colors.outline} />
                 <Text style={[styles.budgetLabel, typography.labelSm]}>
                   PRESUPUESTO DISPONIBLE
                 </Text>
@@ -315,7 +296,7 @@ export default function RecipeDiscoveryScreen() {
             accessibilityLabel={`Aviso de error: ${storageError}`}
           >
             <View style={styles.storageErrorRow}>
-              <MaterialIcons name="error-outline" size={20} color={colors.error} />
+              <MaterialCommunityIcons name="alert-circle-outline" size={20} color={colors.error} />
               <View style={styles.storageErrorTextCol}>
                 <Text style={[styles.storageErrorTitle, typography.labelMd]}>
                   Error de almacenamiento
@@ -331,7 +312,7 @@ export default function RecipeDiscoveryScreen() {
                 accessibilityLabel="Descartar mensaje de error"
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
-                <MaterialIcons name="close" size={18} color={colors.textSecondary} />
+                <MaterialCommunityIcons name="close" size={18} color={colors.textSecondary} />
               </Pressable>
             </View>
           </Card>
@@ -352,7 +333,7 @@ export default function RecipeDiscoveryScreen() {
               accessibilityRole="alert"
               accessibilityLiveRegion="polite"
             >
-              <MaterialIcons name="cloud-off" size={20} color={colors.error} />
+              <MaterialCommunityIcons name="cloud-off-outline" size={20} color={colors.error} />
               <View style={styles.storageErrorTextCol}>
                 <Text style={[styles.storageErrorTitle, typography.labelMd]}>
                   Recetas no guardadas en este dispositivo
@@ -368,7 +349,7 @@ export default function RecipeDiscoveryScreen() {
                 accessibilityLabel="Descartar aviso de guardado"
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
-                <MaterialIcons name="close" size={18} color={colors.textSecondary} />
+                <MaterialCommunityIcons name="close" size={18} color={colors.textSecondary} />
               </Pressable>
             </View>
           </Card>
@@ -389,7 +370,7 @@ export default function RecipeDiscoveryScreen() {
             accessibilityHint="Envía tus ingredientes y presupuesto actuales a Gemini para crear opciones culinarias a medida"
             leftIcon={
               !isGenerating ? (
-                <MaterialIcons name="auto-awesome" size={20} color={colors.onPrimary} />
+                <MaterialCommunityIcons name="creation" size={20} color={colors.onPrimary} />
               ) : undefined
             }
           />
@@ -399,7 +380,7 @@ export default function RecipeDiscoveryScreen() {
         {isStale && !isGenerating && (
           <View style={styles.staleNoticeCard} testID="recipes-stale-banner">
             <View style={styles.staleNoticeContent}>
-              <MaterialIcons name="update" size={22} color={colors.onTertiaryContainer} />
+              <MaterialCommunityIcons name="update" size={22} color={colors.onTertiaryContainer} />
               <View style={styles.staleNoticeTextCol}>
                 <Text style={[styles.staleNoticeTitle, typography.labelMd]}>
                   Tu despensa o presupuesto cambiaron
@@ -424,7 +405,7 @@ export default function RecipeDiscoveryScreen() {
         {error && !isGenerating && (
           <Card variant="outlined" style={styles.apiErrorCard} testID="recipes-api-error-card">
             <View style={styles.apiErrorRow}>
-              <MaterialIcons name="error-outline" size={24} color={colors.error} />
+              <MaterialCommunityIcons name="alert-circle-outline" size={24} color={colors.error} />
               <View style={styles.apiErrorTextCol}>
                 <Text style={[styles.apiErrorTitle, typography.headlineMd]}>
                   No se pudieron generar las recetas
@@ -460,7 +441,7 @@ export default function RecipeDiscoveryScreen() {
             onChangeText={setSearchQuery}
             placeholder="Buscar por receta o ingrediente..."
             leftIcon={
-              <MaterialIcons name="search" size={20} color={colors.outline} />
+              <MaterialCommunityIcons name="magnify" size={20} color={colors.outline} />
             }
             rightIcon={
               searchQuery ? (
@@ -471,7 +452,7 @@ export default function RecipeDiscoveryScreen() {
                   accessibilityLabel="Limpiar búsqueda"
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 >
-                  <MaterialIcons name="clear" size={18} color={colors.outline} />
+                  <MaterialCommunityIcons name="close" size={18} color={colors.outline} />
                 </Pressable>
               ) : undefined
             }
@@ -545,7 +526,7 @@ export default function RecipeDiscoveryScreen() {
             style={styles.emptyCard}
             testID="recipes-no-generated-state"
           >
-            <MaterialIcons name="restaurant-menu" size={40} color={colors.outline} />
+            <MaterialCommunityIcons name="silverware-fork-knife" size={40} color={colors.outline} />
             <Text style={[styles.emptyTitle, typography.headlineMd]}>
               Aún no has generado recetas
             </Text>
@@ -560,7 +541,7 @@ export default function RecipeDiscoveryScreen() {
             style={styles.emptyCard}
             testID="recipes-empty-state"
           >
-            <MaterialIcons name="restaurant-menu" size={40} color={colors.outline} />
+            <MaterialCommunityIcons name="silverware-fork-knife" size={40} color={colors.outline} />
             <Text style={[styles.emptyTitle, typography.headlineMd]}>
               No encontramos recetas con estos filtros
             </Text>
@@ -630,7 +611,7 @@ function RecipeCardItem({ recipe, isDominant, onPress }: RecipeCardItemProps) {
       >
         {/* Badge de afinidad / conveniencia */}
         <View style={styles.convenienceBadge}>
-          <MaterialIcons name="verified" size={14} color={colors.onTertiaryContainer} importantForAccessibility="no" accessibilityElementsHidden={true} />
+          <MaterialCommunityIcons name="check-decagram" size={14} color={colors.onTertiaryContainer} importantForAccessibility="no" accessibilityElementsHidden={true} />
           <Text style={[styles.convenienceBadgeText, typography.labelSm]}>
             {String(recipe.convenience)}
           </Text>
@@ -661,7 +642,7 @@ function RecipeCardItem({ recipe, isDominant, onPress }: RecipeCardItemProps) {
         <View style={styles.metricsGrid}>
           <View style={styles.metricItem}>
             <View style={styles.metricIconCircle}>
-              <MaterialIcons name="kitchen" size={18} color={colors.primary} />
+              <MaterialCommunityIcons name="fridge-outline" size={18} color={colors.primary} />
             </View>
             <View style={styles.metricTextCol}>
               <Text style={[styles.metricLabel, typography.labelSm]}>Despensa</Text>
@@ -673,7 +654,7 @@ function RecipeCardItem({ recipe, isDominant, onPress }: RecipeCardItemProps) {
 
           <View style={styles.metricItem}>
             <View style={[styles.metricIconCircle, { backgroundColor: colors.errorContainer }]}>
-              <MaterialIcons name="shopping-cart" size={18} color={colors.secondary} />
+              <MaterialCommunityIcons name="cart-outline" size={18} color={colors.secondary} />
             </View>
             <View style={styles.metricTextCol}>
               <Text style={[styles.metricLabel, typography.labelSm]}>Compra estimada</Text>
@@ -687,12 +668,12 @@ function RecipeCardItem({ recipe, isDominant, onPress }: RecipeCardItemProps) {
         {/* Tiempo y porciones */}
         <View style={styles.metaRow}>
           <View style={styles.metaPill}>
-            <MaterialIcons name="schedule" size={16} color={colors.textSecondary} />
+            <MaterialCommunityIcons name="clock-outline" size={16} color={colors.textSecondary} />
             <Text style={[styles.metaText, typography.bodySm]}>{recipe.totalMinutes} min</Text>
           </View>
           <View style={styles.metaDivider} />
           <View style={styles.metaPill}>
-            <MaterialIcons name="group" size={16} color={colors.textSecondary} />
+            <MaterialCommunityIcons name="account-group" size={16} color={colors.textSecondary} />
             <Text style={[styles.metaText, typography.bodySm]}>{recipe.servings} personas</Text>
           </View>
         </View>
@@ -700,7 +681,7 @@ function RecipeCardItem({ recipe, isDominant, onPress }: RecipeCardItemProps) {
         {/* Razón contextual de conveniencia */}
         {recipe.reason ? (
           <View style={styles.reasonBox}>
-            <MaterialIcons name="lightbulb" size={18} color={colors.secondary} style={styles.reasonIcon} />
+            <MaterialCommunityIcons name="lightbulb-on-outline" size={18} color={colors.hintText} style={styles.reasonIcon} />
             <Text style={[styles.reasonText, typography.bodySm]}>
               {recipe.reason}
             </Text>
@@ -715,7 +696,7 @@ function RecipeCardItem({ recipe, isDominant, onPress }: RecipeCardItemProps) {
           size="md"
           fullWidth
           onPress={onPress}
-          rightIcon={<MaterialIcons name="arrow-forward" size={18} color={colors.onPrimary} />}
+          rightIcon={<MaterialCommunityIcons name="arrow-right" size={18} color={colors.onPrimary} />}
           accessibilityLabel={`Ver receta completa: ${recipe.name}`}
           accessibilityHint="Abre el detalle completo de la receta con ingredientes y pasos"
         />
@@ -728,7 +709,7 @@ const createStyles = (colors: AppColors) =>
   StyleSheet.create({
     safeArea: {
       flex: 1,
-      backgroundColor: colors.canvas,
+      ...getAppSurfaces(colors).canvas,
     },
     header: {
       flexDirection: 'row',
@@ -736,13 +717,6 @@ const createStyles = (colors: AppColors) =>
       justifyContent: 'space-between',
       paddingHorizontal: spacing.margin,
       paddingVertical: spacing.sm,
-      backgroundColor: colors.canvas,
-      shadowColor: colors.cardShadow,
-      shadowOffset: { width: 0, height: 1 },
-      shadowOpacity: 0.04,
-      shadowRadius: 8,
-      elevation: 2,
-      zIndex: 2,
     },
     headerLeft: {
       flexDirection: 'row',
@@ -750,18 +724,6 @@ const createStyles = (colors: AppColors) =>
       gap: spacing.sm,
       flex: 1,
       minWidth: 0,
-    },
-    backButton: {
-      width: 36,
-      height: 36,
-      borderRadius: radius.full,
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: colors.surfaceContainer,
-    },
-    backButtonPressed: {
-      opacity: 0.7,
-      transform: [{ scale: 0.95 }],
     },
     logoImage: {
       width: 28,
@@ -803,7 +765,7 @@ const createStyles = (colors: AppColors) =>
       gap: 4,
       paddingHorizontal: 8,
       paddingVertical: 3,
-      backgroundColor: colors.primaryContainer,
+      backgroundColor: colors.iconTile,
       borderRadius: radius.full,
     },
     demoBadgeText: {
@@ -856,12 +818,15 @@ const createStyles = (colors: AppColors) =>
     },
     budgetBarRow: {
       flexDirection: 'row',
+      flexWrap: 'wrap',
       alignItems: 'center',
       justifyContent: 'space-between',
       gap: spacing.md,
     },
     budgetCol: {
-      flex: 1,
+      flexGrow: 1,
+      flexShrink: 1,
+      flexBasis: 170,
     },
     budgetLabelRow: {
       flexDirection: 'row',
@@ -879,6 +844,7 @@ const createStyles = (colors: AppColors) =>
     },
     servingsCol: {
       alignItems: 'flex-end',
+      marginLeft: 'auto',
     },
     servingsLabel: {
       color: colors.outline,
@@ -1002,7 +968,7 @@ const createStyles = (colors: AppColors) =>
       width: 32,
       height: 32,
       borderRadius: radius.full,
-      backgroundColor: colors.primaryContainer,
+      backgroundColor: colors.iconTile,
       alignItems: 'center',
       justifyContent: 'center',
     },
@@ -1042,15 +1008,15 @@ const createStyles = (colors: AppColors) =>
       flexDirection: 'row',
       alignItems: 'flex-start',
       gap: spacing.xs,
-      backgroundColor: colors.errorContainer,
+      backgroundColor: colors.hintBackground,
       padding: spacing.sm,
-      borderRadius: radius.md,
+      borderRadius: radius.md + 4,
     },
     reasonIcon: {
       marginTop: 1,
     },
     reasonText: {
-      color: colors.onErrorContainer,
+      color: colors.hintText,
       flex: 1,
       lineHeight: 18,
     },

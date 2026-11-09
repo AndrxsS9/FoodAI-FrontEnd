@@ -1,4 +1,5 @@
 export * from './Button';
+export * from './CalendarPicker';
 export * from './Card';
 export * from './Chip';
 export * from './Input';

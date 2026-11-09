@@ -24,7 +24,7 @@ import { render, fireEvent, waitFor, cleanup, act } from '@testing-library/react
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import RecipeDiscoveryScreen from '../app/recetas/index';
+import RecipeDiscoveryScreen from '../app/(tabs)/recetas';
 import RecipeDetailScreen from '../app/recetas/[id]';
 import GuidedCookingScreen from '../app/recetas/[id]/cocinar';
 import HomeScreen from '../app/(tabs)/index';
@@ -334,13 +334,10 @@ describe('FoodAI Phase 2C - Recipe Discovery, Details & Cooking Mode Tests', () 
       expect(mockPush).toHaveBeenCalledWith('/recetas/demo-rec-1');
     });
 
-    it('permite regresar con el botón de retroceso', async () => {
-      const { getByTestId } = await renderWithProviders(<RecipeDiscoveryScreen />);
+    it('es la raíz de una pestaña: no ofrece un botón de retroceso', async () => {
+      const { queryByTestId } = await renderWithProviders(<RecipeDiscoveryScreen />);
 
-      const backButton = getByTestId('recipes-back-button');
-      fireEvent.press(backButton);
-
-      expect(mockBack).toHaveBeenCalled();
+      expect(queryByTestId('recipes-back-button')).toBeNull();
     });
   });
 

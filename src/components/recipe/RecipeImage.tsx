@@ -36,6 +36,8 @@ import { useTypography } from '../../theme/typography';
 import { useAppTheme, useThemeStyles } from '../../context/ThemeContext';
 import { isSecureRemoteImageUrl } from '../../types/recipe';
 import { isBundledWebAssetSource } from '../../types/recipeImage';
+import { useLocale } from '../../context/LocaleContext';
+import { localizeRecipeImageLabel } from '../../locales/labels';
 
 export { isSecureRemoteImageUrl } from '../../types/recipe';
 
@@ -166,6 +168,7 @@ export const RecipeImage = memo(function RecipeImage({
   children,
 }: RecipeImageProps) {
   const typography = useTypography();
+  const { t, locale } = useLocale();
   const { colors } = useAppTheme();
   const styles = useThemeStyles(createStyles);
   const { width: windowWidth } = useWindowDimensions();
@@ -192,7 +195,7 @@ export const RecipeImage = memo(function RecipeImage({
 
   if (shouldShowFallback) {
     const fallbackLabel =
-      accessibilityLabel || `Ilustración de ${recipeName || 'la receta'}`;
+      accessibilityLabel || t('recipeImage.illustrationOf', { name: recipeName || t('recipeImage.theRecipe') });
 
     return (
       <View
@@ -218,11 +221,11 @@ export const RecipeImage = memo(function RecipeImage({
             <MaterialCommunityIcons name="silverware-fork-knife" size={32} color={BRAND_FOREGROUND} />
           </View>
 
-          <Text style={[styles.fallbackTitle, typography.labelSm]}>FoodAI Receta</Text>
+          <Text style={[styles.fallbackTitle, typography.labelSm]}>{t('recipeImage.fallbackTitle')}</Text>
 
           {isDemo && (
             <View style={styles.demoPillBadge}>
-              <Text style={[styles.demoPillText, typography.labelSm]}>Ejemplo</Text>
+              <Text style={[styles.demoPillText, typography.labelSm]}>{t('recipeImage.demo')}</Text>
             </View>
           )}
         </View>
@@ -236,8 +239,13 @@ export const RecipeImage = memo(function RecipeImage({
   const imageLabel =
     accessibilityLabel ||
     (isReference
-      ? `Imagen de referencia de la categoría ${referenceLabel!.trim()} para ${recipeName || 'la receta'}. No es una foto del plato generado.`
-      : `Foto del plato${isDemo ? ' de ejemplo' : ''}: ${recipeName || 'Receta'}`);
+      ? t('recipeImage.referenceLabel', {
+          category: localizeRecipeImageLabel(referenceLabel!.trim(), locale),
+          name: recipeName || t('recipeImage.theRecipe'),
+        })
+      : isDemo
+      ? t('recipeImage.demoDishPhoto', { name: recipeName || t('recipeImage.recipe') })
+      : t('recipeImage.dishPhoto', { name: recipeName || t('recipeImage.recipe') }));
 
   return (
     <View
@@ -294,7 +302,7 @@ export const RecipeImage = memo(function RecipeImage({
               windowWidth < 340 && styles.referenceBadgeTextCompact,
             ]}
           >
-            Imagen de referencia
+            {t('recipeImage.referenceBadge')}
           </Text>
         </View>
       )}

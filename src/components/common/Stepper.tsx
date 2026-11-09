@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { AppColors, radius, spacing, useTypography, useAppTheme, useThemeStyles } from '../../theme';
+import { useLocale } from '../../context/LocaleContext';
 
 export interface StepperProps {
   value: number;
@@ -42,12 +43,14 @@ export const Stepper: React.FC<StepperProps> = ({
   step = 1,
   unit,
   disabled = false,
-  accessibilityLabel = 'Ajustar cantidad',
+  accessibilityLabel,
   accessibilityHint,
   testID,
   style,
 }) => {
   const typography = useTypography();
+  const { t } = useLocale();
+  const resolvedAccessibilityLabel = accessibilityLabel ?? t('components.stepperDefaultLabel');
   const { colors } = useAppTheme();
   const styles = useThemeStyles(createStyles);
 
@@ -117,7 +120,7 @@ export const Stepper: React.FC<StepperProps> = ({
       testID={testID}
       style={[styles.container, disabled && styles.containerDisabled, style]}
       accessibilityRole="adjustable"
-      accessibilityLabel={accessibilityLabel}
+      accessibilityLabel={resolvedAccessibilityLabel}
       accessibilityValue={{
         min: safeMin,
         max: safeMax,
@@ -131,8 +134,8 @@ export const Stepper: React.FC<StepperProps> = ({
         onPress={handleDecrement}
         disabled={!canDecrement}
         accessibilityRole="button"
-        accessibilityLabel="Disminuir"
-        accessibilityHint={`Reducir en ${safeStep}${unit ? ` ${unit}` : ''}`}
+        accessibilityLabel={t('components.decrease')}
+        accessibilityHint={t('components.decreaseHint', { step: unit ? `${safeStep} ${unit}` : safeStep })}
         accessibilityState={{ disabled: !canDecrement }}
         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         style={({ pressed }) => [
@@ -167,8 +170,8 @@ export const Stepper: React.FC<StepperProps> = ({
         onPress={handleIncrement}
         disabled={!canIncrement}
         accessibilityRole="button"
-        accessibilityLabel="Aumentar"
-        accessibilityHint={`Aumentar en ${safeStep}${unit ? ` ${unit}` : ''}`}
+        accessibilityLabel={t('components.increase')}
+        accessibilityHint={t('components.increaseHint', { step: unit ? `${safeStep} ${unit}` : safeStep })}
         accessibilityState={{ disabled: !canIncrement }}
         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         style={({ pressed }) => [

@@ -58,6 +58,10 @@ const PERSISTENCE_WARNING_MESSAGES: Record<PersistenceWarningCode, string> = {
     'Tus recetas se generaron correctamente, pero este dispositivo tiene recetas guardadas por una versión más reciente de FoodAI y no las sobrescribimos. Las actuales podrían no conservarse si cierras la app.',
 };
 
+/** Exportado para verificar la paridad con el catálogo de idioma (Fase 28C-A). */
+export const RECIPE_PERSISTENCE_WARNING_MESSAGES: Readonly<Record<PersistenceWarningCode, string>> =
+  PERSISTENCE_WARNING_MESSAGES;
+
 export interface RecipeContextValue {
   recipes: ClientRecipe[];
   isDemoMode: boolean;

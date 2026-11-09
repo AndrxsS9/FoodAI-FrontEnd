@@ -16,9 +16,10 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { AppColors, radius, spacing, useTypography, useThemeColors, useThemeStyles } from '../../theme';
+import { useLocale } from '../../context/LocaleContext';
+import { localizeMessage } from '../../locales/messages';
 import { Button, Stepper } from '../common';
 import {
-  formatCopCurrency,
   validateBudgetInput,
   validateMaxMinutesInput,
   validateServingsInput,
@@ -66,6 +67,12 @@ function EditPreferencesForm({
   const typography = useTypography();
   const colors = useThemeColors();
   const styles = useThemeStyles(createStyles);
+  const { t, tp, locale, format } = useLocale();
+  const localizedSaveError = localizeMessage(saveError, locale, {
+    fallbackKey: 'messages.budget.savePreferencesFailed',
+  });
+  const localizeFieldError = (message?: string) =>
+    localizeMessage(message, locale, { fallbackKey: 'messages.budget.fallback' });
 
   const [tempBudget, setTempBudget] = useState(String(budget));
   const [tempServings, setTempServings] = useState(servings);
@@ -141,7 +148,7 @@ function EditPreferencesForm({
         <Pressable
           style={styles.modalBackdrop}
           onPress={onClose}
-          accessibilityLabel="Cerrar modal de edición"
+          accessibilityLabel={t('profile.editPreferences.closeBackdropLabel')}
         />
 
         <View style={styles.modalSheetContainer}>
@@ -151,7 +158,7 @@ function EditPreferencesForm({
             <View style={styles.modalHeaderTitleBox}>
               <MaterialCommunityIcons name="tune" size={24} color={colors.primary} />
               <Text style={[styles.modalTitleText, typography.headlineMd]}>
-                Editar preferencias
+                {t('profile.editPreferences.title')}
               </Text>
             </View>
 
@@ -159,7 +166,7 @@ function EditPreferencesForm({
               onPress={onClose}
               style={styles.modalCloseButton}
               accessibilityRole="button"
-              accessibilityLabel="Cerrar modal"
+              accessibilityLabel={t('profile.editPreferences.closeLabel')}
               disabled={isSaving}
               testID="close-edit-modal-button"
             >
@@ -173,7 +180,7 @@ function EditPreferencesForm({
             contentContainerStyle={styles.modalScrollContent}
           >
             {/* Banner de error de guardado si ocurre */}
-            {saveError && (
+            {localizedSaveError && (
               <View
                 style={styles.modalErrorBanner}
                 accessibilityRole="alert"
@@ -181,7 +188,7 @@ function EditPreferencesForm({
               >
                 <MaterialCommunityIcons name="alert-circle-outline" size={18} color={colors.error} />
                 <Text style={[styles.modalErrorBannerText, typography.bodySm]}>
-                  {saveError}
+                  {localizedSaveError}
                 </Text>
               </View>
             )}
@@ -190,13 +197,10 @@ function EditPreferencesForm({
             <View style={styles.modalFieldGroup}>
               <View style={styles.fieldHeaderRow}>
                 <Text style={[styles.fieldLabel, typography.labelMd]}>
-                  Presupuesto por comida (COP)
+                  {t('profile.editPreferences.budgetField')}
                 </Text>
                 <Text style={[styles.fieldHint, typography.labelSm]}>
-                  {formatCopCurrency(
-                    Number(tempBudget.trim().replace(/[.,\s]/g, '')) || 0,
-                    true
-                  )}
+                  {format.currency(Number(tempBudget.trim().replace(/[.,\s]/g, '')) || 0)}
                 </Text>
               </View>
 
@@ -220,7 +224,7 @@ function EditPreferencesForm({
                   placeholderTextColor={colors.textTertiary}
                   keyboardType="numeric"
                   autoFocus={false}
-                  accessibilityLabel="Presupuesto por comida en pesos colombianos"
+                  accessibilityLabel={t('profile.editPreferences.budgetInputLabel')}
                   testID="budget-input"
                   editable={!isSaving}
                 />
@@ -228,7 +232,7 @@ function EditPreferencesForm({
                   <Pressable
                     onPress={() => setTempBudget('')}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    accessibilityLabel="Borrar presupuesto"
+                    accessibilityLabel={t('profile.editPreferences.clearBudgetLabel')}
                   >
                     <MaterialCommunityIcons name="close-circle-outline" size={18} color={colors.outline} />
                   </Pressable>
@@ -240,11 +244,11 @@ function EditPreferencesForm({
                   style={[styles.fieldErrorText, typography.bodySm]}
                   testID="budget-input-error"
                 >
-                  {inputErrors.budget}
+                  {localizeFieldError(inputErrors.budget)}
                 </Text>
               )}
               <Text style={[styles.fieldHelperText, typography.bodySm]}>
-                Valor de referencia utilizado por FoodAI para seleccionar recetas accesibles.
+                {t('profile.editPreferences.budgetHelper')}
               </Text>
             </View>
 
@@ -252,10 +256,10 @@ function EditPreferencesForm({
             <View style={styles.modalFieldGroup}>
               <View style={styles.fieldHeaderRow}>
                 <Text style={[styles.fieldLabel, typography.labelMd]}>
-                  Porciones habituales (comensales)
+                  {t('profile.editPreferences.servingsField')}
                 </Text>
                 <Text style={[styles.fieldHint, typography.labelSm]}>
-                  1 a 12 personas
+                  {t('profile.editPreferences.servingsRange')}
                 </Text>
               </View>
 
@@ -271,9 +275,9 @@ function EditPreferencesForm({
                   min={MIN_SERVINGS}
                   max={MAX_SERVINGS}
                   step={1}
-                  unit={tempServings === 1 ? 'persona' : 'personas'}
+                  unit={tp('personUnit', tempServings)}
                   disabled={isSaving}
-                  accessibilityLabel="Ajustar número de comensales"
+                  accessibilityLabel={t('profile.editPreferences.servingsStepperLabel')}
                   testID="servings-stepper"
                 />
               </View>
@@ -283,7 +287,7 @@ function EditPreferencesForm({
                   style={[styles.fieldErrorText, typography.bodySm]}
                   testID="servings-input-error"
                 >
-                  {inputErrors.servings}
+                  {localizeFieldError(inputErrors.servings)}
                 </Text>
               )}
             </View>
@@ -292,7 +296,7 @@ function EditPreferencesForm({
             <View style={styles.modalFieldGroup}>
               <View style={styles.fieldHeaderRow}>
                 <Text style={[styles.fieldLabel, typography.labelMd]}>
-                  Tiempo máximo de cocción
+                  {t('profile.editPreferences.timeField')}
                 </Text>
                 <Pressable
                   style={styles.toggleLimitButton}
@@ -305,8 +309,8 @@ function EditPreferencesForm({
                   accessibilityRole="button"
                   accessibilityLabel={
                     hasTimeLimit
-                      ? 'Quitar límite de tiempo'
-                      : 'Establecer límite de tiempo'
+                      ? t('profile.editPreferences.removeLimitLabel')
+                      : t('profile.editPreferences.setLimitLabel')
                   }
                   disabled={isSaving}
                   testID="toggle-max-minutes"
@@ -323,7 +327,7 @@ function EditPreferencesForm({
                       hasTimeLimit && styles.toggleLimitTextActive,
                     ]}
                   >
-                    {hasTimeLimit ? 'Con límite' : 'Sin límite'}
+                    {hasTimeLimit ? t('profile.editPreferences.withLimit') : t('profile.editPreferences.withoutLimit')}
                   </Text>
                 </Pressable>
               </View>
@@ -351,11 +355,11 @@ function EditPreferencesForm({
                       placeholder="30"
                       placeholderTextColor={colors.textTertiary}
                       keyboardType="numeric"
-                      accessibilityLabel="Tiempo máximo en minutos"
+                      accessibilityLabel={t('profile.editPreferences.minutesInputLabel')}
                       testID="max-minutes-input"
                       editable={!isSaving}
                     />
-                    <Text style={[styles.unitSuffix, typography.bodyLg]}>min</Text>
+                    <Text style={[styles.unitSuffix, typography.bodyLg]}>{t('profile.editPreferences.minutesSuffix')}</Text>
                   </View>
 
                   {inputErrors.maxMinutes && (
@@ -363,7 +367,7 @@ function EditPreferencesForm({
                       style={[styles.fieldErrorText, typography.bodySm]}
                       testID="max-minutes-input-error"
                     >
-                      {inputErrors.maxMinutes}
+                      {localizeFieldError(inputErrors.maxMinutes)}
                     </Text>
                   )}
 
@@ -378,7 +382,7 @@ function EditPreferencesForm({
                         ]}
                         onPress={() => setTempMaxMinutes(String(mins))}
                         accessibilityRole="button"
-                        accessibilityLabel={`${mins} minutos`}
+                        accessibilityLabel={tp('minutesLong', mins)}
                         disabled={isSaving}
                       >
                         <Text
@@ -389,7 +393,7 @@ function EditPreferencesForm({
                               styles.quickTimeChipTextActive,
                           ]}
                         >
-                          {mins} min
+                          {t('minutesShort', { count: mins })}
                         </Text>
                       </Pressable>
                     ))}
@@ -403,7 +407,7 @@ function EditPreferencesForm({
                     color={colors.outline}
                   />
                   <Text style={[styles.unlimitedTimeText, typography.bodySm]}>
-                    FoodAI considerará recetas de cualquier duración de preparación.
+                    {t('profile.editPreferences.unlimitedNote')}
                   </Text>
                 </View>
               )}
@@ -413,7 +417,7 @@ function EditPreferencesForm({
             <View style={styles.modalActionButtonsRow}>
               <Button
                 testID="cancel-preferences-button"
-                title="Cancelar"
+                title={t('common.cancel')}
                 variant="outline"
                 size="md"
                 onPress={onClose}
@@ -423,7 +427,7 @@ function EditPreferencesForm({
 
               <Button
                 testID="save-preferences-button"
-                title={isSaving ? 'Guardando...' : 'Guardar preferencias'}
+                title={isSaving ? t('profile.editPreferences.saving') : t('profile.editPreferences.save')}
                 variant="primary"
                 size="md"
                 onPress={handleSave}

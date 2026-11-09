@@ -4,6 +4,7 @@ import { Tabs } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { gradientStyle, radius, shadowStyle, useTypography, useAppTheme } from '../../src/theme';
+import { useLocale } from '../../src/context/LocaleContext';
 
 type IconName = ComponentProps<typeof MaterialCommunityIcons>['name'];
 
@@ -71,6 +72,7 @@ export default function TabsLayout() {
   const typography = useTypography();
   const { width: windowWidth, fontScale } = useWindowDimensions();
   const { colors: activeColors } = useAppTheme();
+  const { t } = useLocale();
 
   const pillColor = activeColors.tabPill;
   const bottomGap = Math.max(insets.bottom, BAR_MIN_BOTTOM_GAP);
@@ -146,8 +148,8 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Inicio',
-          tabBarAccessibilityLabel: 'Pestaña Inicio',
+          title: t('tabs.home'),
+          tabBarAccessibilityLabel: t('tabs.homeLabel'),
           tabBarIcon: ({ color, focused }) => (
             <TabIcon
               focused={focused}
@@ -162,8 +164,8 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="despensa"
         options={{
-          title: 'Despensa',
-          tabBarAccessibilityLabel: 'Pestaña Despensa',
+          title: t('tabs.pantry'),
+          tabBarAccessibilityLabel: t('tabs.pantryLabel'),
           tabBarIcon: ({ color, focused }) => (
             <TabIcon
               focused={focused}
@@ -178,16 +180,16 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="recetas"
         options={{
-          title: 'Recetas',
-          tabBarAccessibilityLabel: 'Pestaña Recetas',
+          title: t('tabs.recipes'),
+          tabBarAccessibilityLabel: t('tabs.recipesLabel'),
           tabBarIcon: ({ focused }) => <RecipesTabIcon focused={focused} />,
         }}
       />
       <Tabs.Screen
         name="plan"
         options={{
-          title: 'Plan',
-          tabBarAccessibilityLabel: 'Pestaña Plan',
+          title: t('tabs.plan'),
+          tabBarAccessibilityLabel: t('tabs.planLabel'),
           tabBarIcon: ({ color, focused }) => (
             <TabIcon
               focused={focused}
@@ -202,8 +204,8 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="perfil"
         options={{
-          title: 'Perfil',
-          tabBarAccessibilityLabel: 'Pestaña Perfil',
+          title: t('tabs.profile'),
+          tabBarAccessibilityLabel: t('tabs.profileLabel'),
           tabBarIcon: ({ color, focused }) => (
             <TabIcon
               focused={focused}

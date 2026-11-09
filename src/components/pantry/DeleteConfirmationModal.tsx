@@ -12,6 +12,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Ingredient } from '../../types/pantry';
 import { AppColors, radius, spacing, useTypography, useAppTheme, useThemeStyles } from '../../theme';
 import { Button } from '../common/Button';
+import { useLocale } from '../../context/LocaleContext';
 
 export interface DeleteConfirmationModalProps {
   visible: boolean;
@@ -29,6 +30,7 @@ export function DeleteConfirmationModal({
   const typography = useTypography();
   const { colors } = useAppTheme();
   const styles = useThemeStyles(createStyles);
+  const { t } = useLocale();
 
   if (!visible || !ingredient) {
     return null;
@@ -43,50 +45,50 @@ export function DeleteConfirmationModal({
       <Pressable
         style={StyleSheet.absoluteFill}
         onPress={onCancel}
-        accessibilityLabel="Cerrar diálogo de confirmación"
+        accessibilityLabel={t('deleteModal.closeLabel')}
       />
 
       <View
         style={styles.modalCard}
         accessibilityRole="alert"
-        accessibilityLabel={`Confirmar eliminación de ${ingredient.name}`}
+        accessibilityLabel={t('deleteModal.confirmLabel', { name: ingredient.name })}
       >
         <View style={styles.iconCircle}>
           <MaterialCommunityIcons name="trash-can-outline" size={32} color={colors.error} />
         </View>
 
         <Text style={[styles.title, typography.headlineMd]}>
-          ¿Eliminar alimento?
+          {t('deleteModal.title')}
         </Text>
 
         <Text style={[styles.description, typography.bodyMd]}>
-          ¿Estás seguro de que deseas eliminar{' '}
-          <Text style={styles.boldText}>«{ingredient.name}»</Text> de tu despensa?
-          Esta acción no se puede deshacer.
+          {t('deleteModal.messagePrefix')}{' '}
+          <Text style={styles.boldText}>«{ingredient.name}»</Text>
+          {t('deleteModal.messageSuffix')}
         </Text>
 
         <View style={styles.buttonsRow}>
           <View style={styles.buttonFlex}>
             <Button
               testID="delete-cancel-button"
-              title="Cancelar"
+              title={t('common.cancel')}
               variant="outline"
               size="md"
               fullWidth
               onPress={onCancel}
-              accessibilityLabel="Cancelar y conservar alimento"
+              accessibilityLabel={t('deleteModal.cancelLabel')}
             />
           </View>
 
           <View style={styles.buttonFlex}>
             <Button
               testID="delete-confirm-button"
-              title="Eliminar"
+              title={t('common.delete')}
               variant="secondary"
               size="md"
               fullWidth
               onPress={onConfirm}
-              accessibilityLabel={`Confirmar eliminación de ${ingredient.name}`}
+              accessibilityLabel={t('deleteModal.confirmLabel', { name: ingredient.name })}
               style={{ backgroundColor: colors.error }}
               textStyle={{ color: colors.onError }}
             />

@@ -10,6 +10,7 @@ import { PantryProvider } from '../src/context/PantryContext';
 import { BudgetProvider } from '../src/context/BudgetContext';
 import { RecipeProvider } from '../src/context/RecipeContext';
 import { MealPlanProvider } from '../src/context/MealPlanContext';
+import { LocaleProvider, useLocale } from '../src/context/LocaleContext';
 
 /**
  * Barrera de proveedores vinculada a la sesión del usuario (FIX 2).
@@ -48,14 +49,15 @@ function AuthenticatedProviders({ children }: { children: React.ReactNode }) {
 function RootNavigation() {
   const { isAuthenticated, isInitializing } = useAuth();
   const { colors: activeColors, activeColorScheme, isLoaded: isThemeLoaded } = useAppTheme();
+  const { t, isLoaded: isLocaleLoaded } = useLocale();
 
-  if (isInitializing || !isThemeLoaded) {
+  if (isInitializing || !isThemeLoaded || !isLocaleLoaded) {
     return (
       <View
         style={[styles.loadingContainer, { backgroundColor: activeColors.canvas }]}
         testID="auth-loading-screen"
         accessibilityRole="progressbar"
-        accessibilityLabel="Restaurando sesión..."
+        accessibilityLabel={t('common.restoringSession')}
       >
         <ActivityIndicator size="large" color={activeColors.primary} />
       </View>
@@ -91,8 +93,21 @@ function RootNavigation() {
   );
 }
 
+/**
+ * El proveedor de idioma envuelve todo el árbol (Fase 28C-A): cambiar de idioma solo
+ * vuelve a renderizar a los consumidores, sin remontar autenticación ni navegación.
+ */
 export default function RootLayout() {
+  return (
+    <LocaleProvider>
+      <RootLayoutContent />
+    </LocaleProvider>
+  );
+}
+
+function RootLayoutContent() {
   const { isReady, fontError, usingFallback } = useAppFonts();
+  const { t } = useLocale();
 
   useEffect(() => {
     if (fontError) {
@@ -113,7 +128,7 @@ export default function RootLayout() {
         style={styles.loadingContainer}
         testID="app-loading-screen"
         accessibilityRole="progressbar"
-        accessibilityLabel="Cargando aplicación..."
+        accessibilityLabel={t('common.loadingApp')}
       >
         <ActivityIndicator size="large" color={colors.primary} />
       </View>

@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { AppColors, radius, spacing, useTypography, useAppTheme, useThemeStyles } from '../../theme';
+import { useLocale } from '../../context/LocaleContext';
 
 export interface HeaderProps {
   title: string;
@@ -37,6 +38,7 @@ export const Header: React.FC<HeaderProps> = ({
   style,
 }) => {
   const typography = useTypography();
+  const { t } = useLocale();
   const { colors } = useAppTheme();
   const styles = useThemeStyles(createStyles);
 
@@ -47,8 +49,8 @@ export const Header: React.FC<HeaderProps> = ({
           <Pressable
             onPress={onBack}
             accessibilityRole="button"
-            accessibilityLabel="Volver"
-            accessibilityHint="Regresar a la pantalla anterior"
+            accessibilityLabel={t('components.back')}
+            accessibilityHint={t('components.backHint')}
             hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
             style={({ pressed }) => [
               styles.backButton,
@@ -64,7 +66,7 @@ export const Header: React.FC<HeaderProps> = ({
             source={require('../../../assets/images/logo.png')}
             style={styles.logo}
             resizeMode="contain"
-            accessibilityLabel="Logotipo de Recetario por Presupuesto"
+            accessibilityLabel={t('components.logoLabel')}
           />
         )}
 

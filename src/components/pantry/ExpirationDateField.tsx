@@ -20,19 +20,22 @@ import {
   describeRelativeExpiration,
   formatShortDate,
 } from '../../utils/dateFormat';
+import { useLocale } from '../../context/LocaleContext';
+import type { MessageKey } from '../../locales';
+import { localizeMessage } from '../../locales/messages';
 
 interface QuickOption {
   testID: string;
-  label: string;
-  accessibilityLabel: string;
+  labelKey: MessageKey;
+  accessibilityLabelKey: MessageKey;
   days: number | null;
 }
 
 const QUICK_OPTIONS: QuickOption[] = [
-  { testID: 'quick-exp-none', label: 'Sin fecha', accessibilityLabel: 'Sin fecha de caducidad', days: null },
-  { testID: 'quick-exp-3d', label: '3 días', accessibilityLabel: 'Vence en 3 días', days: 3 },
-  { testID: 'quick-exp-7d', label: '1 semana', accessibilityLabel: 'Vence en 1 semana', days: 7 },
-  { testID: 'quick-exp-15d', label: '15 días', accessibilityLabel: 'Vence en 15 días', days: 15 },
+  { testID: 'quick-exp-none', labelKey: 'expirationField.quickNone', accessibilityLabelKey: 'expirationField.quickNoneLabel', days: null },
+  { testID: 'quick-exp-3d', labelKey: 'expirationField.quick3', accessibilityLabelKey: 'expirationField.quick3Label', days: 3 },
+  { testID: 'quick-exp-7d', labelKey: 'expirationField.quick7', accessibilityLabelKey: 'expirationField.quick7Label', days: 7 },
+  { testID: 'quick-exp-15d', labelKey: 'expirationField.quick15', accessibilityLabelKey: 'expirationField.quick15Label', days: 15 },
 ];
 
 export interface ExpirationDateFieldProps {
@@ -45,17 +48,19 @@ export function ExpirationDateField({ value, onChange, error }: ExpirationDateFi
   const typography = useTypography();
   const { colors } = useAppTheme();
   const styles = useThemeStyles(createStyles);
+  const { t, tx, locale } = useLocale();
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
 
   const trimmed = value.trim();
   const hasDate = trimmed.length > 0;
-  const formatted = formatShortDate(trimmed);
-  const relative = describeRelativeExpiration(trimmed);
+  const formatted = formatShortDate(trimmed, locale);
+  const relative = describeRelativeExpiration(trimmed, new Date(), locale);
 
-  const title = !hasDate ? 'Sin fecha de caducidad' : formatted ?? trimmed;
+  const title = !hasDate ? t('expirationField.noDateTitle') : formatted ?? trimmed;
   const subtitle = !hasDate
-    ? 'No se mostrarán alertas de vencimiento'
-    : relative ?? 'Fecha no válida, elige otra en el calendario';
+    ? t('expirationField.noDateSubtitle')
+    : relative ?? t('expirationField.invalidDate');
+  const localizedError = localizeMessage(error, locale, { fallbackKey: 'messages.pantry.expirationInvalid' });
 
   const handleQuick = (days: number | null) => {
     onChange(days === null ? '' : addDaysFromToday(days));
@@ -65,16 +70,16 @@ export function ExpirationDateField({ value, onChange, error }: ExpirationDateFi
   return (
     <View style={styles.container}>
       <View style={styles.labelRow}>
-        <Text style={[styles.label, typography.labelMd]}>Fecha de caducidad</Text>
-        <Text style={[styles.optionalPill, typography.labelSm]}>Opcional</Text>
+        <Text style={[styles.label, typography.labelMd]}>{t('expirationField.label')}</Text>
+        <Text style={[styles.optionalPill, typography.labelSm]}>{t('expirationField.optional')}</Text>
       </View>
 
       <Pressable
         testID="ingredient-expiration-trigger"
         onPress={() => setIsCalendarOpen((open) => !open)}
         accessibilityRole="button"
-        accessibilityLabel={`Fecha de caducidad: ${title}. ${subtitle}`}
-        accessibilityHint={isCalendarOpen ? 'Ocultar calendario' : 'Abrir calendario para elegir la fecha'}
+        accessibilityLabel={t('expirationField.triggerLabel', { title, subtitle })}
+        accessibilityHint={isCalendarOpen ? t('expirationField.hideCalendar') : t('expirationField.openCalendar')}
         accessibilityState={{ expanded: isCalendarOpen }}
         style={({ pressed }) => [
           styles.trigger,
@@ -117,7 +122,7 @@ export function ExpirationDateField({ value, onChange, error }: ExpirationDateFi
               hitSlop={{ top: 2, bottom: 2 }}
               onPress={() => handleQuick(option.days)}
               accessibilityRole="button"
-              accessibilityLabel={option.accessibilityLabel}
+              accessibilityLabel={tx(option.accessibilityLabelKey)}
               accessibilityState={{ selected: isActive }}
               style={({ pressed }) => [
                 styles.quickChip,
@@ -139,7 +144,7 @@ export function ExpirationDateField({ value, onChange, error }: ExpirationDateFi
                   isActive && styles.quickChipTextActive,
                 ]}
               >
-                {option.label}
+                {tx(option.labelKey)}
               </Text>
             </Pressable>
           );
@@ -163,7 +168,7 @@ export function ExpirationDateField({ value, onChange, error }: ExpirationDateFi
           accessibilityRole="alert"
           accessibilityLiveRegion="polite"
         >
-          {error}
+          {localizedError}
         </Text>
       )}
     </View>

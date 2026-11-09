@@ -29,10 +29,9 @@ import { Button, Card, Header } from '../../src/components/common';
 import { useBudget } from '../../src/context/BudgetContext';
 import { usePantry } from '../../src/context/PantryContext';
 import { useMealPlan } from '../../src/context/MealPlanContext';
-import {
-  formatCopCurrency,
-  formatIngredientQuantity,
-} from '../../src/types/recipe';
+import { useLocale } from '../../src/context/LocaleContext';
+import { formatIngredientQuantityForLocale } from '../../src/locales/labels';
+import { localizeCodedError, localizeMessage } from '../../src/locales/messages';
 import { AppColors, getAppSurfaces, radius, spacing, useAppTheme, useThemeStyles, useTypography } from '../../src/theme';
 
 /** Cualquier emoji ya presente en el título: se respeta y no se añade otro. */
@@ -98,6 +97,7 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
   const router = useRouter();
   const { colors } = useAppTheme();
   const styles = useThemeStyles(createStyles);
+  const { t, tp, locale, format } = useLocale();
   const { width: windowWidth, height: windowHeight, fontScale } = useWindowDimensions();
   // Si el ancho o la fuente no dan para ícono y texto en fila, el ícono pasa arriba y el valor no se parte
   const stackSummaryTiles = windowWidth < 360 || fontScale > 1.3;
@@ -115,7 +115,7 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
     isRestoring,
     isStale,
     error,
-    persistenceWarning,
+    errorCode,
     persistenceWarningCode,
     clearPersistenceWarning,
     generateMealPlan,
@@ -130,10 +130,15 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
   const isHydrating = Boolean(isPantryLoading || isBudgetLoading || isRestoring);
   const persistenceWarningTitle =
     persistenceWarningCode === 'clear_failed'
-      ? 'No pudimos eliminar el plan'
+      ? t('plan.warningClearFailedTitle')
       : persistenceWarningCode === 'completion_save_failed'
-        ? 'No se guardó el cambio'
-        : 'Tu plan no quedó guardado';
+        ? t('plan.warningCompletionTitle')
+        : t('plan.warningSaveTitle');
+  // Los avisos y errores se traducen por su código estable; nunca se muestran textos internos.
+  const persistenceWarning = persistenceWarningCode
+    ? t(`persistence.mealPlan.${persistenceWarningCode}` as 'persistence.mealPlan.save_failed')
+    : null;
+  const localizedError = localizeCodedError('mealPlan', errorCode, error, locale);
 
   // Secuencia monótona estricta e identificador de la petición activa (nunca se resetea la secuencia)
   const requestSequenceRef = useRef<number>(0);
@@ -211,26 +216,26 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
         {
           key: 'budget',
           icon: 'piggy-bank' as const,
-          label: 'Presupuesto',
-          value: formatCopCurrency(budget),
+          label: t('plan.summaryBudget'),
+          value: format.currency(budget),
         },
         {
           key: 'servings',
           icon: 'account-group' as const,
-          label: 'Porciones',
-          value: `${servings} ${servings === 1 ? 'persona' : 'personas'}`,
+          label: t('plan.summaryServings'),
+          value: tp('people', servings),
         },
         {
           key: 'time',
           icon: 'timer' as const,
-          label: 'Tiempo máx.',
-          value: maxMinutes ? `${maxMinutes} min` : 'Sin límite',
+          label: t('plan.summaryTime'),
+          value: maxMinutes ? t('minutesShort', { count: maxMinutes }) : t('plan.noLimit'),
         },
         {
           key: 'pantry',
           icon: 'fridge' as const,
-          label: 'Despensa',
-          value: `${ingredients.length} ${ingredients.length === 1 ? 'ítem' : 'ítems'}`,
+          label: t('plan.summaryPantry'),
+          value: tp('plan.items', ingredients.length),
         },
       ].map((tile) => (
         <View
@@ -270,13 +275,13 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
       {/* 1. Header institucional */}
       <Header
         showLogo
-        title="Mi plan de comidas"
-        subtitle="Organiza tres días según tu despensa y presupuesto"
+        title={t('plan.title')}
+        subtitle={t('plan.subtitle')}
         rightElement={
           <Pressable
             testID="plan-profile-avatar"
             accessibilityRole="button"
-            accessibilityLabel="Perfil de usuario"
+            accessibilityLabel={t('plan.profileLabel')}
             onPress={() => router.push('/(tabs)/perfil')}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             style={styles.avatarButton}
@@ -302,10 +307,10 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
             <MaterialCommunityIcons name="information-outline" size={20} color={colors.onErrorContainer} />
             <View style={styles.staleTextWrapper}>
               <Text style={[styles.staleTitle, typography.labelMd]}>
-                Cambios en tu despensa o presupuesto
+                {t('plan.staleTitle')}
               </Text>
               <Text style={[styles.staleDescription, typography.bodySm]}>
-                Tu plan podría estar desactualizado. Genera uno nuevo para usar tus datos actuales.
+                {t('plan.staleDesc')}
               </Text>
             </View>
           </View>
@@ -329,10 +334,10 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
             <View style={styles.errorActionsRow}>
               <Button
                 testID="plan-persistence-warning-dismiss"
-                title="Entendido"
+                title={t('common.understood')}
                 variant="ghost"
                 size="sm"
-                accessibilityLabel="Cerrar aviso de guardado"
+                accessibilityLabel={t('plan.dismissWarningLabel')}
                 onPress={clearPersistenceWarning}
               />
             </View>
@@ -340,26 +345,26 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
         )}
 
         {/* 4. Banner de error en caso de fallo */}
-        {Boolean(error) && (
+        {Boolean(localizedError) && (
           <Card variant="outlined" style={styles.errorCard} testID="plan-error-banner">
             <View style={styles.errorHeaderRow}>
               <MaterialCommunityIcons name="alert-circle-outline" size={24} color={colors.secondary} />
               <Text style={[styles.errorTitle, typography.headlineMd]}>
-                No pudimos generar el plan
+                {t('plan.errorTitle')}
               </Text>
             </View>
             <Text style={[styles.errorDescription, typography.bodySm]}>
-              {error}
+              {localizedError}
             </Text>
             <View style={styles.errorActionsRow}>
               <Button
-                title="Descartar"
+                title={t('plan.dismiss')}
                 variant="ghost"
                 size="sm"
                 onPress={clearError}
               />
               <Button
-                title="Intentar nuevamente"
+                title={t('plan.tryAgain')}
                 variant="secondary"
                 size="sm"
                 onPress={handleGeneratePlan}
@@ -376,11 +381,11 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
               variant="elevated"
               style={styles.loadingCard}
               testID="plan-hydrating-state"
-              accessibilityLabel="Cargando tu despensa y tu presupuesto"
+              accessibilityLabel={t('plan.hydratingLabel')}
             >
               <ActivityIndicator size="small" color={colors.primary} />
               <Text style={[styles.loadingSubtitle, typography.bodySm]}>
-                Cargando tu despensa y tu presupuesto...
+                {t('plan.hydrating')}
               </Text>
             </Card>
           </View>
@@ -391,14 +396,14 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
           <Card variant="elevated" style={styles.loadingCard} testID="plan-loading-state">
             <ActivityIndicator size="large" color={colors.primary} />
             <Text style={[styles.loadingTitle, typography.headlineMd]}>
-              Preparando tu plan con inteligencia artificial...
+              {t('plan.loadingTitle')}
             </Text>
             <Text style={[styles.loadingSubtitle, typography.bodySm]}>
-              Analizando combinaciones óptimas de 3 días según tu despensa y presupuesto.
+              {t('plan.loadingSubtitle')}
             </Text>
             <Button
               testID="cancel-generation-button"
-              title="Cancelar"
+              title={t('common.cancel')}
               variant="outline"
               size="sm"
               onPress={handleCancelGeneration}
@@ -414,14 +419,14 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
               <MaterialCommunityIcons name="fridge-outline" size={40} color={colors.primary} />
             </View>
             <Text style={[styles.emptyTitle, typography.headlineMd]}>
-              Tu despensa está vacía
+              {t('plan.emptyTitle')}
             </Text>
             <Text style={[styles.emptyDescription, typography.bodyMd]}>
-              Agrega alimentos a tu despensa antes de generar tu plan.
+              {t('plan.emptyDesc')}
             </Text>
             <Button
               testID="plan-go-to-pantry-button"
-              title="Ir a Mi Despensa"
+              title={t('plan.goToPantry')}
               variant="primary"
               size="md"
               style={styles.ctaButton}
@@ -452,15 +457,14 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
               <View style={[styles.introSpark, styles.introSparkBottom]} />
             </View>
             <Text style={[styles.introTitle, typography.headlineLg]}>
-              Planifica tus comidas de los próximos 3 días
+              {t('plan.introTitle')}
             </Text>
             <Text style={[styles.introDescription, typography.bodyMd]}>
-              FoodAI seleccionará una receta por día aprovechando al máximo tus reservas actuales
-              y manteniendo el gasto adicional dentro de tu presupuesto.
+              {t('plan.introDesc')}
             </Text>
             <Button
               testID="generate-meal-plan-button"
-              title="Generar mi plan de 3 días"
+              title={t('plan.generate')}
               variant="primary"
               size="lg"
               fullWidth
@@ -484,15 +488,15 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
             <View style={styles.regenerateRow}>
               <View style={styles.resultsHeaderTextCol}>
                 <Text style={[styles.resultsHeaderTitle, typography.headlineMd]}>
-                  Menú de 3 Días
+                  {t('plan.menuTitle')}
                 </Text>
                 <Text style={[styles.resultsHeaderSubtitle, typography.bodySm]}>
-                  Una receta diaria optimizada para tu despensa
+                  {t('plan.menuSubtitle')}
                 </Text>
               </View>
               <Button
                 testID="generate-meal-plan-button"
-                title={isStale ? 'Actualizar plan' : 'Regenerar'}
+                title={isStale ? t('plan.refreshPlan') : t('plan.regenerate')}
                 variant={isStale ? 'primary' : 'outline'}
                 size="sm"
                 style={isStale && hasPantryItems ? styles.ctaButton : styles.outlineAction}
@@ -508,11 +512,11 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
                 <View style={styles.progressHeaderLeft}>
                   <MaterialCommunityIcons name="progress-check" size={20} color={colors.primary} />
                   <Text style={[typography.headlineMd, styles.progressCardTitle]}>
-                    Progreso del plan
+                    {t('plan.progressTitle')}
                   </Text>
                 </View>
                 <Text style={[styles.progressCountText, typography.labelMd]} testID="plan-progress-text">
-                  {completedDaysCount}/3 días completados
+                  {completedDaysCount}{t('plan.progressSuffix')}
                 </Text>
               </View>
 
@@ -549,14 +553,14 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
                   <View style={styles.dayHeaderRow}>
                     <View style={styles.dayBadge}>
                       <Text style={[styles.dayBadgeText, typography.labelSm]}>
-                        Día {dayItem.day}
+                        {t('plan.day', { day: dayItem.day })}
                       </Text>
                     </View>
 
                     <View style={styles.convenienceBadge}>
                       <MaterialCommunityIcons name="star-circle-outline" size={14} color={colors.onTertiaryContainer} />
                       <Text style={[styles.convenienceBadgeText, typography.labelSm]}>
-                        {recipe.convenience}
+                        {localizeMessage(String(recipe.convenience), locale, { passthroughUnknown: true })}
                       </Text>
                     </View>
                   </View>
@@ -590,14 +594,14 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
                     <View style={styles.dayMetricItem}>
                       <MaterialCommunityIcons name="timer-outline" size={16} color={colors.primary} />
                       <Text style={[styles.dayMetricText, typography.labelSm]}>
-                        {recipe.totalMinutes} min
+                        {t('minutesShort', { count: recipe.totalMinutes })}
                       </Text>
                     </View>
 
                     <View style={styles.dayMetricItem}>
                       <MaterialCommunityIcons name="check-circle-outline" size={16} color={colors.primary} />
                       <Text style={[styles.dayMetricText, typography.labelSm]}>
-                        {recipe.availableIngredients.length} en casa
+                        {t('plan.atHome', { count: recipe.availableIngredients.length })}
                       </Text>
                     </View>
 
@@ -605,14 +609,14 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
                       <View style={styles.dayMetricItem}>
                         <MaterialCommunityIcons name="cart-plus" size={16} color={colors.secondary} />
                         <Text style={[styles.dayMetricText, typography.labelSm, { color: colors.secondary }]}>
-                          {recipe.missingIngredients.length} por comprar
+                          {t('plan.toBuy', { count: recipe.missingIngredients.length })}
                         </Text>
                       </View>
                     ) : (
                       <View style={styles.dayMetricItem}>
                         <MaterialCommunityIcons name="check-all" size={16} color={colors.primary} />
                         <Text style={[styles.dayMetricText, typography.labelSm, { color: colors.primary }]}>
-                          Completa
+                          {t('plan.complete')}
                         </Text>
                       </View>
                     )}
@@ -622,10 +626,10 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
                   {recipe.estimatedMissingCost > 0 && (
                     <View style={styles.recipeCostRow}>
                       <Text style={[styles.recipeCostLabel, typography.bodySm]}>
-                        Costo estimado para este día:
+                        {t('plan.dayCost')}
                       </Text>
                       <Text style={[styles.recipeCostValue, typography.labelMd]}>
-                        ~{formatCopCurrency(recipe.estimatedMissingCost)}
+                        ~{format.currency(recipe.estimatedMissingCost)}
                       </Text>
                     </View>
                   )}
@@ -634,14 +638,14 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
                     <View style={styles.completedBadge} testID={`plan-day-completed-badge-${dayItem.day}`}>
                       <MaterialCommunityIcons name="check-circle-outline" size={16} color={colors.primary} />
                       <Text style={[styles.completedBadgeText, typography.labelSm]}>
-                        ¡Día completado!
+                        {t('plan.dayCompleted')}
                       </Text>
                     </View>
                   )}
 
                   <Button
                     testID={`plan-day-complete-button-${dayItem.day}`}
-                    title={dayItem.isCompleted ? 'Marcar como pendiente' : 'Marcar día como completado'}
+                    title={dayItem.isCompleted ? t('plan.markPending') : t('plan.markCompleted')}
                     variant={dayItem.isCompleted ? 'ghost' : 'primary'}
                     size="md"
                     fullWidth
@@ -659,7 +663,7 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
 
                   <Button
                     testID={`plan-view-recipe-button-${dayItem.day}`}
-                    title="Ver receta y preparación"
+                    title={t('plan.viewRecipe')}
                     variant="outline"
                     size="md"
                     fullWidth
@@ -677,22 +681,22 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
               <View style={styles.budgetCardHeader}>
                 <MaterialCommunityIcons name="wallet-outline" size={22} color={colors.primary} />
                 <Text style={[styles.budgetCardTitle, typography.headlineMd]}>
-                  Balance del plan
+                  {t('plan.balanceTitle')}
                 </Text>
               </View>
 
               <View style={styles.budgetTableRow}>
                 <Text style={[styles.budgetTableLabel, typography.bodyMd]}>
-                  Presupuesto disponible
+                  {t('plan.budgetAvailable')}
                 </Text>
                 <Text style={[styles.budgetTableValue, typography.labelLg]}>
-                  {formatCopCurrency(budget)}
+                  {format.currency(budget)}
                 </Text>
               </View>
 
               <View style={styles.budgetTableRow}>
                 <Text style={[styles.budgetTableLabel, typography.bodyMd]}>
-                  Costo adicional estimado del plan
+                  {t('plan.extraCost')}
                 </Text>
                 <Text
                   style={[
@@ -701,7 +705,7 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
                     { color: colors.secondary },
                   ]}
                 >
-                  {formatCopCurrency(plan.totalEstimatedMissingCost)}
+                  {format.currency(plan.totalEstimatedMissingCost)}
                 </Text>
               </View>
 
@@ -709,7 +713,7 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
 
               <View style={styles.budgetTableRow}>
                 <Text style={[styles.budgetTotalLabel, typography.headlineMd]}>
-                  Presupuesto restante
+                  {t('plan.remaining')}
                 </Text>
                 <Text
                   style={[
@@ -720,7 +724,7 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
                     },
                   ]}
                 >
-                  {formatCopCurrency(plan.budgetRemaining)}
+                  {format.currency(plan.budgetRemaining)}
                 </Text>
               </View>
 
@@ -744,15 +748,14 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
                   ]}
                 >
                   {plan.withinBudget
-                    ? '¡El plan se ajusta a tu presupuesto!'
-                    : 'El plan supera tu presupuesto fijado'}
+                    ? t('plan.withinBudget')
+                    : t('plan.overBudget')}
                 </Text>
               </View>
 
               {/* Nota honesta de limitación MVP */}
               <Text style={[styles.disclaimerText, typography.bodySm]}>
-                * Los costos son aproximaciones orientativas basadas en precios de referencia en Colombia.
-                No constituyen una factura ni cotización garantizada de supermercado.
+                {t('plan.costDisclaimer')}
               </Text>
             </Card>
 
@@ -764,12 +767,12 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
                     <MaterialCommunityIcons name="cart-outline" size={18} color={colors.secondary} />
                   </View>
                   <Text style={[styles.shoppingTitle, typography.headlineMd]}>
-                    Ingredientes por comprar
+                    {t('plan.shoppingTitle')}
                   </Text>
                 </View>
                 <View style={styles.shoppingCountBadge}>
                   <Text style={[styles.shoppingCountText, typography.labelSm]}>
-                    {plan.uniqueMissingIngredients.length} ítems
+                    {t('plan.shoppingCount', { count: plan.uniqueMissingIngredients.length })}
                   </Text>
                 </View>
               </View>
@@ -778,7 +781,7 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
                 <Card variant="outlined" style={styles.allReadyCard}>
                   <MaterialCommunityIcons name="check-all" size={24} color={colors.primary} />
                   <Text style={[styles.allReadyText, typography.bodyMd]}>
-                    ¡Tienes todos los ingredientes necesarios en tu despensa! No necesitas compras extra.
+                    {t('plan.allReady')}
                   </Text>
                 </Card>
               ) : (
@@ -800,22 +803,21 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
                             {item.name}
                           </Text>
                           <Text style={[styles.missingItemQuantity, typography.bodySm]}>
-                            {formatIngredientQuantity(item.quantity, item.unit)}
+                            {formatIngredientQuantityForLocale(item.quantity, item.unit, locale)}
                           </Text>
                         </View>
                       </View>
 
                       {item.estimatedCost ? (
                         <Text style={[styles.missingItemCost, typography.labelMd]}>
-                          ~{formatCopCurrency(item.estimatedCost, false)}
+                          ~{format.currency(item.estimatedCost, false)}
                         </Text>
                       ) : null}
                     </View>
                   ))}
 
                   <Text style={[styles.shoppingDisclaimerText, typography.bodySm]}>
-                    Nota: Los faltantes han sido deduplicados por alimento para el menú de 3 días.
-                    Las cantidades no corresponden a una suma de paquetes comerciales cerrados.
+                    {t('plan.shoppingDisclaimer')}
                   </Text>
                 </View>
               )}

@@ -1,8 +1,15 @@
 /**
- * FoodAI - Utilidades de presentación de fechas de calendario (AAAA-MM-DD) en español.
+ * FoodAI - Utilidades de presentación de fechas de calendario (AAAA-MM-DD).
  * No dependen de Intl para mantener resultados idénticos en Hermes, web y pruebas.
+ * El idioma es opcional y por defecto español (salidas idénticas a las previas, Fase 28C-A).
  */
 import { isValidDateString } from './pantryValidation';
+import type { Locale } from '../services/storage/localeStorage';
+import {
+  describeRelativeExpirationForLocale,
+  formatLongDateParts,
+  formatShortDateParts,
+} from '../locales/format';
 
 export const MONTH_NAMES = [
   'enero',
@@ -62,25 +69,29 @@ export function addDaysFromToday(days: number, reference: Date = new Date()): st
   return toIsoDateString(target);
 }
 
-/** Formato corto legible: «15 nov 2026». */
-export function formatShortDate(value?: string | null): string | null {
+/** Formato corto legible: «15 nov 2026» (en inglés «Nov 15, 2026»). */
+export function formatShortDate(value?: string | null, locale: Locale = 'es'): string | null {
   const date = parseIsoDateString(value);
   if (!date) return null;
+  if (locale !== 'es') return formatShortDateParts(date, locale);
   return `${date.getDate()} ${MONTH_SHORT_NAMES[date.getMonth()]} ${date.getFullYear()}`;
 }
 
-/** Formato largo para lectores de pantalla: «15 de noviembre de 2026». */
-export function formatLongDate(date: Date): string {
+/** Formato largo para lectores de pantalla: «15 de noviembre de 2026» («November 15, 2026»). */
+export function formatLongDate(date: Date, locale: Locale = 'es'): string {
+  if (locale !== 'es') return formatLongDateParts(date, locale);
   return `${date.getDate()} de ${MONTH_NAMES[date.getMonth()]} de ${date.getFullYear()}`;
 }
 
 /** Descripción relativa respecto a hoy: «Vence hoy», «Vence en 3 días», «Venció hace 2 días». */
 export function describeRelativeExpiration(
   value?: string | null,
-  reference: Date = new Date()
+  reference: Date = new Date(),
+  locale: Locale = 'es'
 ): string | null {
   const date = parseIsoDateString(value);
   if (!date) return null;
+  if (locale !== 'es') return describeRelativeExpirationForLocale(date, locale, reference);
   const today = new Date(reference.getFullYear(), reference.getMonth(), reference.getDate());
   const diff = Math.round((date.getTime() - today.getTime()) / 86400000);
 

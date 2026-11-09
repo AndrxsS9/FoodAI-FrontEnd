@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { AppColors, getAppSurfaces, radius, spacing, useTypography, useThemeColors, useThemeStyles } from '../../theme';
-import { formatCopCurrency } from '../../types/recipe';
+import { useLocale } from '../../context/LocaleContext';
 
 export interface CulinaryPreferencesSectionProps {
   budget: number;
@@ -31,6 +31,9 @@ export function CulinaryPreferencesSection({
   onOpenEdit,
 }: CulinaryPreferencesSectionProps) {
   const typography = useTypography();
+  const { t, tp, format } = useLocale();
+  const servingsText = tp('people', servings);
+  const timeText = maxMinutes ? t('minutesShort', { count: maxMinutes }) : t('profile.culinary.noLimit');
   const colors = useThemeColors();
   const styles = useThemeStyles(createStyles);
 
@@ -39,10 +42,10 @@ export function CulinaryPreferencesSection({
       <View style={styles.sectionHeaderRow}>
         <View style={styles.sectionHeaderLeft}>
           <Text style={[styles.sectionTitle, typography.labelLg]}>
-            Preferencias y Configuración
+            {t('profile.culinary.title')}
           </Text>
           <Text style={[styles.sectionSubtitle, typography.bodySm]}>
-            Preferencias de hogar · Pautas para calcular cantidades y costos sugeridos
+            {t('profile.culinary.subtitle')}
           </Text>
         </View>
         <MaterialCommunityIcons name="tune" size={20} color={colors.primary} />
@@ -53,12 +56,12 @@ export function CulinaryPreferencesSection({
         <View
           style={styles.budgetLoadingInline}
           accessibilityRole="progressbar"
-          accessibilityLabel="Cargando preferencias guardadas..."
+          accessibilityLabel={t('profile.culinary.loading')}
           testID="budget-loading-banner"
         >
           <ActivityIndicator size="small" color={colors.primary} />
           <Text style={[styles.budgetLoadingText, typography.bodySm]}>
-            Cargando preferencias guardadas...
+            {t('profile.culinary.loading')}
           </Text>
         </View>
       )}
@@ -75,9 +78,7 @@ export function CulinaryPreferencesSection({
           disabled={isLoading}
           accessibilityRole="button"
           accessibilityState={{ disabled: isLoading, busy: isLoading }}
-          accessibilityLabel={`Porciones habituales: ${servings} ${
-            servings === 1 ? 'persona' : 'personas'
-          }. Toca para modificar.`}
+          accessibilityLabel={t('profile.culinary.servingsLabel', { value: servingsText })}
           testID="preference-row-servings"
         >
           <View style={styles.preferenceRowLeft}>
@@ -86,17 +87,17 @@ export function CulinaryPreferencesSection({
             </View>
             <View style={styles.preferenceLabelCol}>
               <Text style={[styles.preferenceTitle, typography.labelMd]}>
-                Porciones habituales
+                {t('profile.culinary.servingsTitle')}
               </Text>
               <Text style={[styles.preferenceSubtitle, typography.bodySm]}>
-                Para cálculo de recetas
+                {t('profile.culinary.servingsSubtitle')}
               </Text>
             </View>
           </View>
 
           <View style={styles.preferenceValuePill} testID="profile-servings-display">
             <Text style={[styles.preferenceValueText, typography.labelMd]}>
-              {servings} {servings === 1 ? 'persona' : 'personas'}
+              {servingsText}
             </Text>
           </View>
         </Pressable>
@@ -112,10 +113,7 @@ export function CulinaryPreferencesSection({
           disabled={isLoading}
           accessibilityRole="button"
           accessibilityState={{ disabled: isLoading, busy: isLoading }}
-          accessibilityLabel={`Presupuesto por comida: ${formatCopCurrency(
-            budget,
-            true
-          )}. Toca para modificar.`}
+          accessibilityLabel={t('profile.culinary.budgetLabel', { value: format.currency(budget) })}
           testID="preference-row-budget"
         >
           <View style={styles.preferenceRowLeft}>
@@ -124,17 +122,17 @@ export function CulinaryPreferencesSection({
             </View>
             <View style={styles.preferenceLabelCol}>
               <Text style={[styles.preferenceTitle, typography.labelMd]}>
-                Presupuesto por comida
+                {t('profile.culinary.budgetTitle')}
               </Text>
               <Text style={[styles.preferenceSubtitle, typography.bodySm]}>
-                Tope de referencia objetivo
+                {t('profile.culinary.budgetSubtitle')}
               </Text>
             </View>
           </View>
 
           <View style={styles.preferenceValuePill} testID="profile-budget-display">
             <Text style={[styles.preferenceValueText, typography.labelMd]}>
-              {formatCopCurrency(budget, true)}
+              {format.currency(budget)}
             </Text>
           </View>
         </Pressable>
@@ -150,9 +148,7 @@ export function CulinaryPreferencesSection({
           disabled={isLoading}
           accessibilityRole="button"
           accessibilityState={{ disabled: isLoading, busy: isLoading }}
-          accessibilityLabel={`Tiempo máximo de cocción: ${
-            maxMinutes ? `${maxMinutes} min` : 'Sin límite'
-          }. Toca para modificar.`}
+          accessibilityLabel={t('profile.culinary.timeLabel', { value: timeText })}
           testID="preference-row-time"
         >
           <View style={styles.preferenceRowLeft}>
@@ -161,17 +157,17 @@ export function CulinaryPreferencesSection({
             </View>
             <View style={styles.preferenceLabelCol}>
               <Text style={[styles.preferenceTitle, typography.labelMd]}>
-                Tiempo máximo de cocción
+                {t('profile.culinary.timeTitle')}
               </Text>
               <Text style={[styles.preferenceSubtitle, typography.bodySm]}>
-                Límite para recetas y planes
+                {t('profile.culinary.timeSubtitle')}
               </Text>
             </View>
           </View>
 
           <View style={styles.preferenceValuePill} testID="profile-time-display">
             <Text style={[styles.preferenceValueText, typography.labelMd]}>
-              {maxMinutes ? `${maxMinutes} min` : 'Sin límite'}
+              {timeText}
             </Text>
           </View>
         </Pressable>
@@ -190,8 +186,8 @@ export function CulinaryPreferencesSection({
         accessibilityState={{ disabled: isLoading, busy: isLoading }}
         accessibilityLabel={
           isLoading
-            ? 'Cargando preferencias guardadas. Por favor espera.'
-            : 'Editar preferencias culinarias'
+            ? t('profile.culinary.loadingPleaseWait')
+            : t('profile.culinary.editLabel')
         }
         testID="btn-edit-pref"
       >
@@ -211,7 +207,7 @@ export function CulinaryPreferencesSection({
             isLoading && styles.textDisabled,
           ]}
         >
-          {isLoading ? 'Cargando preferencias...' : 'Editar preferencias'}
+          {isLoading ? t('profile.culinary.loadingShort') : t('profile.culinary.edit')}
         </Text>
       </Pressable>
     </View>

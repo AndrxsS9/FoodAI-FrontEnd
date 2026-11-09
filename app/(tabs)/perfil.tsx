@@ -42,6 +42,9 @@ import {
   ProfileSettingsGroup,
   ResetPreferencesDialog,
 } from '../../src/components/profile';
+import { useLocale } from '../../src/context/LocaleContext';
+import type { MessageKey } from '../../src/locales';
+import { localizeMessage } from '../../src/locales/messages';
 
 export default function PerfilScreen() {
   const typography = useTypography();
@@ -49,6 +52,7 @@ export default function PerfilScreen() {
   const auth = useAuthSafe();
   const { colors } = useAppTheme();
   const styles = useThemeStyles(createStyles);
+  const { t, tx, locale } = useLocale();
 
   // Estado global de presupuesto y preferencias culinarias
   const {
@@ -86,17 +90,21 @@ export default function PerfilScreen() {
   // Estado para actualización de nombre de perfil
   const [isUpdatingName, setIsUpdatingName] = useState(false);
 
-  // Mensaje flotante de confirmación exitosa
-  const [successFeedback, setSuccessFeedback] = useState<string | null>(null);
+  // Mensaje flotante de confirmación exitosa (clave del catálogo: sigue el idioma activo)
+  const [successFeedbackKey, setSuccessFeedback] = useState<MessageKey | null>(null);
+  const successFeedback = successFeedbackKey ? tx(successFeedbackKey) : null;
+  const localizedStorageError = localizeMessage(storageError, locale, {
+    fallbackKey: 'messages.budget.fallback',
+  });
 
   // Manejo de autodescarte de notificación de éxito
   useEffect(() => {
-    if (!successFeedback) return;
+    if (!successFeedbackKey) return;
     const timer = setTimeout(() => {
       setSuccessFeedback(null);
     }, 4000);
     return () => clearTimeout(timer);
-  }, [successFeedback]);
+  }, [successFeedbackKey]);
 
   // Actualizar nombre de usuario en Supabase Auth y sincronizar contexto
   const handleUpdateDisplayName = useCallback(
@@ -107,7 +115,7 @@ export default function PerfilScreen() {
           throw new Error('No se pudo actualizar el perfil. Inicia sesión nuevamente.');
         }
         await auth.updateProfile({ displayName: newName });
-        setSuccessFeedback('Nombre de perfil actualizado correctamente.');
+        setSuccessFeedback('profile.nameUpdated');
       } finally {
         setIsUpdatingName(false);
       }
@@ -132,7 +140,7 @@ export default function PerfilScreen() {
         });
 
         setIsEditPrefModalVisible(false);
-        setSuccessFeedback('Preferencias guardadas exitosamente.');
+        setSuccessFeedback('profile.preferencesSaved');
       } catch (err) {
         const msg =
           err instanceof Error
@@ -157,7 +165,7 @@ export default function PerfilScreen() {
     try {
       await resetBudget();
       setIsResetDialogVisible(false);
-      setSuccessFeedback('Preferencias restauradas a los valores iniciales.');
+      setSuccessFeedback('profile.preferencesReset');
     } catch (err) {
       const msg =
         err instanceof Error
@@ -201,23 +209,23 @@ export default function PerfilScreen() {
             source={require('../../assets/images/logo.png')}
             style={styles.logoImage}
             resizeMode="contain"
-            accessibilityLabel="Logotipo de Recetario por Presupuesto"
+            accessibilityLabel={t('profile.logoLabel')}
           />
           <View style={styles.headerTextCol}>
             <View style={styles.headerSubRow}>
               <Text style={[styles.headerBrandSubtitle, typography.labelSm]}>
-                Recetario por Presupuesto
+                {t('profile.brandSubtitle')}
               </Text>
               <Text style={[styles.headerDot, typography.labelSm]}>·</Text>
               <Text style={[styles.headerProfileSub, typography.labelSm]}>
-                Perfil de Usuario
+                {t('profile.userProfile')}
               </Text>
             </View>
             <Text
               style={[styles.headerTitle, typography.headlineMd]}
               accessibilityRole="header"
             >
-              Mi perfil y configuración
+              {t('profile.title')}
             </Text>
           </View>
         </View>
@@ -226,7 +234,7 @@ export default function PerfilScreen() {
           <View
             style={styles.headerAvatar}
             accessibilityRole="image"
-            accessibilityLabel="Icono de perfil de usuario"
+            accessibilityLabel={t('profile.avatarIconLabel')}
           >
             <MaterialCommunityIcons name="account" size={20} color={colors.onPrimary} />
           </View>
@@ -252,7 +260,7 @@ export default function PerfilScreen() {
             </Text>
             <Pressable
               onPress={() => setSuccessFeedback(null)}
-              accessibilityLabel="Cerrar notificación"
+              accessibilityLabel={t('profile.closeNotification')}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
               <MaterialCommunityIcons name="close" size={18} color={colors.success} />
@@ -261,20 +269,20 @@ export default function PerfilScreen() {
         )}
 
         {/* Banner de error de almacenamiento global */}
-        {storageError && (
+        {localizedStorageError && (
           <View
             style={styles.errorBanner}
             accessibilityRole="alert"
-            accessibilityLabel={`Error de almacenamiento: ${storageError}`}
+            accessibilityLabel={t('profile.storageErrorLabel', { message: localizedStorageError })}
             testID="global-storage-error-banner"
           >
             <MaterialCommunityIcons name="alert-circle-outline" size={20} color={colors.error} />
             <Text style={[styles.errorBannerText, typography.bodySm]}>
-              {storageError}
+              {localizedStorageError}
             </Text>
             <Pressable
               onPress={clearStorageError}
-              accessibilityLabel="Cerrar mensaje de error"
+              accessibilityLabel={t('common.closeErrorMessage')}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
               <MaterialCommunityIcons name="close" size={18} color={colors.error} />

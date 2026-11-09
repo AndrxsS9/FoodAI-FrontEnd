@@ -23,23 +23,28 @@ import {
   useAppTheme,
   useThemeStyles,
 } from '../../src/theme';
+import { useLocale } from '../../src/context/LocaleContext';
+import type { MessageKey } from '../../src/locales';
+import { localizeMessage } from '../../src/locales/messages';
 
 export default function LoginScreen() {
   const typography = useTypography();
   const router = useRouter();
   const { colors } = useAppTheme();
   const styles = useThemeStyles(createStyles);
+  const { t, tx, locale } = useLocale();
   const { signIn, isSubmitting, authError, clearAuthError } = useAuth();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [localError, setLocalError] = useState<string | null>(null);
+  // Se guarda la clave (no el texto) para que el mensaje siga el idioma activo.
+  const [localError, setLocalError] = useState<MessageKey | null>(null);
   const [emailTouched, setEmailTouched] = useState(false);
 
   const isEmailValid = isValidEmail(email.trim());
   const emailError = emailTouched && email.trim().length > 0 && !isEmailValid
-    ? 'Ingresa un correo electrónico con formato válido.'
+    ? t('auth.emailFormatInvalid')
     : null;
 
   const isFormComplete = email.trim().length > 0 && password.length > 0;
@@ -63,17 +68,17 @@ export default function LoginScreen() {
     setEmailTouched(true);
 
     if (!trimmedEmail) {
-      setLocalError('Por favor, ingresa tu correo electrónico.');
+      setLocalError('auth.emailRequired');
       return;
     }
 
     if (!isValidEmail(trimmedEmail)) {
-      setLocalError('Por favor, ingresa un correo electrónico válido.');
+      setLocalError('auth.emailInvalid');
       return;
     }
 
     if (!password) {
-      setLocalError('Por favor, ingresa tu contraseña.');
+      setLocalError('auth.passwordRequired');
       return;
     }
 
@@ -89,7 +94,9 @@ export default function LoginScreen() {
     }
   };
 
-  const displayedError = localError || authError;
+  const displayedError = localError
+    ? tx(localError)
+    : localizeMessage(authError, locale, { fallbackKey: 'messages.auth.fallback' });
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom', 'left', 'right']}>
@@ -108,11 +115,11 @@ export default function LoginScreen() {
             <View
               style={styles.categoryBadge}
               accessibilityRole="text"
-              accessibilityLabel="Categoría: Autenticación segura"
+              accessibilityLabel={t('auth.login.badgeLabel')}
             >
               <MaterialIcons name="eco" size={16} color={colors.primary} />
               <Text style={[styles.categoryBadgeText, typography.labelSm]}>
-                HOGAR INTELIGENTE
+                {t('common.smartHome')}
               </Text>
             </View>
 
@@ -120,11 +127,11 @@ export default function LoginScreen() {
               style={[styles.headline, typography.headlineXl]}
               accessibilityRole="header"
             >
-              Iniciar sesión
+              {t('auth.login.title')}
             </Text>
 
             <Text style={[styles.subtitle, typography.bodyMd]}>
-              Ingresa a tu cuenta para gestionar tu despensa y recetas inteligentes sin desperdicio.
+              {t('auth.login.subtitle')}
             </Text>
           </View>
 
@@ -148,7 +155,7 @@ export default function LoginScreen() {
             {/* Campo: Correo electrónico */}
             <View style={styles.inputGroup}>
               <Text style={[styles.inputLabel, typography.labelMd]}>
-                Correo electrónico
+                {t('auth.emailLabel')}
               </Text>
               <View
                 style={[
@@ -165,7 +172,7 @@ export default function LoginScreen() {
                 <TextInput
                   testID="login-email-input"
                   style={[styles.textInput, typography.bodyMd]}
-                  placeholder="ejemplo@correo.com"
+                  placeholder={t('auth.emailPlaceholder')}
                   placeholderTextColor={colors.textSecondary}
                   keyboardType="email-address"
                   autoCapitalize="none"
@@ -174,8 +181,8 @@ export default function LoginScreen() {
                   onChangeText={handleEmailChange}
                   onBlur={() => setEmailTouched(true)}
                   editable={!isSubmitting}
-                  accessibilityLabel="Correo electrónico"
-                  accessibilityHint="Ingresa la dirección de correo registrada en FoodAI"
+                  accessibilityLabel={t('auth.emailLabel')}
+                  accessibilityHint={t('auth.login.emailHint')}
                 />
               </View>
               {emailError ? (
@@ -188,7 +195,7 @@ export default function LoginScreen() {
             {/* Campo: Contraseña */}
             <View style={styles.inputGroup}>
               <Text style={[styles.inputLabel, typography.labelMd]}>
-                Contraseña
+                {t('auth.passwordLabel')}
               </Text>
               <View style={styles.inputWrapper}>
                 <MaterialIcons
@@ -208,8 +215,8 @@ export default function LoginScreen() {
                   value={password}
                   onChangeText={handlePasswordChange}
                   editable={!isSubmitting}
-                  accessibilityLabel="Contraseña"
-                  accessibilityHint="Ingresa tu contraseña de acceso"
+                  accessibilityLabel={t('auth.passwordLabel')}
+                  accessibilityHint={t('auth.login.passwordHint')}
                   onSubmitEditing={handleSubmit}
                   returnKeyType="done"
                 />
@@ -219,7 +226,7 @@ export default function LoginScreen() {
                   onPress={() => setShowPassword((prev) => !prev)}
                   hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                   accessibilityRole="button"
-                  accessibilityLabel={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                  accessibilityLabel={showPassword ? t('auth.hidePassword') : t('auth.showPassword')}
                 >
                   <MaterialIcons
                     name={showPassword ? 'visibility' : 'visibility-off'}
@@ -241,7 +248,7 @@ export default function LoginScreen() {
               onPress={handleSubmit}
               disabled={isSubmitting || !isFormComplete}
               accessibilityRole="button"
-              accessibilityLabel={isSubmitting ? 'Iniciando sesión...' : 'Entrar'}
+              accessibilityLabel={isSubmitting ? t('auth.login.submitting') : t('auth.login.submit')}
               accessibilityState={{ disabled: isSubmitting || !isFormComplete, busy: isSubmitting }}
             >
               {isSubmitting ? (
@@ -249,7 +256,7 @@ export default function LoginScreen() {
               ) : (
                 <>
                   <Text style={[styles.submitButtonText, typography.labelLg]}>
-                    Entrar
+                    {t('auth.login.submit')}
                   </Text>
                   <MaterialIcons name="arrow-forward" size={20} color={colors.onPrimary} />
                 </>
@@ -260,7 +267,7 @@ export default function LoginScreen() {
           {/* Enlace hacia pantalla de registro */}
           <View style={styles.switchRow}>
             <Text style={[styles.switchPromptText, typography.bodyMd]}>
-              ¿No tienes una cuenta?
+              {t('auth.login.noAccount')}
             </Text>
             <Pressable
               testID="login-register-link"
@@ -270,10 +277,10 @@ export default function LoginScreen() {
               }}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               accessibilityRole="button"
-              accessibilityLabel="Crear cuenta nueva"
+              accessibilityLabel={t('auth.login.createAccountLabel')}
             >
               <Text style={[styles.switchLinkText, typography.labelLg]}>
-                Crear cuenta
+                {t('auth.login.createAccount')}
               </Text>
             </Pressable>
           </View>

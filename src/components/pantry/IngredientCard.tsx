@@ -10,11 +10,10 @@ import {
   View,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import {
-  INGREDIENT_UNIT_LABELS,
-  Ingredient,
-  getExpirationStatus,
-} from '../../types/pantry';
+import { Ingredient, getExpirationStatus } from '../../types/pantry';
+import { useLocale } from '../../context/LocaleContext';
+import { getCategoryLabel, getUnitShortLabel } from '../../locales/labels';
+import { getExpirationStatusLabel } from '../../locales/domainText';
 import {
   AppColors,
   radius,
@@ -45,10 +44,14 @@ export function IngredientCard({
   const typography = useTypography();
   const { colors, activeColorScheme } = useAppTheme();
   const styles = useThemeStyles(createStyles);
+  const { t, locale } = useLocale();
 
   const catVisual = getCategoryVisual(ingredient.category, activeColorScheme);
   const expiration = getExpirationStatus(ingredient.expirationDate);
-  const formattedDate = formatShortDate(ingredient.expirationDate);
+  const formattedDate = formatShortDate(ingredient.expirationDate, locale);
+  const expirationLabel = getExpirationStatusLabel(expiration, locale);
+  // Presentación: la categoría canónica se muestra traducida; el dato guardado no cambia.
+  const categoryLabel = getCategoryLabel(ingredient.category, locale);
 
   // Determinar paso de incremento según la unidad
   const step =
@@ -77,18 +80,18 @@ export function IngredientCard({
     }
   };
 
-  const unitLabel = INGREDIENT_UNIT_LABELS[ingredient.unit] || ingredient.unit;
+  const unitLabel = getUnitShortLabel(ingredient.unit, locale) || ingredient.unit;
   const quantityDisplay = `${ingredient.quantity} ${unitLabel}`;
 
   // Chip de estado de caducidad: urgente, pronto, con fecha o sin fecha
   const statusChip: { icon: CategoryIconName; label: string; tone: 'urgent' | 'warning' | 'neutral' } =
     expiration.isUrgent
-      ? { icon: 'clock-alert-outline', label: expiration.label, tone: 'urgent' }
+      ? { icon: 'clock-alert-outline', label: expirationLabel, tone: 'urgent' }
       : expiration.badgeVariant === 'warning'
-      ? { icon: 'clock-outline', label: expiration.label, tone: 'warning' }
+      ? { icon: 'clock-outline', label: expirationLabel, tone: 'warning' }
       : formattedDate
-      ? { icon: 'calendar-blank-outline', label: `Vence ${formattedDate}`, tone: 'neutral' }
-      : { icon: 'infinity', label: 'Sin fecha de caducidad', tone: 'neutral' };
+      ? { icon: 'calendar-blank-outline', label: t('ingredientCard.expiresOn', { date: formattedDate }), tone: 'neutral' }
+      : { icon: 'infinity', label: t('ingredientCard.noExpiration'), tone: 'neutral' };
 
   const statusColor =
     statusChip.tone === 'urgent'
@@ -103,7 +106,12 @@ export function IngredientCard({
       style={[styles.card, expiration.isUrgent && styles.cardUrgent]}
       testID={`ingredient-card-${ingredient.id}`}
       accessibilityRole="text"
-      accessibilityLabel={`Alimento: ${ingredient.name}, cantidad: ${quantityDisplay}, categoría: ${ingredient.category}, estado: ${expiration.label}`}
+      accessibilityLabel={t('ingredientCard.cardLabel', {
+        name: ingredient.name,
+        quantity: quantityDisplay,
+        category: categoryLabel,
+        status: expirationLabel,
+      })}
     >
       <View style={styles.contentRow}>
         {/* Ícono de categoría con fondo suave acorde a la paleta */}
@@ -120,7 +128,7 @@ export function IngredientCard({
           onPress={() => onPress && onPress(ingredient)}
           disabled={!onPress}
           accessibilityRole={onPress ? 'button' : 'none'}
-          accessibilityLabel={`Ver o editar ${ingredient.name}`}
+          accessibilityLabel={t('ingredientCard.viewOrEdit', { name: ingredient.name })}
         >
           <Text
             style={[styles.nameText, typography.bodyLg]}
@@ -130,7 +138,7 @@ export function IngredientCard({
             {ingredient.name}
           </Text>
           <Text style={[styles.categoryText, typography.bodySm]} numberOfLines={1}>
-            {ingredient.category}
+            {categoryLabel}
           </Text>
         </Pressable>
 
@@ -145,7 +153,7 @@ export function IngredientCard({
               ]}
               onPress={() => onEdit(ingredient)}
               accessibilityRole="button"
-              accessibilityLabel={`Editar ${ingredient.name}`}
+              accessibilityLabel={t('ingredientCard.edit', { name: ingredient.name })}
               hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
             >
               <MaterialCommunityIcons name="pencil-outline" size={18} color={colors.textSecondary} />
@@ -161,7 +169,7 @@ export function IngredientCard({
               ]}
               onPress={() => onDelete(ingredient)}
               accessibilityRole="button"
-              accessibilityLabel={`Eliminar ${ingredient.name}`}
+              accessibilityLabel={t('ingredientCard.delete', { name: ingredient.name })}
               hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
             >
               <MaterialCommunityIcons name="trash-can-outline" size={18} color={colors.error} />
@@ -199,7 +207,7 @@ export function IngredientCard({
               ]}
               onPress={handleMinus}
               accessibilityRole="button"
-              accessibilityLabel={`Disminuir cantidad de ${ingredient.name}`}
+              accessibilityLabel={t('ingredientCard.decrease', { name: ingredient.name })}
               hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
             >
               <MaterialCommunityIcons name="minus" size={16} color={colors.textPrimary} />
@@ -220,7 +228,7 @@ export function IngredientCard({
               ]}
               onPress={handlePlus}
               accessibilityRole="button"
-              accessibilityLabel={`Aumentar cantidad de ${ingredient.name}`}
+              accessibilityLabel={t('ingredientCard.increase', { name: ingredient.name })}
               hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
             >
               <MaterialCommunityIcons name="plus" size={16} color={colors.textPrimary} />

@@ -15,12 +15,11 @@ import {
   useTypography,
 } from '../../theme';
 import {
-  MONTH_NAMES,
-  WEEKDAY_INITIALS,
   formatLongDate,
   parseIsoDateString,
   toIsoDateString,
 } from '../../utils/dateFormat';
+import { useLocale } from '../../context/LocaleContext';
 
 /** Límites coherentes con la validación de fechas de la despensa (2000-2100). */
 const MIN_YEAR = 2000;
@@ -55,6 +54,7 @@ export function CalendarPicker({ value, onSelect, testID = 'calendar-picker' }: 
   const typography = useTypography();
   const { colors } = useAppTheme();
   const styles = useThemeStyles(createStyles);
+  const { t, locale, format } = useLocale();
 
   const todayIso = toIsoDateString(new Date());
   const [visible, setVisible] = useState<VisibleMonth>(() => {
@@ -81,7 +81,7 @@ export function CalendarPicker({ value, onSelect, testID = 'calendar-picker' }: 
     });
   };
 
-  const monthLabel = `${MONTH_NAMES[visible.month].charAt(0).toUpperCase()}${MONTH_NAMES[visible.month].slice(1)} ${visible.year}`;
+  const monthLabel = format.monthYear(visible.month, visible.year);
 
   return (
     <View style={styles.container} testID={testID}>
@@ -92,7 +92,7 @@ export function CalendarPicker({ value, onSelect, testID = 'calendar-picker' }: 
           onPress={() => shiftMonth(-1)}
           disabled={!canGoBack}
           accessibilityRole="button"
-          accessibilityLabel="Mes anterior"
+          accessibilityLabel={t('calendar.previousMonth')}
           accessibilityState={{ disabled: !canGoBack }}
           style={({ pressed }) => [
             styles.navButton,
@@ -118,7 +118,7 @@ export function CalendarPicker({ value, onSelect, testID = 'calendar-picker' }: 
           onPress={() => shiftMonth(1)}
           disabled={!canGoForward}
           accessibilityRole="button"
-          accessibilityLabel="Mes siguiente"
+          accessibilityLabel={t('calendar.nextMonth')}
           accessibilityState={{ disabled: !canGoForward }}
           style={({ pressed }) => [
             styles.navButton,
@@ -131,8 +131,8 @@ export function CalendarPicker({ value, onSelect, testID = 'calendar-picker' }: 
       </View>
 
       <View style={styles.weekRow} importantForAccessibility="no-hide-descendants">
-        {WEEKDAY_INITIALS.map((initial) => (
-          <Text key={initial} style={[styles.weekdayLabel, typography.labelSm]}>
+        {format.weekdayInitials.map((initial, index) => (
+          <Text key={`weekday-${index}`} style={[styles.weekdayLabel, typography.labelSm]}>
             {initial}
           </Text>
         ))}
@@ -154,7 +154,7 @@ export function CalendarPicker({ value, onSelect, testID = 'calendar-picker' }: 
                 testID={`${testID}-day-${iso}`}
                 onPress={() => onSelect(iso)}
                 accessibilityRole="button"
-                accessibilityLabel={`${formatLongDate(date)}${isToday ? ', hoy' : ''}`}
+                accessibilityLabel={`${formatLongDate(date, locale)}${isToday ? t('calendar.todaySuffix') : ''}`}
                 accessibilityState={{ selected: isSelected }}
                 style={styles.dayCell}
               >

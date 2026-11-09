@@ -31,12 +31,16 @@ import {
 import { usePantry } from '../../src/context/PantryContext';
 import { AppColors, getAppSurfaces, radius, spacing, useAppTheme, useThemeStyles, useTypography } from '../../src/theme';
 import { Ingredient } from '../../src/types/pantry';
+import { useLocale } from '../../src/context/LocaleContext';
+import { getCategoryLabel } from '../../src/locales/labels';
+import { localizeMessage } from '../../src/locales/messages';
 
 export default function DespensaScreen() {
   const typography = useTypography();
   const router = useRouter();
   const { colors } = useAppTheme();
   const styles = useThemeStyles(createStyles);
+  const { t, tp, locale } = useLocale();
 
   const {
     ingredients,
@@ -50,6 +54,9 @@ export default function DespensaScreen() {
     refresh,
     clearStorageError,
   } = usePantry();
+  const localizedStorageError = localizeMessage(storageError, locale, {
+    fallbackKey: 'messages.pantry.fallback',
+  });
 
   // Estados de modales
   const [formModalVisible, setFormModalVisible] = useState(false);
@@ -67,9 +74,11 @@ export default function DespensaScreen() {
     return ingredients.filter(
       (item) =>
         item.name.toLowerCase().includes(query) ||
-        item.category.toLowerCase().includes(query)
+        item.category.toLowerCase().includes(query) ||
+        // Búsqueda también por la etiqueta visible de la categoría (solo presentación)
+        getCategoryLabel(item.category, locale).toLowerCase().includes(query)
     );
-  }, [ingredients, searchQuery]);
+  }, [ingredients, searchQuery, locale]);
 
   // Separación entre urgentes y disponibles dentro de los filtrados
   const { urgentFiltered, regularFiltered } = useMemo(() => {
@@ -136,10 +145,7 @@ export default function DespensaScreen() {
       await deleteIngredient(deletingIngredient.id);
       setDeletingIngredient(null);
     } catch {
-      Alert.alert(
-        'Error',
-        'No se pudo eliminar el alimento. Por favor intenta nuevamente.'
-      );
+      Alert.alert(t('pantry.deleteErrorTitle'), t('pantry.deleteErrorMessage'));
     }
   };
 
@@ -152,21 +158,21 @@ export default function DespensaScreen() {
             source={require('../../assets/images/logo.png')}
             style={styles.logoImage}
             resizeMode="contain"
-            accessibilityLabel="Logotipo de Recetario por Presupuesto"
+            accessibilityLabel={t('pantry.logoLabel')}
           />
           <View style={styles.headerTextCol}>
             <Text
               style={[styles.headerSubtext, typography.labelSm]}
               numberOfLines={1}
             >
-              RECETARIO POR PRESUPUESTO
+              {t('pantry.brandSubtitle')}
             </Text>
             <Text
               style={[styles.headerTitle, typography.headlineMd]}
               numberOfLines={1}
               accessibilityRole="header"
             >
-              Despensa
+              {t('pantry.title')}
             </Text>
           </View>
         </View>
@@ -174,8 +180,8 @@ export default function DespensaScreen() {
         <Pressable
           testID="despensa-profile-avatar"
           accessibilityRole="button"
-          accessibilityLabel="Perfil de usuario"
-          accessibilityHint="Ir a la pestaña de perfil"
+          accessibilityLabel={t('pantry.profileLabel')}
+          accessibilityHint={t('pantry.profileHint')}
           onPress={() => router.push('/(tabs)/perfil')}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           style={({ pressed }) => [
@@ -203,7 +209,7 @@ export default function DespensaScreen() {
                 {summary.totalCount}
               </Text>
               <Text style={[styles.overviewLabel, typography.labelSm]}>
-                {summary.totalCount === 1 ? 'Alimento' : 'Alimentos'}
+                {tp('pantry.overviewFoods', summary.totalCount)}
               </Text>
             </View>
             <View style={styles.overviewTile}>
@@ -217,7 +223,7 @@ export default function DespensaScreen() {
               <Text style={[styles.overviewValue, typography.headlineMd]}>
                 {summary.urgentCount}
               </Text>
-              <Text style={[styles.overviewLabel, typography.labelSm]}>Por vencer</Text>
+              <Text style={[styles.overviewLabel, typography.labelSm]}>{t('pantry.overviewExpiring')}</Text>
             </View>
             <View style={styles.overviewTile}>
               <View style={[styles.overviewIcon, { backgroundColor: colors.tertiaryFixed }]}>
@@ -231,7 +237,7 @@ export default function DespensaScreen() {
                 {activeCategoriesCount}
               </Text>
               <Text style={[styles.overviewLabel, typography.labelSm]}>
-                {activeCategoriesCount === 1 ? 'Categoría' : 'Categorías'}
+                {tp('pantry.overviewCategories', activeCategoriesCount)}
               </Text>
             </View>
           </View>
@@ -241,7 +247,7 @@ export default function DespensaScreen() {
         <View style={styles.topActionsContainer}>
           <Input
             testID="pantry-search-input"
-            placeholder="Buscar en mi despensa..."
+            placeholder={t('pantry.searchPlaceholder')}
             value={searchQuery}
             onChangeText={setSearchQuery}
             containerStyle={styles.searchContainer}
@@ -254,20 +260,20 @@ export default function DespensaScreen() {
                   testID="clear-search-button"
                   onPress={() => setSearchQuery('')}
                   accessibilityRole="button"
-                  accessibilityLabel="Limpiar búsqueda"
+                  accessibilityLabel={t('pantry.clearSearch')}
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 >
                   <MaterialCommunityIcons name="close-circle" size={18} color={colors.outline} />
                 </Pressable>
               ) : undefined
             }
-            accessibilityLabel="Buscar alimentos en la despensa"
+            accessibilityLabel={t('pantry.searchLabel')}
           />
 
           <View style={styles.actionButtonsRow}>
             <Button
               testID="pantry-add-ingredient-button"
-              title="Agregar"
+              title={t('pantry.add')}
               variant="primary"
               size="md"
               style={styles.actionButton}
@@ -275,12 +281,12 @@ export default function DespensaScreen() {
               leftIcon={
                 <MaterialCommunityIcons name="plus" size={20} color={colors.onPrimary} />
               }
-              accessibilityLabel="Agregar nuevo alimento a la despensa"
+              accessibilityLabel={t('pantry.addLabel')}
             />
 
             <Button
               testID="pantry-scan-placeholder-button"
-              title="Escanear"
+              title={t('pantry.scan')}
               variant="outline"
               size="md"
               style={styles.actionButton}
@@ -292,36 +298,36 @@ export default function DespensaScreen() {
                   color={colors.primary}
                 />
               }
-              accessibilityLabel="Escanear nuevos alimentos con la cámara"
+              accessibilityLabel={t('pantry.scanLabel')}
             />
           </View>
         </View>
 
         {/* 4. Estado de error de almacenamiento */}
-        {storageError && (
+        {localizedStorageError && (
           <Card variant="outlined" style={styles.errorCard}>
             <View style={styles.errorRow}>
               <MaterialCommunityIcons name="alert-circle-outline" size={24} color={colors.error} />
               <View style={styles.errorTextCol}>
                 <Text style={[styles.errorTitle, typography.labelMd]}>
-                  Error de almacenamiento
+                  {t('pantry.storageErrorTitle')}
                 </Text>
                 <Text style={[styles.errorDesc, typography.bodySm]}>
-                  {storageError}
+                  {localizedStorageError}
                 </Text>
               </View>
             </View>
             <View style={styles.errorActions}>
               <Button
                 testID="pantry-retry-button"
-                title="Reintentar"
+                title={t('common.retry')}
                 variant="outline"
                 size="sm"
                 onPress={refresh}
               />
               <Button
                 testID="pantry-dismiss-error-button"
-                title="Descartar"
+                title={t('pantry.dismiss')}
                 variant="ghost"
                 size="sm"
                 onPress={clearStorageError}
@@ -336,11 +342,11 @@ export default function DespensaScreen() {
             style={styles.loadingContainer}
             testID="pantry-loading-state"
             accessibilityRole="progressbar"
-            accessibilityLabel="Cargando tu despensa..."
+            accessibilityLabel={t('pantry.loading')}
           >
             <ActivityIndicator size="large" color={colors.primary} />
             <Text style={[styles.loadingText, typography.bodyMd]}>
-              Cargando tu despensa...
+              {t('pantry.loading')}
             </Text>
           </View>
         ) : ingredients.length === 0 ? (
@@ -354,17 +360,16 @@ export default function DespensaScreen() {
               <MaterialCommunityIcons name="fridge-outline" size={38} color={colors.primary} />
             </View>
             <Text style={[styles.emptyTitle, typography.headlineMd]}>
-              Tu despensa está vacía
+              {t('pantry.emptyTitle')}
             </Text>
             <Text style={[styles.emptyDesc, typography.bodyMd]}>
-              Registra los ingredientes que tienes en tu cocina para recibir recetas
-              optimizadas a tu despensa y ahorrar en tus compras.
+              {t('pantry.emptyDesc')}
             </Text>
 
             <View style={styles.emptyAction}>
               <Button
                 testID="empty-state-add-button"
-                title="Agregar mi primer alimento"
+                title={t('pantry.addFirst')}
                 variant="primary"
                 size="lg"
                 fullWidth
@@ -382,14 +387,14 @@ export default function DespensaScreen() {
               <MaterialCommunityIcons name="magnify-close" size={34} color={colors.outline} />
             </View>
             <Text style={[styles.emptyTitle, typography.headlineMd]}>
-              Sin resultados para «{searchQuery}»
+              {t('pantry.noResultsTitle', { query: searchQuery })}
             </Text>
             <Text style={[styles.emptyDesc, typography.bodySm]}>
-              No encontramos alimentos que coincidan con tu búsqueda. Intenta con otro término o limpia el filtro.
+              {t('pantry.noResultsDesc')}
             </Text>
             <Button
               testID="clear-search-filter-button"
-              title="Ver todos los alimentos"
+              title={t('pantry.showAll')}
               variant="outline"
               size="sm"
               onPress={() => setSearchQuery('')}
@@ -410,12 +415,12 @@ export default function DespensaScreen() {
                       style={[styles.sectionTitle, typography.labelLg]}
                       accessibilityRole="header"
                     >
-                      Prioridad para cocinar hoy
+                      {t('pantry.urgentTitle')}
                     </Text>
                   </View>
                   <View style={styles.urgentCountBadge}>
                     <Text style={[styles.urgentCountText, typography.labelSm]}>
-                      {urgentFiltered.length} crítico{urgentFiltered.length === 1 ? '' : 's'}
+                      {tp('pantry.criticalCount', urgentFiltered.length)}
                     </Text>
                   </View>
                 </View>
@@ -447,10 +452,10 @@ export default function DespensaScreen() {
                 </View>
                 <View style={styles.savingsTextCol}>
                   <Text style={[styles.savingsBadge, typography.labelSm]}>
-                    SUGERENCIA DE AHORRO
+                    {t('pantry.savingsBadge')}
                   </Text>
                   <Text style={[styles.savingsDesc, typography.bodyMd]}>
-                    Tienes {ingredients.length} alimento{ingredients.length === 1 ? '' : 's'} disponible{ingredients.length === 1 ? '' : 's'} para aprovechar antes de realizar compras innecesarias.
+                    {tp('pantry.savingsDesc', ingredients.length)}
                   </Text>
                 </View>
               </View>
@@ -463,12 +468,12 @@ export default function DespensaScreen() {
                 ]}
                 onPress={() => setCookSuggestionVisible(true)}
                 accessibilityRole="button"
-                accessibilityLabel="¿Qué cocinamos con esto?"
+                accessibilityLabel={t('pantry.whatToCook')}
               >
                 <View style={styles.savingsCtaLeft}>
                   <MaterialCommunityIcons name="silverware-fork-knife" size={18} color={colors.onPrimary} />
                   <Text style={[styles.savingsCtaText, typography.labelLg]}>
-                    ¿Qué cocinamos con esto?
+                    {t('pantry.whatToCook')}
                   </Text>
                 </View>
                 <MaterialCommunityIcons name="arrow-right" size={18} color={colors.onPrimary} />
@@ -486,12 +491,12 @@ export default function DespensaScreen() {
                     style={[styles.sectionTitle, typography.labelLg]}
                     accessibilityRole="header"
                   >
-                    Disponibles en alacena y nevera
+                    {t('pantry.regularTitle')}
                   </Text>
                 </View>
                 <View style={styles.itemsCountBadge}>
                   <Text style={[styles.itemsCountLabel, typography.labelSm]}>
-                    {regularFiltered.length} ítem{regularFiltered.length === 1 ? '' : 's'}
+                    {tp('pantry.itemsCount', regularFiltered.length)}
                   </Text>
                 </View>
               </View>
@@ -538,22 +543,22 @@ export default function DespensaScreen() {
           <Pressable
             style={StyleSheet.absoluteFill}
             onPress={() => setCookSuggestionVisible(false)}
-            accessibilityLabel="Cerrar sugerencia"
+            accessibilityLabel={t('pantry.closeSuggestion')}
           />
           <View style={styles.dialogCard}>
             <View style={styles.dialogIconBox}>
               <MaterialCommunityIcons name="chef-hat" size={30} color={colors.primary} />
             </View>
             <Text style={[styles.dialogTitle, typography.headlineMd]}>
-              ¿Qué cocinamos con esto?
+              {t('pantry.whatToCook')}
             </Text>
             <Text style={[styles.dialogDesc, typography.bodyMd]}>
-              El motor de sugerencias culinarias cruza tus {ingredients.length} alimentos con tu presupuesto para sugerirte recetas ideales y ayudarte a ahorrar.
+              {t('pantry.suggestionDesc', { count: ingredients.length })}
             </Text>
             <View style={styles.dialogActions}>
               <Button
                 testID="pantry-discover-recipes-button"
-                title="Descubrir recetas"
+                title={t('pantry.discoverRecipes')}
                 variant="primary"
                 size="md"
                 fullWidth
@@ -565,7 +570,7 @@ export default function DespensaScreen() {
               />
               <Button
                 testID="close-cook-suggestion-button"
-                title="Volver a la despensa"
+                title={t('pantry.backToPantry')}
                 variant="outline"
                 size="md"
                 fullWidth

@@ -19,9 +19,11 @@ import {
   useAppTheme,
   useThemeStyles,
 } from '../src/theme';
+import { useLocale } from '../src/context/LocaleContext';
 
 export default function WelcomeScreen() {
   const typography = useTypography();
+  const { t } = useLocale();
   const router = useRouter();
   const { colors } = useAppTheme();
   const styles = useThemeStyles(createStyles);
@@ -42,19 +44,19 @@ export default function WelcomeScreen() {
           <View
             style={styles.categoryBadge}
             accessibilityRole="text"
-            accessibilityLabel="Categoría: Hogar inteligente"
+            accessibilityLabel={t('welcome.categoryBadgeLabel')}
           >
             <MaterialIcons name="eco" size={18} color={colors.primary} />
             <Text style={[styles.categoryBadgeText, typography.labelSm]}>
-              HOGAR INTELIGENTE
+              {t('common.smartHome')}
             </Text>
           </View>
 
           <Pressable
             testID="welcome-skip-button"
             accessibilityRole="button"
-            accessibilityLabel="Omitir introducción"
-            accessibilityHint="Ir directamente a la pantalla de inicio"
+            accessibilityLabel={t('welcome.skipLabel')}
+            accessibilityHint={t('welcome.skipHint')}
             onPress={handleNavigateToHome}
             hitSlop={{ top: 12, bottom: 12, left: 16, right: 16 }}
             style={({ pressed }) => [
@@ -63,7 +65,7 @@ export default function WelcomeScreen() {
             ]}
           >
             <Text style={[styles.skipButtonText, typography.labelMd]}>
-              Omitir
+              {t('welcome.skip')}
             </Text>
           </Pressable>
         </View>
@@ -77,12 +79,12 @@ export default function WelcomeScreen() {
               source={require('../assets/images/welcome-hero.png')}
               style={styles.heroImage}
               resizeMode="contain"
-              accessibilityLabel="Ilustración de cocina inteligente con despensa, sartén e ingredientes frescos"
+              accessibilityLabel={t('welcome.heroImageLabel')}
             />
             <View style={styles.heroPillBadge}>
               <MaterialIcons name="auto-awesome" size={15} color={colors.demoBadgeText} />
               <Text style={[styles.heroPillText, typography.labelSm]}>
-                Aprovecha mejor tu despensa
+                {t('welcome.heroPill')}
               </Text>
             </View>
           </View>
@@ -93,7 +95,7 @@ export default function WelcomeScreen() {
           <View style={styles.ecoPill}>
             <MaterialIcons name="eco" size={14} color={colors.secondary} />
             <Text style={[styles.ecoPillText, typography.labelSm]}>
-              Menos desperdicio. Más aprovechamiento.
+              {t('welcome.ecoPill')}
             </Text>
           </View>
 
@@ -101,11 +103,11 @@ export default function WelcomeScreen() {
             style={[styles.headline, typography.headlineXl]}
             accessibilityRole="header"
           >
-            Aprovecha lo que ya tienes.
+            {t('welcome.headline')}
           </Text>
 
           <Text style={[styles.subtitle, typography.bodyLg]}>
-            Muéstranos tus alimentos y descubre qué puedes preparar sin gastar de más.
+            {t('welcome.subtitle')}
           </Text>
         </View>
 
@@ -113,15 +115,15 @@ export default function WelcomeScreen() {
         <View
           style={styles.stepsRow}
           accessible={false}
-          accessibilityLabel="Cómo funciona FoodAI en 3 pasos"
+          accessibilityLabel={t('welcome.stepsLabel')}
         >
           {/* Step 1 */}
           <View style={styles.stepCard} testID="step-1">
             <View style={[styles.stepIconCircle, { backgroundColor: colors.surfaceContainerHighest }]}>
               <MaterialIcons name="photo-camera" size={18} color={colors.primary} />
             </View>
-            <Text style={[styles.stepTitle, typography.labelSm]}>1. Escanea</Text>
-            <Text style={[styles.stepDesc, typography.bodySm]}>Tus alimentos</Text>
+            <Text style={[styles.stepTitle, typography.labelSm]}>{t('welcome.step1Title')}</Text>
+            <Text style={[styles.stepDesc, typography.bodySm]}>{t('welcome.step1Desc')}</Text>
           </View>
 
           {/* Step 2 */}
@@ -129,8 +131,8 @@ export default function WelcomeScreen() {
             <View style={[styles.stepIconCircle, { backgroundColor: colors.surfaceContainerHighest }]}>
               <MaterialIcons name="auto-awesome" size={18} color={colors.secondary} />
             </View>
-            <Text style={[styles.stepTitle, typography.labelSm]}>2. Elige</Text>
-            <Text style={[styles.stepDesc, typography.bodySm]}>Tu presupuesto</Text>
+            <Text style={[styles.stepTitle, typography.labelSm]}>{t('welcome.step2Title')}</Text>
+            <Text style={[styles.stepDesc, typography.bodySm]}>{t('welcome.step2Desc')}</Text>
           </View>
 
           {/* Step 3 */}
@@ -138,8 +140,8 @@ export default function WelcomeScreen() {
             <View style={[styles.stepIconCircle, { backgroundColor: colors.surfaceContainerHighest }]}>
               <MaterialIcons name="savings" size={18} color={colors.tertiary} />
             </View>
-            <Text style={[styles.stepTitle, typography.labelSm]}>3. Cocina</Text>
-            <Text style={[styles.stepDesc, typography.bodySm]}>Aprovecha lo que tienes</Text>
+            <Text style={[styles.stepTitle, typography.labelSm]}>{t('welcome.step3Title')}</Text>
+            <Text style={[styles.stepDesc, typography.bodySm]}>{t('welcome.step3Desc')}</Text>
           </View>
         </View>
 
@@ -147,13 +149,13 @@ export default function WelcomeScreen() {
         <View style={styles.actionContainer}>
           <Button
             testID="welcome-start-button"
-            title="Comenzar"
+            title={t('welcome.start')}
             variant="primary"
             size="lg"
             fullWidth
             onPress={handleNavigateToHome}
-            accessibilityLabel="Comenzar con FoodAI"
-            accessibilityHint="Navega a la pantalla principal de la aplicación"
+            accessibilityLabel={t('welcome.startLabel')}
+            accessibilityHint={t('welcome.startHint')}
             rightIcon={<MaterialIcons name="arrow-forward" size={20} color={colors.onPrimary} />}
           />
 

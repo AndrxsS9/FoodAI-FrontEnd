@@ -107,19 +107,33 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
   // A 360 dp se compacta el mosaico para que un monto como «$100.000 COP» quepa en una línea
   const compactSummaryTiles = !stackSummaryTiles && windowWidth < 380;
 
-  const { budget, servings, maxMinutes } = useBudget();
-  const { ingredients } = usePantry();
+  const { budget, servings, maxMinutes, isLoading: isBudgetLoading } = useBudget();
+  const { ingredients, isLoading: isPantryLoading } = usePantry();
   const {
     plan,
     isGenerating,
+    isRestoring,
     isStale,
     error,
+    persistenceWarning,
+    persistenceWarningCode,
+    clearPersistenceWarning,
     generateMealPlan,
     cancelGeneration,
     clearError,
     toggleDayCompleted,
     completedDaysCount,
   } = useMealPlan();
+
+  // Hidratación (Fase 28B): mientras la despensa, el presupuesto o el plan guardado se cargan, una
+  // despensa vacía no significa "sin alimentos" y no se permite generar con datos por defecto.
+  const isHydrating = Boolean(isPantryLoading || isBudgetLoading || isRestoring);
+  const persistenceWarningTitle =
+    persistenceWarningCode === 'clear_failed'
+      ? 'No pudimos eliminar el plan'
+      : persistenceWarningCode === 'completion_save_failed'
+        ? 'No se guardó el cambio'
+        : 'Tu plan no quedó guardado';
 
   // Secuencia monótona estricta e identificador de la petición activa (nunca se resetea la secuencia)
   const requestSequenceRef = useRef<number>(0);
@@ -131,7 +145,7 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
 
   const handleGeneratePlan = () => {
     // Si no hay alimentos, ya está cargando o ya existe una petición activa en curso, ignorar síncronamente
-    if (!hasPantryItems || isLoading || activeRequestIdRef.current !== null) return;
+    if (!hasPantryItems || isLoading || isHydrating || activeRequestIdRef.current !== null) return;
 
     const requestId = ++requestSequenceRef.current;
     activeRequestIdRef.current = requestId;
@@ -297,6 +311,34 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
           </View>
         )}
 
+        {/* 3b. Aviso de persistencia local (Fase 28B): nunca se presenta un fallo de guardado como éxito */}
+        {Boolean(persistenceWarning) && (
+          <View
+            style={styles.persistenceBanner}
+            testID="plan-persistence-warning"
+            accessibilityRole="alert"
+            accessibilityLiveRegion="polite"
+          >
+            <View style={styles.persistenceHeaderRow}>
+              <MaterialCommunityIcons name="content-save-alert-outline" size={20} color={colors.onSecondaryFixed} />
+              <View style={styles.staleTextWrapper}>
+                <Text style={[styles.staleTitle, typography.labelMd]}>{persistenceWarningTitle}</Text>
+                <Text style={[styles.staleDescription, typography.bodySm]}>{persistenceWarning}</Text>
+              </View>
+            </View>
+            <View style={styles.errorActionsRow}>
+              <Button
+                testID="plan-persistence-warning-dismiss"
+                title="Entendido"
+                variant="ghost"
+                size="sm"
+                accessibilityLabel="Cerrar aviso de guardado"
+                onPress={clearPersistenceWarning}
+              />
+            </View>
+          </View>
+        )}
+
         {/* 4. Banner de error en caso de fallo */}
         {Boolean(error) && (
           <Card variant="outlined" style={styles.errorCard} testID="plan-error-banner">
@@ -321,10 +363,27 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
                 variant="secondary"
                 size="sm"
                 onPress={handleGeneratePlan}
-                disabled={!hasPantryItems || isLoading}
+                disabled={!hasPantryItems || isLoading || isHydrating}
               />
             </View>
           </Card>
+        )}
+
+        {/* 4b. Hidratación inicial: aún no se sabe si hay alimentos ni cuál es el presupuesto */}
+        {isHydrating && !plan && !isLoading && (
+          <View accessibilityLiveRegion="polite">
+            <Card
+              variant="elevated"
+              style={styles.loadingCard}
+              testID="plan-hydrating-state"
+              accessibilityLabel="Cargando tu despensa y tu presupuesto"
+            >
+              <ActivityIndicator size="small" color={colors.primary} />
+              <Text style={[styles.loadingSubtitle, typography.bodySm]}>
+                Cargando tu despensa y tu presupuesto...
+              </Text>
+            </Card>
+          </View>
         )}
 
         {/* 5. Estado de carga durante generación con IA */}
@@ -349,7 +408,7 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
         )}
 
         {/* 6. Estado de despensa vacía */}
-        {!hasPantryItems && !plan && !isLoading && (
+        {!hasPantryItems && !plan && !isLoading && !isHydrating && (
           <Card variant="outlined" style={styles.emptyCard} testID="plan-empty-pantry-card">
             <View style={styles.emptyIconCircle}>
               <MaterialCommunityIcons name="fridge-outline" size={40} color={colors.primary} />
@@ -374,7 +433,7 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
         )}
 
         {/* 7. Estado inicial cuando hay despensa pero no se ha generado plan */}
-        {hasPantryItems && !plan && !isLoading && (
+        {hasPantryItems && !plan && !isLoading && !isHydrating && (
           <Card variant="elevated" style={styles.introCard} testID="plan-intro-card">
             {/* Composición con íconos vectoriales: no añade imágenes ni assets */}
             <View
@@ -438,7 +497,7 @@ export default function PlanScreen({ onRequestTracked }: PlanScreenProps = {}) {
                 size="sm"
                 style={isStale && hasPantryItems ? styles.ctaButton : styles.outlineAction}
                 onPress={handleGeneratePlan}
-                disabled={!hasPantryItems || isLoading}
+                disabled={!hasPantryItems || isLoading || isHydrating}
                 leftIcon={<MaterialCommunityIcons name="refresh" size={16} color={isStale ? colors.onPrimary : colors.primary} />}
               />
             </View>
@@ -862,6 +921,17 @@ const createStyles = (colors: AppColors) => {
     },
     staleTextWrapper: {
       flex: 1,
+    },
+    persistenceBanner: {
+      backgroundColor: colors.secondaryFixed,
+      padding: spacing.md,
+      borderRadius: radius.lg,
+      gap: spacing.xs,
+    },
+    persistenceHeaderRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
     },
     staleTitle: {
       color: colors.onSecondaryFixed,

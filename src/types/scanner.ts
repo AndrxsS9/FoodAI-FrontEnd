@@ -58,6 +58,11 @@ export interface ScannedIngredientItem {
   isSelected: boolean;
   duplicateMatch?: DuplicatePantryMatch;
   action: ScannedIngredientAction;
+  /**
+   * Firma (nombre|unidad|categoría) que el usuario confirmó tras una advertencia semántica.
+   * Solo vive durante la revisión; no forma parte del registro guardado en la despensa.
+   */
+  semanticReviewSignature?: string;
 }
 
 export type ScannerStep =

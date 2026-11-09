@@ -7,6 +7,7 @@ import React, {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react';
@@ -43,7 +44,19 @@ import {
 } from '../../theme';
 import { Button } from '../common/Button';
 import { Input } from '../common/Input';
-import { validateIngredientForm } from '../../utils/pantryValidation';
+import {
+  detectIngredientSemanticWarnings,
+  getSemanticCheckSignature,
+  MAX_INGREDIENT_QUANTITY,
+  parseQuantityInput,
+  validateIngredientForm,
+} from '../../utils/pantryValidation';
+import {
+  classifyIngredient,
+  convertQuantity,
+  getUnitChangeImpact,
+  suggestIngredientMeasurement,
+} from '../../utils/ingredientMapper';
 import { getCategoryVisual } from './categoryVisuals';
 import { ExpirationDateField } from './ExpirationDateField';
 
@@ -64,6 +77,46 @@ export interface IngredientFormModalProps {
 
 /** Campos de texto cuyo desplazamiento se sigue para mantenerlos visibles sobre el teclado. */
 type FocusableField = 'name' | 'quantity';
+
+/** Valores por defecto de un alimento nuevo cuyo nombre aún no se reconoce. */
+const DEFAULT_NEW_UNIT: IngredientUnit = 'unidad';
+/** «Otros» es neutral: no sugiere una categoría engañosa para nombres desconocidos. */
+const DEFAULT_NEW_CATEGORY: IngredientCategory = 'Otros';
+
+export const UNIT_CHANGE_QUANTITY_ERROR =
+  'Confirma la cantidad o escríbela de nuevo después de cambiar la unidad.';
+
+/** Cambio de unidad pendiente de que el usuario confirme o reescriba la cantidad. */
+interface PendingUnitChange {
+  from: IngredientUnit;
+  to: IngredientUnit;
+  /** Cantidad equivalente ofrecida solo para g↔kg y ml↔l (nunca entre masa y volumen). */
+  convertedText: string | null;
+}
+
+/**
+ * Calcula la conversión explícita ofrecida al usuario (g↔kg, ml↔l) si el resultado
+ * sigue siendo una cantidad válida (máximo 3 decimales y dentro del límite).
+ */
+function computeOfferedConversion(
+  quantityText: string,
+  from: IngredientUnit,
+  to: IngredientUnit
+): string | null {
+  const parsed = parseQuantityInput(quantityText);
+  if (!parsed.ok) return null;
+  const converted = convertQuantity(parsed.value, from, to);
+  if (converted === null || converted <= 0 || converted > MAX_INGREDIENT_QUANTITY) return null;
+  const rounded = Math.round(converted * 1000) / 1000;
+  if (Math.abs(rounded - converted) > 1e-9) return null;
+  return String(rounded);
+}
+
+function formatUnitList(units: IngredientUnit[]): string {
+  const names = units.map((u) => INGREDIENT_UNIT_NAMES[u]);
+  if (names.length <= 1) return names.join('');
+  return `${names.slice(0, -1).join(', ')} o ${names[names.length - 1]}`;
+}
 
 /** Etiquetas compactas para los chips de unidad (el nombre completo se anuncia por accesibilidad). */
 const UNIT_CHIP_LABELS: Record<IngredientUnit, string> = {
@@ -93,17 +146,63 @@ function IngredientFormSheet({
   const [quantityText, setQuantityText] = useState(
     initialIngredient ? String(initialIngredient.quantity) : '1'
   );
-  const [unit, setUnit] = useState<IngredientUnit>(
-    initialIngredient?.unit ?? 'unidad'
+  // Selección manual. Al editar, los valores guardados se tratan como elecciones deliberadas:
+  // nunca se reemplazan automáticamente por una sugerencia.
+  const [manualUnit, setManualUnit] = useState<IngredientUnit>(
+    initialIngredient?.unit ?? DEFAULT_NEW_UNIT
   );
-  const [category, setCategory] = useState<IngredientCategory>(
-    initialIngredient?.category ?? 'Verduras y frutas'
+  const [manualCategory, setManualCategory] = useState<IngredientCategory>(
+    initialIngredient?.category ?? DEFAULT_NEW_CATEGORY
   );
+  const [unitTouched, setUnitTouched] = useState(isEditing);
+  const [categoryTouched, setCategoryTouched] = useState(isEditing);
+  // Una cantidad guardada o escrita por el usuario tiene significado propio en su unidad
+  const [quantityTouched, setQuantityTouched] = useState(isEditing);
+  const [pendingUnitChange, setPendingUnitChange] = useState<PendingUnitChange | null>(null);
+  // Firma de la combinación para la que ya se mostró el aviso semántico al intentar guardar
+  const [warningPromptSignature, setWarningPromptSignature] = useState<string | null>(null);
   const [expirationDateText, setExpirationDateText] = useState(
     initialIngredient?.expirationDate ?? ''
   );
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Sugerencias deterministas derivadas del nombre (misma base de conocimiento que el escáner)
+  const classification = useMemo(() => classifyIngredient(name), [name]);
+  const measurement = useMemo(() => suggestIngredientMeasurement(name), [name]);
+
+  const suggestedCategory =
+    classification.confidence === 'high' ? classification.category : null;
+  const suggestedUnit =
+    measurement.confidence === 'high' ? measurement.preferredUnit : null;
+
+  // Solo los campos que el usuario no ha elegido manualmente reciben la sugerencia
+  const unit: IngredientUnit = unitTouched ? manualUnit : (suggestedUnit ?? manualUnit);
+  const category: IngredientCategory = categoryTouched
+    ? manualCategory
+    : (suggestedCategory ?? manualCategory);
+  const unitIsAutoSuggested = !unitTouched && suggestedUnit !== null;
+  const categoryIsAutoSuggested = !categoryTouched && suggestedCategory !== null;
+
+  // Al editar, una combinación sin cambios nunca se cuestiona (datos heredados se respetan)
+  const isUnchangedStoredCombination =
+    isEditing &&
+    initialIngredient !== null &&
+    initialIngredient !== undefined &&
+    name.trim() === initialIngredient.name.trim() &&
+    unit === initialIngredient.unit &&
+    category === initialIngredient.category;
+
+  const semanticWarnings = useMemo(
+    () =>
+      isUnchangedStoredCombination
+        ? []
+        : detectIngredientSemanticWarnings({ name, unit, category }),
+    [isUnchangedStoredCombination, name, unit, category]
+  );
+  const semanticSignature = getSemanticCheckSignature({ name, unit, category });
+  const isWarningPromptActive =
+    semanticWarnings.length > 0 && warningPromptSignature === semanticSignature;
 
   // Insets seguros opcionales: sin proveedor (p. ej. pruebas aisladas) se asume 0
   const insets = useContext(SafeAreaInsetsContext);
@@ -116,6 +215,7 @@ function IngredientFormSheet({
   const scrollRef = useRef<ComponentRef<typeof ScrollView>>(null);
   const fieldOffsets = useRef<Partial<Record<FocusableField, number>>>({});
   const focusedField = useRef<FocusableField | null>(null);
+  const warningsOffset = useRef<number | null>(null);
 
   const scrollToFocusedField = useCallback(() => {
     const key = focusedField.current;
@@ -146,6 +246,56 @@ function IngredientFormSheet({
     fieldOffsets.current[key] = event.nativeEvent.layout.y;
   }, []);
 
+  /**
+   * Selección manual de unidad. La cantidad NUNCA se convierte en silencio: si ya tenía
+   * significado (guardada o escrita por el usuario), se pide confirmarla o reescribirla.
+   */
+  const handleUnitSelect = (nextUnit: IngredientUnit) => {
+    const impact = getUnitChangeImpact(unit, nextUnit);
+    setManualUnit(nextUnit);
+    setUnitTouched(true);
+    if (errors.unit) setErrors((prev) => ({ ...prev, unit: '' }));
+
+    if (impact === 'same') return;
+
+    if (!quantityTouched) {
+      setPendingUnitChange(null);
+      return;
+    }
+
+    // Si ya había un cambio pendiente, el origen sigue siendo la unidad de la cantidad escrita
+    const originUnit = pendingUnitChange ? pendingUnitChange.from : unit;
+    if (originUnit === nextUnit) {
+      setPendingUnitChange(null);
+      if (errors.quantity === UNIT_CHANGE_QUANTITY_ERROR) {
+        setErrors((prev) => ({ ...prev, quantity: '' }));
+      }
+      return;
+    }
+
+    setPendingUnitChange({
+      from: originUnit,
+      to: nextUnit,
+      convertedText:
+        getUnitChangeImpact(originUnit, nextUnit) === 'convertible'
+          ? computeOfferedConversion(quantityText, originUnit, nextUnit)
+          : null,
+    });
+  };
+
+  const clearPendingUnitChange = () => {
+    setPendingUnitChange(null);
+    if (errors.quantity === UNIT_CHANGE_QUANTITY_ERROR) {
+      setErrors((prev) => ({ ...prev, quantity: '' }));
+    }
+  };
+
+  const handleCategorySelect = (nextCategory: IngredientCategory) => {
+    setManualCategory(nextCategory);
+    setCategoryTouched(true);
+    if (errors.category) setErrors((prev) => ({ ...prev, category: '' }));
+  };
+
   const handleSubmit = async () => {
     const validation = validateIngredientForm({
       name,
@@ -156,7 +306,35 @@ function IngredientFormSheet({
     });
 
     if (!validation.isValid || !validation.sanitizedData) {
-      setErrors(validation.errors as Record<string, string>);
+      setErrors({
+        ...(validation.errors as Record<string, string>),
+        ...(pendingUnitChange && !validation.errors.quantity
+          ? { quantity: UNIT_CHANGE_QUANTITY_ERROR }
+          : {}),
+      });
+      return;
+    }
+
+    // Tras cambiar de unidad, la cantidad debe confirmarse o reescribirse explícitamente
+    if (pendingUnitChange) {
+      setErrors({ quantity: UNIT_CHANGE_QUANTITY_ERROR });
+      const quantityY = fieldOffsets.current.quantity;
+      if (quantityY !== undefined) {
+        scrollRef.current?.scrollTo({ y: Math.max(quantityY - spacing.sm, 0), animated: true });
+      }
+      return;
+    }
+
+    // Combinaciones sospechosas: primer intento muestra el aviso; el segundo confirma
+    if (semanticWarnings.length > 0 && warningPromptSignature !== semanticSignature) {
+      setErrors({});
+      setWarningPromptSignature(semanticSignature);
+      if (warningsOffset.current !== null) {
+        scrollRef.current?.scrollTo({
+          y: Math.max(warningsOffset.current - spacing.sm, 0),
+          animated: true,
+        });
+      }
       return;
     }
 
@@ -304,6 +482,15 @@ function IngredientFormSheet({
               value={quantityText}
               onChangeText={(text) => {
                 setQuantityText(text);
+                setQuantityTouched(true);
+                // La cantidad se escribió viendo esta unidad: fijarla para que un cambio
+                // posterior del nombre no altere su significado en silencio
+                if (!unitTouched) {
+                  setManualUnit(unit);
+                  setUnitTouched(true);
+                }
+                // Reescribir la cantidad resuelve un cambio de unidad pendiente
+                setPendingUnitChange(null);
                 if (errors.quantity) {
                   setErrors((prev) => ({ ...prev, quantity: '' }));
                 }
@@ -324,6 +511,7 @@ function IngredientFormSheet({
             <View style={styles.chipsWrap} accessibilityLabel="Unidad de medida">
               {INGREDIENT_UNITS.map((unitOpt) => {
                 const isSelected = unit === unitOpt;
+                const isRecommended = measurement.suggestedUnits.includes(unitOpt);
                 return (
                   <Pressable
                     key={unitOpt}
@@ -334,9 +522,10 @@ function IngredientFormSheet({
                       isSelected && styles.unitChipSelected,
                       pressed && !isSelected && styles.chipPressed,
                     ]}
-                    onPress={() => setUnit(unitOpt)}
+                    onPress={() => handleUnitSelect(unitOpt)}
                     accessibilityRole="button"
                     accessibilityLabel={`Unidad: ${INGREDIENT_UNIT_NAMES[unitOpt]}`}
+                    accessibilityHint={isRecommended ? 'Recomendada para este alimento' : undefined}
                     accessibilityState={{ selected: isSelected }}
                   >
                     <Text
@@ -352,6 +541,87 @@ function IngredientFormSheet({
                 );
               })}
             </View>
+            {measurement.suggestedUnits.length > 0 && (
+              <View testID="unit-suggestion-hint" style={styles.suggestionRow}>
+                <MaterialCommunityIcons
+                  name="lightbulb-on-outline"
+                  size={16}
+                  color={colors.hintText}
+                />
+                <Text style={[styles.suggestionText, typography.bodySm]}>
+                  {measurement.confidence === 'low'
+                    ? `Depende de la presentación (líquida o sólida): ${formatUnitList(measurement.suggestedUnits)}.`
+                    : unitIsAutoSuggested
+                      ? `Unidad sugerida: ${formatUnitList(measurement.suggestedUnits)}. Puedes cambiarla.`
+                      : `Recomendado: ${formatUnitList(measurement.suggestedUnits)}.`}
+                </Text>
+                {unitTouched &&
+                  suggestedUnit !== null &&
+                  !measurement.suggestedUnits.includes(unit) && (
+                    <Pressable
+                      testID="apply-unit-suggestion"
+                      onPress={() => handleUnitSelect(suggestedUnit)}
+                      hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Usar unidad sugerida: ${INGREDIENT_UNIT_NAMES[suggestedUnit]}`}
+                    >
+                      <Text style={[styles.suggestionAction, typography.labelMd]}>
+                        Usar {INGREDIENT_UNIT_LABELS[suggestedUnit]}
+                      </Text>
+                    </Pressable>
+                  )}
+              </View>
+            )}
+            {pendingUnitChange && (
+              <View
+                testID="unit-change-quantity-notice"
+                style={styles.warningPanel}
+                accessibilityRole="alert"
+                accessibilityLiveRegion="polite"
+              >
+                <View style={styles.warningRow}>
+                  <MaterialCommunityIcons
+                    name="swap-horizontal"
+                    size={18}
+                    color={colors.demoBadgeText}
+                  />
+                  <Text style={[styles.warningText, typography.bodySm]}>
+                    Cambiaste de {INGREDIENT_UNIT_NAMES[pendingUnitChange.from]} a{' '}
+                    {INGREDIENT_UNIT_NAMES[pendingUnitChange.to]}. La cantidad {quantityText.trim() || '—'}{' '}
+                    no se convirtió: confírmala o escribe una nueva.
+                  </Text>
+                </View>
+                <View style={styles.warningActions}>
+                  {pendingUnitChange.convertedText !== null && (
+                    <Pressable
+                      testID="convert-quantity-after-unit-change"
+                      style={({ pressed }) => [styles.warningAction, pressed && styles.buttonPressed]}
+                      onPress={() => {
+                        setQuantityText(pendingUnitChange.convertedText ?? quantityText);
+                        clearPendingUnitChange();
+                      }}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Convertir a ${pendingUnitChange.convertedText} ${INGREDIENT_UNIT_NAMES[pendingUnitChange.to]}`}
+                    >
+                      <Text style={[styles.warningActionText, typography.labelMd]}>
+                        Convertir a {pendingUnitChange.convertedText} {INGREDIENT_UNIT_LABELS[pendingUnitChange.to]}
+                      </Text>
+                    </Pressable>
+                  )}
+                  <Pressable
+                    testID="keep-quantity-after-unit-change"
+                    style={({ pressed }) => [styles.warningAction, pressed && styles.buttonPressed]}
+                    onPress={clearPendingUnitChange}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Mantener ${quantityText.trim()} ${INGREDIENT_UNIT_NAMES[pendingUnitChange.to]}`}
+                  >
+                    <Text style={[styles.warningActionText, typography.labelMd]}>
+                      Mantener {quantityText.trim()} {INGREDIENT_UNIT_LABELS[pendingUnitChange.to]}
+                    </Text>
+                  </Pressable>
+                </View>
+              </View>
+            )}
             {errors.unit && (
               <Text style={[styles.fieldError, typography.bodySm]}>
                 {errors.unit}
@@ -377,9 +647,12 @@ function IngredientFormSheet({
                       isSelected && styles.categoryTileSelected,
                       pressed && !isSelected && styles.chipPressed,
                     ]}
-                    onPress={() => setCategory(catOpt)}
+                    onPress={() => handleCategorySelect(catOpt)}
                     accessibilityRole="button"
                     accessibilityLabel={`Categoría: ${catOpt}`}
+                    accessibilityHint={
+                      catOpt === suggestedCategory ? 'Recomendada para este alimento' : undefined
+                    }
                     accessibilityState={{ selected: isSelected }}
                   >
                     <View style={[styles.categoryIconBox, { backgroundColor: visual.bgColor }]}>
@@ -404,12 +677,72 @@ function IngredientFormSheet({
                 );
               })}
             </View>
+            {suggestedCategory !== null &&
+              (categoryIsAutoSuggested || category !== suggestedCategory) && (
+                <View testID="category-suggestion-hint" style={styles.suggestionRow}>
+                  <MaterialCommunityIcons
+                    name="lightbulb-on-outline"
+                    size={16}
+                    color={colors.hintText}
+                  />
+                  <Text style={[styles.suggestionText, typography.bodySm]}>
+                    {categoryIsAutoSuggested
+                      ? 'Categoría sugerida según el nombre. Puedes cambiarla.'
+                      : `Sugerencia: ${suggestedCategory}.`}
+                  </Text>
+                  {!categoryIsAutoSuggested && (
+                    <Pressable
+                      testID="apply-category-suggestion"
+                      onPress={() => handleCategorySelect(suggestedCategory)}
+                      hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Usar categoría sugerida: ${suggestedCategory}`}
+                    >
+                      <Text style={[styles.suggestionAction, typography.labelMd]}>Usar</Text>
+                    </Pressable>
+                  )}
+                </View>
+              )}
             {errors.category && (
               <Text style={[styles.fieldError, typography.bodySm]}>
                 {errors.category}
               </Text>
             )}
           </View>
+
+          {/* Advertencias semánticas: no bloquean, pero exigen confirmación al guardar */}
+          {semanticWarnings.length > 0 && (
+            <View
+              testID="ingredient-semantic-warnings"
+              onLayout={(event) => {
+                warningsOffset.current = event.nativeEvent.layout.y;
+              }}
+              style={[styles.warningPanel, isWarningPromptActive && styles.warningPanelActive]}
+              accessibilityRole="alert"
+              accessibilityLiveRegion="polite"
+            >
+              <View style={styles.warningRow}>
+                <MaterialCommunityIcons name="alert-outline" size={18} color={colors.demoBadgeText} />
+                <Text style={[styles.warningTitle, typography.labelMd]}>
+                  Revisa esta combinación
+                </Text>
+              </View>
+              {semanticWarnings.map((warning) => (
+                <Text
+                  key={warning.code}
+                  testID={`semantic-warning-${warning.code}`}
+                  style={[styles.warningText, typography.bodySm]}
+                >
+                  {warning.message}
+                </Text>
+              ))}
+              <Text style={[styles.warningText, typography.bodySm]}>
+                {isWarningPromptActive
+                  ? 'Si los datos son correctos, pulsa «Guardar de todos modos».'
+                  : 'Puedes corregirlo o confirmarlo al guardar.'}
+              </Text>
+            </View>
+          )}
 
           {/* 4. Fecha de caducidad (opcional) con calendario */}
           <ExpirationDateField
@@ -463,7 +796,13 @@ function IngredientFormSheet({
           />
           <Button
             testID="submit-ingredient-form"
-            title={isEditing ? 'Guardar cambios' : 'Guardar alimento'}
+            title={
+              isWarningPromptActive
+                ? 'Guardar de todos modos'
+                : isEditing
+                  ? 'Guardar cambios'
+                  : 'Guardar alimento'
+            }
             variant="primary"
             size="lg"
             style={stackFooter ? styles.footerStackedButton : styles.footerSubmit}
@@ -477,7 +816,11 @@ function IngredientFormSheet({
               />
             }
             accessibilityLabel={
-              isEditing ? 'Confirmar y guardar cambios' : 'Guardar nuevo ingrediente'
+              isWarningPromptActive
+                ? 'Confirmar advertencias y guardar'
+                : isEditing
+                  ? 'Confirmar y guardar cambios'
+                  : 'Guardar nuevo ingrediente'
             }
           />
         </View>
@@ -714,6 +1057,69 @@ const createStyles = (colors: AppColors) =>
     fieldError: {
       color: colors.error,
       marginLeft: spacing.xs,
+    },
+    suggestionRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      flexWrap: 'wrap',
+      gap: spacing.xs,
+      paddingVertical: spacing.xs,
+      paddingHorizontal: spacing.sm,
+      borderRadius: radius.md + 2,
+      backgroundColor: colors.hintBackground,
+    },
+    suggestionText: {
+      flex: 1,
+      minWidth: 160,
+      color: colors.hintText,
+    },
+    suggestionAction: {
+      color: colors.hintText,
+      fontWeight: '700',
+      textDecorationLine: 'underline',
+    },
+    warningPanel: {
+      gap: spacing.xs,
+      padding: spacing.sm + 2,
+      borderRadius: radius.md + 4,
+      borderWidth: 1.5,
+      borderColor: 'transparent',
+      backgroundColor: colors.demoBadgeBackground,
+    },
+    warningPanelActive: {
+      borderColor: colors.demoBadgeText,
+    },
+    warningRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.xs,
+    },
+    warningTitle: {
+      flex: 1,
+      color: colors.demoBadgeText,
+      fontWeight: '700',
+    },
+    warningText: {
+      flex: 1,
+      color: colors.demoBadgeText,
+    },
+    warningActions: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: spacing.xs,
+    },
+    warningAction: {
+      minHeight: 44,
+      paddingHorizontal: spacing.sm + 4,
+      borderRadius: radius.full,
+      borderWidth: 1,
+      borderColor: colors.demoBadgeText,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    warningActionText: {
+      color: colors.demoBadgeText,
+      fontWeight: '700',
     },
     deleteTrigger: {
       flexDirection: 'row',

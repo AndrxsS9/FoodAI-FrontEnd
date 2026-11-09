@@ -26,7 +26,14 @@ import {
   ScannedIngredientAction,
   ScannedIngredientItem,
 } from '../../types/scanner';
-import { areUnitsCompatibleForAddition } from '../../utils/ingredientMapper';
+import {
+  areUnitsCompatibleForAddition,
+  suggestIngredientMeasurement,
+} from '../../utils/ingredientMapper';
+import {
+  getScannedItemSemanticWarnings,
+  isScannedItemSemanticallyConfirmed,
+} from '../../utils/pantryValidation';
 import {
   AppColors,
   getAppSurfaces,
@@ -51,6 +58,8 @@ export interface DetectedIngredientCardProps {
   onChangeCategory: (id: string, category: IngredientCategory) => void;
   onChangeAction: (id: string, action: ScannedIngredientAction) => void;
   onRemove: (id: string) => void;
+  /** Confirma explícitamente una combinación inusual de nombre, unidad y categoría. */
+  onConfirmWarnings?: (id: string) => void;
 }
 
 export function DetectedIngredientCard({
@@ -62,6 +71,7 @@ export function DetectedIngredientCard({
   onChangeCategory,
   onChangeAction,
   onRemove,
+  onConfirmWarnings,
 }: DetectedIngredientCardProps) {
   const typography = useTypography();
   const { colors, activeColorScheme } = useAppTheme();
@@ -89,6 +99,12 @@ export function DetectedIngredientCard({
   const isPossibleDuplicate = item.duplicateMatch?.matchType === 'possible';
   // Tono cálido del tema (legible en claro y oscuro) para avisos de revisión y posibles duplicados
   const warningTone = colors.demoBadgeText;
+  // Mismas reglas semánticas que el formulario manual; nunca modifican los datos detectados
+  const semanticWarnings = getScannedItemSemanticWarnings(item);
+  const semanticConfirmed =
+    semanticWarnings.length > 0 && isScannedItemSemanticallyConfirmed(item);
+  const unitSuggestion =
+    item.unit === 'desconocida' ? suggestIngredientMeasurement(item.name) : null;
 
   const handleQuantityTextChange = (text: string) => {
     setQuantityInput(text);
@@ -336,8 +352,82 @@ export function DetectedIngredientCard({
               );
             })}
           </View>
+          {unitSuggestion && unitSuggestion.suggestedUnits.length > 0 && (
+            <Text
+              testID={`detected-unit-suggestion-${item.id}`}
+              style={[styles.unitSuggestionText, typography.bodySm]}
+            >
+              Unidades sugeridas:{' '}
+              {unitSuggestion.suggestedUnits.map((u) => INGREDIENT_UNIT_LABELS[u]).join(', ')}
+            </Text>
+          )}
         </View>
       </View>
+
+      {/* Combinación inusual de nombre, unidad y categoría: se marca y se pide confirmación */}
+      {item.isSelected && semanticWarnings.length > 0 && (
+        <View
+          style={styles.semanticNotice}
+          testID={`detected-semantic-warning-${item.id}`}
+          accessibilityRole="alert"
+        >
+          {semanticWarnings.map((warning) => (
+            <View key={warning.code} style={styles.semanticWarningItem}>
+              <View style={styles.semanticNoticeRow}>
+                <MaterialCommunityIcons name="alert-outline" size={16} color={warningTone} />
+                <Text style={[styles.semanticNoticeText, typography.bodySm]}>
+                  {warning.message}
+                </Text>
+              </View>
+              {warning.suggestedCategory && (
+                <Pressable
+                  testID={`detected-apply-category-${item.id}`}
+                  style={({ pressed }) => [
+                    styles.suggestedCategoryButton,
+                    pressed && styles.removeButtonPressed,
+                  ]}
+                  onPress={() => onChangeCategory(item.id, warning.suggestedCategory!)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Cambiar categoría a ${warning.suggestedCategory}`}
+                >
+                  <MaterialCommunityIcons name="tag-outline" size={14} color={colors.primary} />
+                  <Text style={[styles.suggestedCategoryText, typography.labelMd]}>
+                    Cambiar a {warning.suggestedCategory}
+                  </Text>
+                </Pressable>
+              )}
+            </View>
+          ))}
+          {semanticConfirmed ? (
+            <View style={styles.semanticNoticeRow}>
+              <MaterialCommunityIcons name="check-circle-outline" size={16} color={warningTone} />
+              <Text
+                testID={`detected-semantic-confirmed-${item.id}`}
+                style={[styles.semanticNoticeText, typography.labelMd]}
+              >
+                Confirmaste que estos datos son correctos.
+              </Text>
+            </View>
+          ) : (
+            onConfirmWarnings && (
+              <Pressable
+                testID={`detected-semantic-confirm-${item.id}`}
+                style={({ pressed }) => [
+                  styles.semanticConfirmButton,
+                  pressed && styles.removeButtonPressed,
+                ]}
+                onPress={() => onConfirmWarnings(item.id)}
+                accessibilityRole="button"
+                accessibilityLabel={`Confirmar que los datos de ${item.name} son correctos`}
+              >
+                <Text style={[styles.semanticConfirmText, typography.labelMd]}>
+                  Los datos son correctos
+                </Text>
+              </Pressable>
+            )
+          )}
+        </View>
+      )}
 
       {/* Aviso cuando falta la cantidad */}
       {hasQuantityError && (
@@ -776,6 +866,59 @@ const createStyles = (colors: AppColors) => {
     errorNoticeText: {
       color: colors.onErrorContainer,
       flex: 1,
+    },
+    unitSuggestionText: {
+      color: colors.textSecondary,
+    },
+    semanticNotice: {
+      gap: spacing.xs,
+      backgroundColor: colors.demoBadgeBackground,
+      paddingVertical: spacing.sm,
+      paddingHorizontal: spacing.sm + 4,
+      borderRadius: radius.md + 4,
+    },
+    semanticWarningItem: {
+      gap: spacing.xs,
+    },
+    suggestedCategoryButton: {
+      alignSelf: 'flex-start',
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      minHeight: MIN_TOUCH_TARGET,
+      paddingHorizontal: spacing.sm + 4,
+      borderRadius: radius.full,
+      borderWidth: 1,
+      borderColor: colors.primary,
+      backgroundColor: colors.surface,
+      justifyContent: 'center',
+    },
+    suggestedCategoryText: {
+      color: colors.primary,
+      fontWeight: '700',
+    },
+    semanticNoticeRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: spacing.xs,
+    },
+    semanticNoticeText: {
+      color: colors.demoBadgeText,
+      flex: 1,
+    },
+    semanticConfirmButton: {
+      alignSelf: 'flex-start',
+      minHeight: MIN_TOUCH_TARGET,
+      paddingHorizontal: spacing.sm + 4,
+      borderRadius: radius.full,
+      borderWidth: 1,
+      borderColor: colors.demoBadgeText,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    semanticConfirmText: {
+      color: colors.demoBadgeText,
+      fontWeight: '700',
     },
     duplicateSection: {
       backgroundColor: colors.fieldBackground,

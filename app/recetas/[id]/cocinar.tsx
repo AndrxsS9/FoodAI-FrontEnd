@@ -28,7 +28,9 @@ import { useRecipes } from '../../../src/context/RecipeContext';
 import { useMealPlanSafe } from '../../../src/context/MealPlanContext';
 import { usePantrySafe } from '../../../src/context/PantryContext';
 import { calculatePantryDeduction } from '../../../src/utils/pantryConsumption';
-import { formatCopCurrency } from '../../../src/types/recipe';
+import { useLocale } from '../../../src/context/LocaleContext';
+import { getUnitShortLabel } from '../../../src/locales/labels';
+import { localizeMessage } from '../../../src/locales/messages';
 import {
   AppColors, getAppSurfaces,
   radius,
@@ -47,6 +49,7 @@ function StepCountdownCard({ stepDuration }: StepCountdownCardProps) {
   const typography = useTypography();
   const { colors } = useAppTheme();
   const styles = useThemeStyles(createStyles);
+  const { t } = useLocale();
   const initialSeconds = Math.round((stepDuration.minutes || 0) * 60);
   const [countdownSeconds, setCountdownSeconds] = useState(initialSeconds);
   const [isRunning, setIsRunning] = useState(false);
@@ -99,7 +102,7 @@ function StepCountdownCard({ stepDuration }: StepCountdownCardProps) {
           <MaterialCommunityIcons name="timer-sand" size={20} color={colors.primary} />
           <View>
             <Text style={[styles.stepTimerTitle, typography.labelMd]}>
-              Temporizador del paso
+              {t('cooking.stepTimerTitle')}
             </Text>
             {Boolean(stepDuration.action) && (
               <Text style={[styles.stepTimerSubtitle, typography.bodySm]}>
@@ -125,7 +128,7 @@ function StepCountdownCard({ stepDuration }: StepCountdownCardProps) {
         <View style={styles.stepTimerCompletedBadge} testID="cooking-countdown-completed">
           <MaterialCommunityIcons name="check-circle" size={16} color={colors.primary} />
           <Text style={[styles.stepTimerCompletedText, typography.labelSm]}>
-            ¡Tiempo del paso completado!
+            {t('cooking.stepTimerDone')}
           </Text>
         </View>
       )}
@@ -133,7 +136,7 @@ function StepCountdownCard({ stepDuration }: StepCountdownCardProps) {
       <View style={styles.stepTimerActionsRow}>
         <Button
           testID="cooking-step-countdown-toggle"
-          title={isRunning ? 'Pausar' : isCompleted ? 'Reiniciar' : 'Iniciar'}
+          title={isRunning ? t('cooking.pause') : isCompleted ? t('cooking.restart') : t('cooking.start')}
           variant="primary"
           size="sm"
           onPress={handleToggle}
@@ -147,7 +150,7 @@ function StepCountdownCard({ stepDuration }: StepCountdownCardProps) {
         />
         <Button
           testID="cooking-step-countdown-reset"
-          title="Restablecer"
+          title={t('cooking.reset')}
           variant="outline"
           size="sm"
           onPress={handleReset}
@@ -162,6 +165,7 @@ export default function GuidedCookingScreen() {
   const typography = useTypography();
   const { colors } = useAppTheme();
   const styles = useThemeStyles(createStyles);
+  const { t, tp, locale, format } = useLocale();
   const router = useRouter();
   const params = useLocalSearchParams<{ id?: string; fromPlan?: string }>();
   const recipeId = params.id ? String(params.id).trim() : '';
@@ -250,10 +254,19 @@ export default function GuidedCookingScreen() {
   // Estado y consumo confirmado de despensa
   const [isDeducted, setIsDeducted] = useState(false);
   const [isDeducting, setIsDeducting] = useState(false);
-  const [deductionFeedback, setDeductionFeedback] = useState<{
-    tone: 'success' | 'error';
-    message: string;
-  } | null>(null);
+  // Se guarda el dato (no el texto final) para que el mensaje siga el idioma activo.
+  const [deductionFeedback, setDeductionFeedback] = useState<
+    | { tone: 'success'; count: number }
+    | { tone: 'error'; message: string | null }
+    | null
+  >(null);
+  const deductionFeedbackText = !deductionFeedback
+    ? null
+    : deductionFeedback.tone === 'success'
+    ? tp('cooking.deductionSuccess', deductionFeedback.count)
+    : deductionFeedback.message
+    ? localizeMessage(deductionFeedback.message, locale, { fallbackKey: 'messages.consumption.fallback' })
+    : t('cooking.deductionFailed');
   // Solo una bandera explícita identifica la receta como demo; el bloqueo definitivo vive en PantryContext.
   const isDemoRecipe = recipe?.isDemoFixture === true;
 
@@ -282,10 +295,7 @@ export default function GuidedCookingScreen() {
       const result = await pantry.consumeRecipeIngredients(recipe);
       if (result.success) {
         setIsDeducted(true);
-        setDeductionFeedback({
-          tone: 'success',
-          message: `¡Descuento exitoso! Se descontaron ${result.deductedCount} ingredientes.`,
-        });
+        setDeductionFeedback({ tone: 'success', count: result.deductedCount });
         if (mealPlan && recipe.id) {
           await mealPlan.markRecipeCompleted(recipe.id);
         }
@@ -293,16 +303,10 @@ export default function GuidedCookingScreen() {
         if (result.alreadyDeducted) {
           setIsDeducted(true);
         }
-        setDeductionFeedback({
-          tone: 'error',
-          message: result.error || 'No se pudo aplicar el descuento.',
-        });
+        setDeductionFeedback({ tone: 'error', message: result.error || null });
       }
     } catch {
-      setDeductionFeedback({
-        tone: 'error',
-        message: 'Ocurrió un error al descontar ingredientes de la despensa.',
-      });
+      setDeductionFeedback({ tone: 'error', message: 'Ocurrió un error al descontar ingredientes de la despensa.' });
     } finally {
       setIsDeducting(false);
     }
@@ -356,27 +360,27 @@ export default function GuidedCookingScreen() {
           <Pressable
             testID="cooking-mode-exit-button"
             accessibilityRole="button"
-            accessibilityLabel="Salir de Modo Cocina"
+            accessibilityLabel={t('cooking.exit')}
             onPress={handleBack}
             style={styles.closeButton}
           >
             <MaterialCommunityIcons name="close" size={22} color={colors.textPrimary} />
           </Pressable>
-          <Text style={[styles.headerTitle, typography.headlineMd]}>Modo Cocina</Text>
+          <Text style={[styles.headerTitle, typography.headlineMd]}>{t('cooking.title')}</Text>
         </View>
 
         <View style={styles.centerContainer} testID="cooking-not-found-state">
           <Card variant="outlined" style={styles.emptyCard}>
             <MaterialCommunityIcons name="alert-circle-outline" size={48} color={colors.error} />
             <Text style={[styles.emptyTitle, typography.headlineMd]}>
-              Receta no encontrada
+              {t('cooking.notFoundTitle')}
             </Text>
             <Text style={[styles.emptyDesc, typography.bodyMd]}>
-              No es posible iniciar el Modo Cocina porque la receta solicitada no existe.
+              {t('cooking.notFoundDesc')}
             </Text>
             <Button
               testID="cooking-return-button"
-              title="Volver a recetas"
+              title={t('cooking.backToRecipes')}
               variant="primary"
               size="md"
               onPress={() => returnToTab(router, '/recetas')}
@@ -395,27 +399,27 @@ export default function GuidedCookingScreen() {
           <Pressable
             testID="cooking-mode-exit-button"
             accessibilityRole="button"
-            accessibilityLabel="Salir de Modo Cocina"
+            accessibilityLabel={t('cooking.exit')}
             onPress={handleBack}
             style={styles.closeButton}
           >
             <MaterialCommunityIcons name="close" size={22} color={colors.textPrimary} />
           </Pressable>
-          <Text style={[styles.headerTitle, typography.headlineMd]}>Modo Cocina</Text>
+          <Text style={[styles.headerTitle, typography.headlineMd]}>{t('cooking.title')}</Text>
         </View>
 
         <View style={styles.centerContainer} testID="cooking-no-steps-state">
           <Card variant="outlined" style={styles.emptyCard}>
             <MaterialCommunityIcons name="information-outline" size={48} color={colors.outline} />
             <Text style={[styles.emptyTitle, typography.headlineMd]}>
-              Sin instrucciones de preparación
+              {t('cooking.noStepsTitle')}
             </Text>
             <Text style={[styles.emptyDesc, typography.bodyMd]}>
-              Esta receta no cuenta con pasos de preparación registrados.
+              {t('cooking.noStepsDesc')}
             </Text>
             <Button
               testID="cooking-return-button"
-              title="Volver al detalle"
+              title={t('cooking.backToDetail')}
               variant="primary"
               size="md"
               onPress={handleBack}
@@ -439,7 +443,7 @@ export default function GuidedCookingScreen() {
           <Pressable
             testID="cooking-mode-exit-button"
             accessibilityRole="button"
-            accessibilityLabel="Salir de Modo Cocina"
+            accessibilityLabel={t('cooking.exit')}
             hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
             onPress={handleBack}
             style={styles.closeButton}
@@ -451,7 +455,7 @@ export default function GuidedCookingScreen() {
             numberOfLines={1}
             accessibilityRole="header"
           >
-            Modo Cocina
+            {t('cooking.title')}
           </Text>
         </View>
 
@@ -467,7 +471,7 @@ export default function GuidedCookingScreen() {
             onPress={handleToggleTimer}
             onLongPress={handleResetTimer}
             accessibilityRole="button"
-            accessibilityLabel={`Temporizador de cocina: ${formatTimer(timerSeconds)}. Presiona para pausar o iniciar, mantén presionado para reiniciar.`}
+            accessibilityLabel={t('cooking.timerLabel', { time: formatTimer(timerSeconds) })}
           >
             <MaterialCommunityIcons
               name={isTimerRunning ? 'pause' : 'timer-outline'}
@@ -504,7 +508,7 @@ export default function GuidedCookingScreen() {
             </Text>
             <View style={styles.servingsPill}>
               <Text style={[styles.servingsPillText, typography.labelSm]}>
-                {recipe.servings} comensales
+                {tp('cooking.diners', recipe.servings)}
               </Text>
             </View>
           </View>
@@ -514,13 +518,13 @@ export default function GuidedCookingScreen() {
               style={[styles.stepCountText, typography.labelMd]}
               testID="cooking-step-counter"
             >
-              Paso {currentStepIndex + 1} de {totalSteps}
+              {t('cooking.stepCounter', { current: currentStepIndex + 1, total: totalSteps })}
             </Text>
             <Text
               style={[styles.stepPercentText, typography.labelSm]}
               testID="cooking-step-percentage"
             >
-              {progressPercent}% completado
+              {t('cooking.percentComplete', { percent: progressPercent })}
             </Text>
           </View>
 
@@ -546,7 +550,7 @@ export default function GuidedCookingScreen() {
               </Text>
             </View>
             <Text style={[styles.stepBadgeLabel, typography.labelSm]}>
-              INSTRUCCIÓN ACTIVA
+              {t('cooking.activeInstruction')}
             </Text>
           </View>
 
@@ -561,8 +565,8 @@ export default function GuidedCookingScreen() {
           <View style={styles.tipBox} testID="cooking-step-tip">
             <MaterialCommunityIcons name="lightbulb-on-outline" size={20} color={colors.secondary} style={styles.tipIcon} />
             <Text style={[styles.tipText, typography.bodySm]}>
-              <Text style={styles.tipBold}>Consejo: </Text>
-              Mantén el fuego controlado y los utensilios secos antes de incorporar los alimentos.
+              <Text style={styles.tipBold}>{t('cooking.tipLabel')}</Text>
+              {t('cooking.tipText')}
             </Text>
           </View>
         </Card>
@@ -581,11 +585,11 @@ export default function GuidedCookingScreen() {
             <View style={styles.stepIngredientsLeft}>
               <MaterialCommunityIcons name="silverware-fork-knife" size={18} color={colors.outline} />
               <Text style={[styles.stepIngredientsTitle, typography.labelMd]}>
-                Ingredientes de referencia
+                {t('cooking.referenceIngredients')}
               </Text>
             </View>
             <Text style={[styles.stepIngredientsCount, typography.labelSm]}>
-              {activeStepIngredients.length} sugeridos
+              {tp('cooking.suggestedCount', activeStepIngredients.length)}
             </Text>
           </View>
 
@@ -608,10 +612,10 @@ export default function GuidedCookingScreen() {
             onPress={handleJumpToEnd}
             style={styles.jumpEndButton}
             accessibilityRole="button"
-            accessibilityLabel="Saltar al último paso de la receta"
+            accessibilityLabel={t('cooking.jumpToEndLabel')}
           >
             <Text style={[styles.jumpEndText, typography.labelSm]}>
-              Saltar al final →
+              {t('cooking.jumpToEnd')}
             </Text>
           </Pressable>
         )}
@@ -622,7 +626,7 @@ export default function GuidedCookingScreen() {
         <View style={styles.controlButtonWrapper}>
           <Button
             testID="cooking-prev-step-button"
-            title="Anterior"
+            title={t('cooking.previous')}
             variant="outline"
             size="lg"
             fullWidth
@@ -635,14 +639,14 @@ export default function GuidedCookingScreen() {
                 color={isFirstStep ? colors.outlineVariant : colors.textPrimary}
               />
             }
-            accessibilityLabel="Paso anterior"
+            accessibilityLabel={t('cooking.previousLabel')}
           />
         </View>
 
         <View style={styles.controlButtonWrapper}>
           <Button
             testID="cooking-next-step-button"
-            title={isLastStep ? 'Finalizar preparación' : 'Siguiente'}
+            title={isLastStep ? t('cooking.finish') : t('cooking.next')}
             variant="primary"
             size="lg"
             fullWidth
@@ -654,7 +658,7 @@ export default function GuidedCookingScreen() {
                 color={colors.onPrimary}
               />
             }
-            accessibilityLabel={isLastStep ? 'Finalizar preparación de la receta' : 'Siguiente paso'}
+            accessibilityLabel={isLastStep ? t('cooking.finishLabel') : t('cooking.nextLabel')}
           />
         </View>
       </View>
@@ -673,20 +677,20 @@ export default function GuidedCookingScreen() {
               </View>
 
               <Text style={[styles.finishTitle, typography.headlineXl]}>
-                ¡Buen provecho!
+                {t('cooking.enjoy')}
               </Text>
 
               <Text style={[styles.finishDesc, typography.bodyMd]}>
-                Completaste tu plato de «{recipe.name}» aprovechando al máximo cada ingrediente de tu despensa sin desperdicios.
+                {t('cooking.finishDesc', { name: recipe.name })}
               </Text>
 
               <View style={styles.finishMetricsBox}>
                 <View style={styles.finishMetricItem}>
                   <Text style={[styles.finishMetricLabel, typography.labelSm]}>
-                    Tiempo de cocina
+                    {t('cooking.cookingTime')}
                   </Text>
                   <Text style={[styles.finishMetricValue, typography.headlineMd]}>
-                    {timerSeconds > 0 ? formatTimer(timerSeconds) : `${recipe.totalMinutes} min`}
+                    {timerSeconds > 0 ? formatTimer(timerSeconds) : t('minutesShort', { count: recipe.totalMinutes })}
                   </Text>
                 </View>
 
@@ -694,10 +698,10 @@ export default function GuidedCookingScreen() {
 
                 <View style={styles.finishMetricItem}>
                   <Text style={[styles.finishMetricLabel, typography.labelSm]}>
-                    Compra adicional
+                    {t('cooking.extraPurchase')}
                   </Text>
                   <Text style={[styles.finishMetricValue, typography.headlineMd, { color: colors.secondary }]}>
-                    {formatCopCurrency(recipe.estimatedMissingCost)}
+                    {format.currency(recipe.estimatedMissingCost)}
                   </Text>
                 </View>
               </View>
@@ -707,7 +711,7 @@ export default function GuidedCookingScreen() {
                 <View style={styles.deductedBadge} testID="cooking-already-deducted-badge">
                   <MaterialCommunityIcons name="check-circle" size={18} color={colors.primary} />
                   <Text style={[styles.deductedBadgeText, typography.labelSm]}>
-                    Ingredientes ya descontados de tu despensa
+                    {t('cooking.alreadyDeducted')}
                   </Text>
                 </View>
               ) : pantry ? (
@@ -715,7 +719,7 @@ export default function GuidedCookingScreen() {
                   <View style={styles.deductionHeaderRow}>
                     <MaterialCommunityIcons name="clipboard-list-outline" size={18} color={colors.primary} />
                     <Text style={[styles.deductionTitle, typography.labelMd]}>
-                      Descuento en despensa
+                      {t('cooking.deductionTitle')}
                     </Text>
                   </View>
 
@@ -724,7 +728,7 @@ export default function GuidedCookingScreen() {
                       style={[styles.deductionEmptyText, typography.bodySm]}
                       testID="cooking-demo-deduction-notice"
                     >
-                      Esta es una receta de demostración: no descuenta ingredientes de tu despensa real.
+                      {t('cooking.demoNotice')}
                     </Text>
                   ) : deductionPlan && deductionPlan.deductibleItems.length > 0 ? (
                     <View style={styles.deductibleList} testID="cooking-deductible-list">
@@ -732,27 +736,35 @@ export default function GuidedCookingScreen() {
                         <View key={`deduct-${idx}`} style={styles.deductibleRow} testID={`cooking-deduct-item-${idx}`}>
                           <MaterialCommunityIcons name="minus-circle-outline" size={16} color={colors.primary} />
                           <Text style={[styles.deductibleText, typography.bodySm]}>
-                            {item.recipeIngredientName}: -{item.deductQuantity} {item.pantryUnit || item.recipeUnit} (quedan {item.stockAfter} {item.pantryUnit || item.recipeUnit})
+                            {t('cooking.deductItem', {
+                              name: item.recipeIngredientName,
+                              quantity: item.deductQuantity,
+                              unit: getUnitShortLabel(String(item.pantryUnit || item.recipeUnit || ''), locale),
+                              remaining: item.stockAfter,
+                            })}
                           </Text>
                         </View>
                       ))}
                     </View>
                   ) : (
                     <Text style={[styles.deductionEmptyText, typography.bodySm]}>
-                      No hay ingredientes coincidentes para descontar de tu despensa.
+                      {t('cooking.noMatches')}
                     </Text>
                   )}
 
                   {!isDemoRecipe && deductionPlan && deductionPlan.reviewItems.length > 0 && (
                     <View style={styles.reviewList} testID="cooking-review-list">
                       <Text style={[styles.reviewHeader, typography.labelSm]}>
-                        Requieren revisión manual ({deductionPlan.reviewItems.length})
+                        {t('cooking.reviewHeader', { count: deductionPlan.reviewItems.length })}
                       </Text>
                       {deductionPlan.reviewItems.map((item, idx) => (
                         <View key={`review-${idx}`} style={styles.reviewRow} testID={`cooking-review-item-${idx}`}>
                           <MaterialCommunityIcons name="information-outline" size={14} color={colors.secondary} />
                           <Text style={[styles.reviewText, typography.bodySm]}>
-                            {item.recipeIngredientName} ({item.message})
+                            {t('cooking.reviewItem', {
+                              name: item.recipeIngredientName,
+                              message: localizeMessage(item.message, locale, { passthroughUnknown: true }) ?? '',
+                            })}
                           </Text>
                         </View>
                       ))}
@@ -761,7 +773,7 @@ export default function GuidedCookingScreen() {
 
                   <Button
                     testID="cooking-confirm-deduction-button"
-                    title={isDeducting ? 'Descontando...' : 'Confirmar descuento en despensa'}
+                    title={isDeducting ? t('cooking.deducting') : t('cooking.confirmDeduction')}
                     variant="secondary"
                     size="sm"
                     fullWidth
@@ -782,7 +794,7 @@ export default function GuidedCookingScreen() {
                 <View style={styles.deductionSuccessBadge} testID="cooking-deduction-success">
                   <MaterialCommunityIcons name="check-circle-outline" size={16} color={colors.primary} />
                   <Text style={[styles.deductionSuccessText, typography.labelSm]}>
-                    {deductionFeedback.message}
+                    {deductionFeedbackText}
                   </Text>
                 </View>
               )}
@@ -795,7 +807,7 @@ export default function GuidedCookingScreen() {
                 >
                   <MaterialCommunityIcons name="alert-circle-outline" size={16} color={colors.error} />
                   <Text style={[styles.deductionErrorText, typography.labelSm]}>
-                    {deductionFeedback.message}
+                    {deductionFeedbackText}
                   </Text>
                 </View>
               )}
@@ -803,7 +815,7 @@ export default function GuidedCookingScreen() {
               <View style={styles.finishActions}>
                 <Button
                   testID="cooking-finish-confirm-button"
-                  title="Volver a la despensa"
+                  title={t('cooking.backToPantry')}
                   variant="primary"
                   size="md"
                   fullWidth
@@ -811,7 +823,7 @@ export default function GuidedCookingScreen() {
                 />
                 <Button
                   testID="cooking-finish-review-button"
-                  title="Revisar los pasos"
+                  title={t('cooking.reviewSteps')}
                   variant="outline"
                   size="md"
                   fullWidth

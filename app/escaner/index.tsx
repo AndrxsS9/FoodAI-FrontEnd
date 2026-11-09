@@ -56,12 +56,16 @@ import {
   isScannedItemSemanticallyConfirmed,
 } from '../../src/utils/pantryValidation';
 import { returnToTab } from '../../src/utils/tabNavigation';
+import { useLocale } from '../../src/context/LocaleContext';
+import type { MessageKey } from '../../src/locales';
+import { localizeCodedError } from '../../src/locales/messages';
 
 export default function ScannerScreen() {
   const typography = useTypography();
   const router = useRouter();
   const { colors } = useAppTheme();
   const styles = useThemeStyles(createStyles);
+  const { t, tx, tp, locale } = useLocale();
   const insets = useSafeAreaInsets();
   const { width: windowWidth } = useWindowDimensions();
   const { ingredients, addIngredient, mergeIngredientQuantity } = usePantry();
@@ -71,11 +75,15 @@ export default function ScannerScreen() {
   const [selectedImage, setSelectedImage] = useState<SelectedImage | null>(null);
   const [scannedItems, setScannedItems] = useState<ScannedIngredientItem[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // Código estable del error de la API del escáner (Fase 28C-A): se traduce por código.
+  const [errorCode, setErrorCode] = useState<string | null>(null);
+  const localizedErrorMessage = localizeCodedError('scanner', errorCode, errorMessage, locale);
   // Código de diagnóstico seguro (sin tokens ni URIs) para validar fallas en dispositivo físico
   const [errorDiagnostic, setErrorDiagnostic] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-  const [analysisProgressText, setAnalysisProgressText] = useState(
-    'Preparando imagen...'
+  // Se guarda la clave (no el texto) para que el progreso siga el idioma activo.
+  const [analysisProgressKey, setAnalysisProgressText] = useState<MessageKey>(
+    'scanner.preparingImage'
   );
   const [saveSummary, setSaveSummary] = useState<ScannerSaveSummary | null>(null);
   // Altura del teclado: el pie fijo se oculta y el contenido gana espacio para seguir siendo alcanzable
@@ -91,6 +99,7 @@ export default function ScannerScreen() {
   const processSelectedAsset = async (asset: ImagePicker.ImagePickerAsset) => {
     if (!isMountedRef.current) return;
     setErrorMessage(null);
+    setErrorCode(null);
     setErrorDiagnostic(null);
     const mimeType = asset.mimeType || inferMimeTypeFromUri(asset.uri);
     const candidateValidation = validateImageCandidate({
@@ -264,8 +273,9 @@ export default function ScannerScreen() {
 
     setStep('analyzing');
     setErrorMessage(null);
+    setErrorCode(null);
     setErrorDiagnostic(null);
-    setAnalysisProgressText('Verificando y optimizando imagen...');
+    setAnalysisProgressText('scanner.verifyingImage');
 
     let analysisStage: 'prepare' | 'analyze' = 'prepare';
 
@@ -282,7 +292,7 @@ export default function ScannerScreen() {
         return;
       }
 
-      setAnalysisProgressText('Analizando alimentos con IA...');
+      setAnalysisProgressText('scanner.analyzingWithAi');
       analysisStage = 'analyze';
       const detected = await scannerApi.analyzeIngredientsImage(uploadReady, {
         signal: controller.signal,
@@ -331,8 +341,10 @@ export default function ScannerScreen() {
       let msg =
         'No se pudo completar el análisis de los alimentos. Intenta nuevamente.';
       let diagnostic: string | null = null;
+      let code: string | null = null;
       if (err instanceof ScannerApiError) {
         msg = err.message;
+        code = err.code;
         diagnostic = formatScannerDiagnostic(err);
       } else if (err instanceof Error) {
         msg = err.message;
@@ -341,6 +353,7 @@ export default function ScannerScreen() {
       }
 
       setErrorMessage(msg);
+      setErrorCode(code);
       setErrorDiagnostic(diagnostic);
       setStep('error');
     } finally {
@@ -549,6 +562,7 @@ export default function ScannerScreen() {
     setSelectedImage(null);
     setScannedItems([]);
     setErrorMessage(null);
+    setErrorCode(null);
     setSaveSummary(null);
     setStep('capture');
   };
@@ -583,8 +597,8 @@ export default function ScannerScreen() {
             }
           }}
           accessibilityRole="button"
-          accessibilityLabel="Volver"
-          accessibilityHint="Regresar a la pantalla anterior"
+          accessibilityLabel={t('scanner.back')}
+          accessibilityHint={t('scanner.backHint')}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           style={({ pressed }) => [styles.headerBack, pressed && styles.headerBackPressed]}
         >
@@ -610,10 +624,10 @@ export default function ScannerScreen() {
             ]}
             accessibilityRole="header"
           >
-            Escáner Inteligente
+            {t('scanner.title')}
           </Text>
           <Text style={[styles.headerSubtitle, typography.bodySm]}>
-            Detecta ingredientes con tu cámara e IA
+            {t('scanner.subtitle')}
           </Text>
         </View>
       </View>
@@ -628,14 +642,19 @@ export default function ScannerScreen() {
         testID="scanner-scroll-view"
       >
         {/* Banner general de error */}
-        {errorMessage && step !== 'error' && (
+        {localizedErrorMessage && step !== 'error' && (
           <View style={styles.errorBanner} testID="scanner-top-error-banner">
             <MaterialCommunityIcons name="alert-circle-outline" size={20} color={colors.error} />
             <Text style={[styles.errorBannerText, typography.bodySm]}>
-              {errorMessage}
+              {localizedErrorMessage}
             </Text>
             <Pressable
-              onPress={() => setErrorMessage(null)}
+              onPress={() => {
+                setErrorMessage(null);
+                setErrorCode(null);
+              }}
+              accessibilityRole="button"
+              accessibilityLabel={t('scanner.dismissError')}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
               <MaterialCommunityIcons name="close" size={16} color={colors.error} />
@@ -654,7 +673,7 @@ export default function ScannerScreen() {
                   source={require('../../assets/images/scanner-viewfinder.jpg')}
                   style={styles.viewfinderImage}
                   resizeMode="cover"
-                  accessibilityLabel="Visor de escáner con ingredientes sobre la mesa"
+                  accessibilityLabel={t('scanner.viewfinderLabel')}
                 />
                 <View style={styles.viewfinderReticleOverlay}>
                   <View
@@ -681,7 +700,7 @@ export default function ScannerScreen() {
                       typography.labelMd,
                     ]}
                   >
-                    Centra tus alimentos
+                    {t('scanner.centerFood')}
                   </Text>
                 </View>
               </View>
@@ -689,12 +708,12 @@ export default function ScannerScreen() {
               <View style={styles.captureActions}>
                 <Button
                   testID="scanner-take-photo-button"
-                  title="Tomar foto"
+                  title={t('scanner.takePhoto')}
                   variant="primary"
                   size="lg"
                   fullWidth
                   onPress={() => { void handleLaunchCamera(); }}
-                  accessibilityLabel="Tomar fotografía con la cámara"
+                  accessibilityLabel={t('scanner.takePhotoLabel')}
                   leftIcon={
                     <MaterialCommunityIcons
                       name="camera-plus-outline"
@@ -706,12 +725,12 @@ export default function ScannerScreen() {
 
                 <Button
                   testID="scanner-gallery-button"
-                  title="Elegir de la galería"
+                  title={t('scanner.gallery')}
                   variant="outline"
                   size="md"
                   fullWidth
                   onPress={() => { void handleLaunchGallery(); }}
-                  accessibilityLabel="Seleccionar fotografía de la galería"
+                  accessibilityLabel={t('scanner.galleryLabel')}
                   leftIcon={
                     <MaterialCommunityIcons
                       name="image-multiple-outline"
@@ -730,7 +749,7 @@ export default function ScannerScreen() {
                   <MaterialCommunityIcons name="lightbulb-on-outline" size={18} color={colors.primary} />
                 </View>
                 <Text style={[styles.tipsTitle, typography.headlineMd]}>
-                  Consejos para una detección óptima
+                  {t('scanner.tipsTitle')}
                 </Text>
               </View>
               <View style={styles.tipItem}>
@@ -740,7 +759,7 @@ export default function ScannerScreen() {
                   color={colors.primary}
                 />
                 <Text style={[styles.tipText, typography.bodySm]}>
-                  Coloca los alimentos sobre una superficie despejada y con buena iluminación.
+                  {t('scanner.tip1')}
                 </Text>
               </View>
               <View style={styles.tipItem}>
@@ -750,7 +769,7 @@ export default function ScannerScreen() {
                   color={colors.primary}
                 />
                 <Text style={[styles.tipText, typography.bodySm]}>
-                  Evita que se superpongan o queden cubiertos por bolsas oscuras.
+                  {t('scanner.tip2')}
                 </Text>
               </View>
               <View style={styles.tipItem}>
@@ -760,7 +779,7 @@ export default function ScannerScreen() {
                   color={colors.primary}
                 />
                 <Text style={[styles.tipText, typography.bodySm]}>
-                  Siempre podrás editar las cantidades o corregir los nombres antes de guardar.
+                  {t('scanner.tip3')}
                 </Text>
               </View>
             </Card>
@@ -778,7 +797,7 @@ export default function ScannerScreen() {
                   source={{ uri: selectedImage.uri }}
                   style={styles.previewImage}
                   resizeMode="cover"
-                  accessibilityLabel="Vista previa de la fotografía seleccionada"
+                  accessibilityLabel={t('scanner.previewImageLabel')}
                 />
               </View>
 
@@ -786,18 +805,18 @@ export default function ScannerScreen() {
                 <View style={styles.previewBadgeRow}>
                   <MaterialCommunityIcons name="check" size={16} color={colors.primary} />
                   <Text style={[styles.previewBadgeText, typography.labelSm]}>
-                    Foto lista para analizar
+                    {t('scanner.photoReady')}
                   </Text>
                 </View>
                 <Text style={[styles.previewDesc, typography.bodySm]}>
-                  Al presionar «Analizar alimentos», Gemini identificará los alimentos visibles.
+                  {t('scanner.previewDesc')}
                 </Text>
               </View>
 
               <View style={styles.previewButtonsRow}>
                 <Button
                   testID="scanner-analyze-button"
-                  title="Analizar alimentos"
+                  title={t('scanner.analyze')}
                   variant="primary"
                   size="lg"
                   fullWidth
@@ -809,27 +828,27 @@ export default function ScannerScreen() {
                       color={colors.onPrimary}
                     />
                   }
-                  accessibilityLabel="Analizar alimentos de la imagen con inteligencia artificial"
+                  accessibilityLabel={t('scanner.analyzeLabel')}
                 />
 
                 <View style={styles.secondaryButtonsRow}>
                   <Button
                     testID="scanner-retake-button"
-                    title="Cambiar foto"
+                    title={t('scanner.changePhoto')}
                     variant="outline"
                     size="md"
                     style={{ flex: 1 }}
                     onPress={() => { void handleLaunchGallery(); }}
-                    accessibilityLabel="Cambiar fotografía seleccionada"
+                    accessibilityLabel={t('scanner.changePhotoLabel')}
                   />
                   <Button
                     testID="scanner-cancel-preview-button"
-                    title="Cancelar"
+                    title={t('common.cancel')}
                     variant="ghost"
                     size="md"
                     style={{ flex: 1 }}
                     onPress={handleResetScanner}
-                    accessibilityLabel="Cancelar y volver a la captura"
+                    accessibilityLabel={t('scanner.cancelPreviewLabel')}
                   />
                 </View>
               </View>
@@ -848,24 +867,24 @@ export default function ScannerScreen() {
               </View>
 
               <Text style={[styles.analyzingTitle, typography.headlineMd]}>
-                Reconociendo alimentos
+                {t('scanner.recognizing')}
               </Text>
 
               <Text style={[styles.analyzingProgress, typography.bodyMd]}>
-                {analysisProgressText}
+                {tx(analysisProgressKey)}
               </Text>
 
               <Text style={[styles.analyzingSubtext, typography.bodySm]}>
-                Esto suele tardar unos segundos. Por favor no cierres la aplicación.
+                {t('scanner.analyzingHint')}
               </Text>
 
               <Button
                 testID="scanner-abort-button"
-                title="Cancelar análisis"
+                title={t('scanner.cancelAnalysis')}
                 variant="outline"
                 size="sm"
                 onPress={handleCancelAnalysis}
-                accessibilityLabel="Cancelar análisis en curso"
+                accessibilityLabel={t('scanner.cancelAnalysisLabel')}
               />
             </Card>
           </View>
@@ -888,7 +907,7 @@ export default function ScannerScreen() {
                     ]}
                     accessibilityRole="header"
                   >
-                    {scannedItems.length} alimento{scannedItems.length === 1 ? '' : 's'} detectado{scannedItems.length === 1 ? '' : 's'}
+                    {tp('scanner.detectedCount', scannedItems.length)}
                   </Text>
                 </View>
                 <View style={styles.selectLinksRow}>
@@ -897,10 +916,10 @@ export default function ScannerScreen() {
                     onPress={() => handleSelectAll(true)}
                     style={({ pressed }) => [styles.selectLink, pressed && styles.selectLinkPressed]}
                     accessibilityRole="button"
-                    accessibilityLabel="Seleccionar todos los alimentos detectados"
+                    accessibilityLabel={t('scanner.selectAllLabel')}
                     accessibilityState={{ selected: allSelected }}
                   >
-                    <Text style={[styles.selectLinkText, typography.labelLg]}>Todos</Text>
+                    <Text style={[styles.selectLinkText, typography.labelLg]}>{t('scanner.all')}</Text>
                   </Pressable>
                   <View style={styles.selectLinkDivider} />
                   <Pressable
@@ -908,15 +927,15 @@ export default function ScannerScreen() {
                     onPress={() => handleSelectAll(false)}
                     style={({ pressed }) => [styles.selectLink, pressed && styles.selectLinkPressed]}
                     accessibilityRole="button"
-                    accessibilityLabel="Quitar la selección de todos los alimentos"
+                    accessibilityLabel={t('scanner.deselectAllLabel')}
                     accessibilityState={{ selected: noneSelected }}
                   >
-                    <Text style={[styles.selectLinkText, typography.labelLg]}>Ninguno</Text>
+                    <Text style={[styles.selectLinkText, typography.labelLg]}>{t('scanner.none')}</Text>
                   </Pressable>
                 </View>
               </View>
               <Text style={[styles.reviewSubheading, typography.bodyMd]}>
-                Revisa y corrige los datos antes de guardarlos.
+                {t('scanner.reviewSubheading')}
               </Text>
             </View>
 
@@ -928,7 +947,7 @@ export default function ScannerScreen() {
               >
                 <MaterialCommunityIcons name="alert-outline" size={18} color={colors.demoBadgeText} />
                 <Text style={[styles.missingQuantityText, typography.bodySm]}>
-                  Hay {itemsWithMissingQuantity.length} alimento{itemsWithMissingQuantity.length === 1 ? '' : 's'} sin cantidad definida. Ingresa un número positivo en cada uno para poder guardarlo.
+                  {tp('scanner.missingQuantity', itemsWithMissingQuantity.length)}
                 </Text>
               </View>
             )}
@@ -941,7 +960,7 @@ export default function ScannerScreen() {
               >
                 <MaterialCommunityIcons name="alert-outline" size={18} color={colors.demoBadgeText} />
                 <Text style={[styles.missingQuantityText, typography.bodySm]}>
-                  Hay {itemsWithUnconfirmedWarnings.length} alimento{itemsWithUnconfirmedWarnings.length === 1 ? '' : 's'} con una unidad o categoría inusual. Corrígelo o confirma que los datos son correctos.
+                  {tp('scanner.unconfirmedWarnings', itemsWithUnconfirmedWarnings.length)}
                 </Text>
               </View>
             )}
@@ -974,10 +993,10 @@ export default function ScannerScreen() {
             <Card variant="elevated" style={styles.analyzingCard}>
               <ActivityIndicator size="large" color={colors.primary} />
               <Text style={[styles.analyzingTitle, typography.headlineMd]}>
-                Guardando en tu despensa
+                {t('scanner.savingTitle')}
               </Text>
               <Text style={[styles.analyzingProgress, typography.bodyMd]}>
-                Sincronizando alimentos con tu despensa local...
+                {t('scanner.savingDesc')}
               </Text>
             </Card>
           </View>
@@ -994,11 +1013,11 @@ export default function ScannerScreen() {
               </View>
 
               <Text style={[styles.completedTitle, typography.headlineMd]}>
-                ¡Alimentos guardados con éxito!
+                {t('scanner.completedTitle')}
               </Text>
 
               <Text style={[styles.completedDesc, typography.bodyMd]}>
-                Tus ingredientes confirmados ya están sincronizados con tu despensa y listos para recomendar recetas.
+                {t('scanner.completedDesc')}
               </Text>
 
               <View style={styles.summaryStatsBox}>
@@ -1006,7 +1025,8 @@ export default function ScannerScreen() {
                   <View style={styles.statRow}>
                     <MaterialCommunityIcons name="plus-circle-outline" size={18} color={colors.primary} />
                     <Text style={[styles.statText, typography.bodyMd]}>
-                      <Text style={{ fontWeight: '700' }}>{saveSummary.savedCount}</Text> alimento{saveSummary.savedCount === 1 ? '' : 's'} nuevo{saveSummary.savedCount === 1 ? '' : 's'} agregado{saveSummary.savedCount === 1 ? '' : 's'}.
+                      <Text style={{ fontWeight: '700' }}>{saveSummary.savedCount}</Text>
+                      {tp('scanner.savedSuffix', saveSummary.savedCount)}
                     </Text>
                   </View>
                 )}
@@ -1015,7 +1035,8 @@ export default function ScannerScreen() {
                   <View style={styles.statRow}>
                     <MaterialCommunityIcons name="sync" size={18} color={colors.tertiary} />
                     <Text style={[styles.statText, typography.bodyMd]}>
-                      <Text style={{ fontWeight: '700' }}>{saveSummary.updatedCount}</Text> alimento{saveSummary.updatedCount === 1 ? '' : 's'} existente{saveSummary.updatedCount === 1 ? '' : 's'} actualizado{saveSummary.updatedCount === 1 ? '' : 's'}.
+                      <Text style={{ fontWeight: '700' }}>{saveSummary.updatedCount}</Text>
+                      {tp('scanner.updatedSuffix', saveSummary.updatedCount)}
                     </Text>
                   </View>
                 )}
@@ -1024,7 +1045,10 @@ export default function ScannerScreen() {
                   <View style={styles.statRow}>
                     <MaterialCommunityIcons name="alert-circle" size={18} color={colors.error} />
                     <Text style={[styles.statText, typography.bodySm, { color: colors.error }]}>
-                      {saveSummary.failedCount} no se pudieron guardar ({saveSummary.failedNames.join(', ')}).
+                      {t('scanner.failedSummary', {
+                        count: saveSummary.failedCount,
+                        names: saveSummary.failedNames.join(', '),
+                      })}
                     </Text>
                   </View>
                 )}
@@ -1033,7 +1057,7 @@ export default function ScannerScreen() {
               <View style={styles.completedButtons}>
                 <Button
                   testID="scanner-go-to-pantry-button"
-                  title="Ver Mi Despensa"
+                  title={t('scanner.goToPantry')}
                   variant="primary"
                   size="lg"
                   fullWidth
@@ -1045,12 +1069,12 @@ export default function ScannerScreen() {
                       color={colors.onPrimary}
                     />
                   }
-                  accessibilityLabel="Ir a la pantalla de Mi Despensa"
+                  accessibilityLabel={t('scanner.goToPantryLabel')}
                 />
 
                 <Button
                   testID="scanner-scan-again-button"
-                  title="Escanear más alimentos"
+                  title={t('scanner.scanMore')}
                   variant="outline"
                   size="md"
                   fullWidth
@@ -1062,17 +1086,17 @@ export default function ScannerScreen() {
                       color={colors.primary}
                     />
                   }
-                  accessibilityLabel="Escanear más alimentos con la cámara"
+                  accessibilityLabel={t('scanner.scanMoreLabel')}
                 />
 
                 <Button
                   testID="scanner-go-home-button"
-                  title="Volver al Inicio"
+                  title={t('scanner.goHome')}
                   variant="ghost"
                   size="md"
                   fullWidth
                   onPress={() => returnToTab(router, '/(tabs)')}
-                  accessibilityLabel="Volver a la pantalla de Inicio"
+                  accessibilityLabel={t('scanner.goHomeLabel')}
                 />
               </View>
             </Card>
@@ -1090,12 +1114,11 @@ export default function ScannerScreen() {
               </View>
 
               <Text style={[styles.errorStateTitle, typography.headlineMd]}>
-                No pudimos procesar la imagen
+                {t('scanner.errorTitle')}
               </Text>
 
               <Text style={[styles.errorStateDesc, typography.bodyMd]}>
-                {errorMessage ||
-                  'Ocurrió un problema de comunicación o la imagen no pudo ser interpretada correctamente por el servidor de IA.'}
+                {localizedErrorMessage || t('scanner.errorDefault')}
               </Text>
 
               {errorDiagnostic && (
@@ -1103,7 +1126,7 @@ export default function ScannerScreen() {
                   testID="scanner-error-diagnostic"
                   style={[styles.errorStateDiagnostic, typography.labelSm]}
                 >
-                  Código de diagnóstico: {errorDiagnostic}
+                  {t('scanner.diagnosticLabel')}{errorDiagnostic}
                 </Text>
               )}
 
@@ -1111,7 +1134,7 @@ export default function ScannerScreen() {
                 {selectedImage && (
                   <Button
                     testID="scanner-retry-analysis-button"
-                    title="Reintentar análisis"
+                    title={t('scanner.retryAnalysis')}
                     variant="primary"
                     size="lg"
                     fullWidth
@@ -1128,7 +1151,7 @@ export default function ScannerScreen() {
 
                 <Button
                   testID="scanner-retry-pick-button"
-                  title="Tomar o elegir otra foto"
+                  title={t('scanner.pickAnother')}
                   variant="outline"
                   size="md"
                   fullWidth
@@ -1144,7 +1167,7 @@ export default function ScannerScreen() {
 
                 <Button
                   testID="scanner-cancel-error-button"
-                  title="Cancelar y volver"
+                  title={t('scanner.cancelAndBack')}
                   variant="ghost"
                   size="md"
                   fullWidth
@@ -1170,7 +1193,7 @@ export default function ScannerScreen() {
             disabled={!canSave}
             onPress={() => { void handleConfirmAndSave(); }}
             accessibilityRole="button"
-            accessibilityLabel="Confirmar y guardar alimentos seleccionados en mi despensa"
+            accessibilityLabel={t('scanner.confirmSaveLabel')}
             accessibilityState={{ disabled: !canSave }}
             style={({ pressed }) => [
               styles.saveAction,
@@ -1191,12 +1214,12 @@ export default function ScannerScreen() {
               ]}
             >
               {selectedItems.length === 0
-                ? 'Selecciona al menos un alimento'
+                ? t('scanner.selectAtLeastOne')
                 : itemsWithMissingQuantity.length > 0
-                ? 'Define las cantidades pendientes'
+                ? t('scanner.defineQuantities')
                 : itemsWithUnconfirmedWarnings.length > 0
-                ? 'Revisa las unidades o categorías'
-                : `Guardar ${selectedItems.length} alimento${selectedItems.length === 1 ? '' : 's'} en mi despensa`}
+                ? t('scanner.reviewUnits')
+                : tp('scanner.saveCount', selectedItems.length)}
             </Text>
           </Pressable>
 
@@ -1204,12 +1227,12 @@ export default function ScannerScreen() {
             testID="scanner-retake-from-review-button"
             onPress={handleResetScanner}
             accessibilityRole="button"
-            accessibilityLabel="Descartar detecciones y tomar otra foto"
+            accessibilityLabel={t('scanner.discardLabel')}
             style={({ pressed }) => [styles.discardAction, pressed && styles.actionPressed]}
           >
             <MaterialCommunityIcons name="camera-outline" size={20} color={colors.primary} />
             <Text style={[styles.discardActionText, typography.labelLg]}>
-              Descartar y tomar otra foto
+              {t('scanner.discard')}
             </Text>
           </Pressable>
         </View>

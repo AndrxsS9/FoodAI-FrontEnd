@@ -6,6 +6,7 @@ import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { AppColors, getAppSurfaces, spacing, useTypography, useThemeColors, useThemeStyles } from '../../theme';
+import { useLocale } from '../../context/LocaleContext';
 import { PantrySummary } from '../../types/pantry';
 
 export interface PantryImpactCardProps {
@@ -14,6 +15,7 @@ export interface PantryImpactCardProps {
 
 export function PantryImpactCard({ summary }: PantryImpactCardProps) {
   const typography = useTypography();
+  const { t, tp } = useLocale();
   const colors = useThemeColors();
   const styles = useThemeStyles(createStyles);
 
@@ -23,7 +25,7 @@ export function PantryImpactCard({ summary }: PantryImpactCardProps) {
       <View style={styles.impactCard}>
         <View style={styles.impactCardHeader}>
           <Text style={[styles.impactCardLabel, typography.labelSm]}>
-            Despensa al día
+            {t('profile.impact.pantryUpToDate')}
           </Text>
           <MaterialCommunityIcons name="package-variant-closed" size={18} color={colors.outline} />
         </View>
@@ -31,12 +33,12 @@ export function PantryImpactCard({ summary }: PantryImpactCardProps) {
           <Text style={[styles.impactValueBig, typography.headlineLg]}>
             {summary.totalCount}
           </Text>
-          <Text style={[styles.impactValueUnit, typography.bodySm]}>insumos</Text>
+          <Text style={[styles.impactValueUnit, typography.bodySm]}>{t('profile.impact.itemsUnit')}</Text>
         </View>
         <Text style={[styles.impactCardSub, typography.bodySm]} numberOfLines={1}>
           {summary.urgentCount > 0
-            ? `${summary.urgentCount} por consumir pronto`
-            : 'Inventario al día'}
+            ? tp('profile.impact.urgentSoon', summary.urgentCount)
+            : t('profile.impact.inventoryUpToDate')}
         </Text>
       </View>
 
@@ -44,7 +46,7 @@ export function PantryImpactCard({ summary }: PantryImpactCardProps) {
       <View style={styles.impactCard}>
         <View style={styles.impactCardHeader}>
           <Text style={[styles.impactCardLabel, typography.labelSm]}>
-            Por consumir pronto
+            {t('profile.impact.consumeSoon')}
           </Text>
           <MaterialCommunityIcons name="clock-outline" size={18} color={colors.outline} />
         </View>
@@ -52,12 +54,12 @@ export function PantryImpactCard({ summary }: PantryImpactCardProps) {
           <Text style={[styles.impactValueBig, typography.headlineLg]}>
             {summary.urgentCount}
           </Text>
-          <Text style={[styles.impactValueUnit, typography.bodySm]}>alimentos</Text>
+          <Text style={[styles.impactValueUnit, typography.bodySm]}>{t('profile.impact.foodsUnit')}</Text>
         </View>
         <Text style={[styles.impactCardSub, typography.bodySm]} numberOfLines={1}>
           {summary.urgentCount > 0
-            ? 'Productos prioritarios'
-            : 'Sin urgencias de caducidad'}
+            ? t('profile.impact.priorityProducts')
+            : t('profile.impact.noUrgencies')}
         </Text>
       </View>
     </View>

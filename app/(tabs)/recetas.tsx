@@ -27,8 +27,11 @@ import { getRecipeImageSource } from '../../src/utils/recipeImageCatalog';
 import { usePantry } from '../../src/context/PantryContext';
 import { useBudget } from '../../src/context/BudgetContext';
 import { useRecipes } from '../../src/context/RecipeContext';
-import { ClientRecipe, formatCopCurrency } from '../../src/types/recipe';
+import { ClientRecipe } from '../../src/types/recipe';
 import { AppColors, getAppSurfaces, radius, spacing, useAppTheme, useThemeStyles, useTypography } from '../../src/theme';
+import { useLocale } from '../../src/context/LocaleContext';
+import type { MessageKey } from '../../src/locales';
+import { localizeCodedError, localizeMessage } from '../../src/locales/messages';
 
 type FilterType = 'all' | 'low-cost' | 'quick' | 'urgent';
 
@@ -37,6 +40,7 @@ export default function RecipeDiscoveryScreen() {
   const router = useRouter();
   const { colors } = useAppTheme();
   const styles = useThemeStyles(createStyles);
+  const { t, tx, tp, locale, format } = useLocale();
 
   const { summary } = usePantry();
   const {
@@ -49,18 +53,27 @@ export default function RecipeDiscoveryScreen() {
   const {
     recipes,
     isDemoMode,
-    demoMeta,
     selectRecipe,
     isLoading,
     isGenerating,
     isRestoring,
     isStale,
     error,
+    errorCode,
     generateRecipes,
     clearError,
-    persistenceWarning,
+    persistenceWarningCode,
     clearPersistenceWarning,
   } = useRecipes();
+
+  // Presentación localizada: los códigos estables se traducen; nunca se muestran textos internos.
+  const localizedError = localizeCodedError('recipes', errorCode, error, locale);
+  const persistenceWarning = persistenceWarningCode
+    ? tx(`persistence.recipes.${persistenceWarningCode}` as MessageKey)
+    : null;
+  const localizedStorageError = localizeMessage(storageError, locale, {
+    fallbackKey: 'messages.budget.fallback',
+  });
 
   // Estados de control para persistencia asíncrona de comensales
   const [isUpdatingServings, setIsUpdatingServings] = useState(false);
@@ -149,21 +162,21 @@ export default function RecipeDiscoveryScreen() {
             source={require('../../assets/images/logo.png')}
             style={styles.logoImage}
             resizeMode="contain"
-            accessibilityLabel="Logotipo FoodAI"
+            accessibilityLabel={t('recipes.logoLabel')}
           />
           <Text
             style={[styles.headerTitle, typography.headlineMd]}
             numberOfLines={1}
             accessibilityRole="header"
           >
-            Recomendaciones
+            {t('recipes.title')}
           </Text>
         </View>
 
         <Pressable
           testID="recipes-profile-avatar"
           accessibilityRole="button"
-          accessibilityLabel="Perfil de usuario"
+          accessibilityLabel={t('recipes.profileAvatarLabel')}
           onPress={() => router.push('/(tabs)/perfil')}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           style={({ pressed }) => [
@@ -186,16 +199,16 @@ export default function RecipeDiscoveryScreen() {
             style={styles.demoBanner}
             testID="recipes-demo-banner"
             accessibilityRole="text"
-            accessibilityLabel={demoMeta.noticeText}
+            accessibilityLabel={t('recipes.demoNotice')}
           >
             <View style={styles.demoBadge}>
               <MaterialCommunityIcons name="flask-outline" size={14} color={colors.primary} />
               <Text style={[styles.demoBadgeText, typography.labelSm]}>
-                {demoMeta.badgeLabel}
+                {t('recipes.demoBadge')}
               </Text>
             </View>
             <Text style={[styles.demoNoticeText, typography.bodySm]}>
-              {demoMeta.noticeText}
+              {t('recipes.demoNotice')}
             </Text>
           </View>
         )}
@@ -210,15 +223,15 @@ export default function RecipeDiscoveryScreen() {
             <View style={styles.emptyPantryNoticeHeader}>
               <MaterialCommunityIcons name="information-outline" size={20} color={colors.primary} />
               <Text style={[styles.emptyPantryNoticeTitle, typography.labelLg]}>
-                Tu despensa no tiene ingredientes registrados
+                {t('recipes.emptyPantryTitle')}
               </Text>
             </View>
             <Text style={[styles.emptyPantryNoticeText, typography.bodySm]}>
-              Puedes explorar estas recetas sugeridas, pero si registras tus alimentos FoodAI identificará con exactitud cuáles tienes listos para cocinar.
+              {t('recipes.emptyPantryText')}
             </Text>
             <Button
               testID="recipes-empty-pantry-cta"
-              title="Ir a Mi Despensa"
+              title={t('recipes.goToPantry')}
               variant="outline"
               size="sm"
               onPress={() => router.push('/(tabs)/despensa')}
@@ -231,14 +244,14 @@ export default function RecipeDiscoveryScreen() {
           <View style={styles.pantryBadge}>
             <MaterialCommunityIcons name="leaf" size={14} color={colors.onTertiaryContainer} />
             <Text style={[styles.pantryBadgeText, typography.labelSm]}>
-              Aprovecha tu despensa ({summary.totalCount} alimentos disponibles)
+              {t('recipes.pantryBadge', { count: summary.totalCount })}
             </Text>
           </View>
           {!isDemoMode && recipes.length > 0 && (
             <View style={styles.realAiBadge} testID="recipes-count-badge">
               <MaterialCommunityIcons name="creation" size={14} color={colors.onTertiaryContainer} />
               <Text style={[styles.realAiBadgeText, typography.labelSm]}>
-                {recipes.length} receta{recipes.length === 1 ? '' : 's'} generada{recipes.length === 1 ? '' : 's'} con IA
+                {tp('recipes.aiCountBadge', recipes.length)}
               </Text>
             </View>
           )}
@@ -246,10 +259,10 @@ export default function RecipeDiscoveryScreen() {
             style={[styles.heroHeadline, typography.headlineXl]}
             accessibilityRole="header"
           >
-            Esto es lo que más te conviene
+            {t('recipes.heroHeadline')}
           </Text>
           <Text style={[styles.heroSubtitle, typography.bodySm]}>
-            Opciones optimizadas para usar lo que tienes y gastar lo mínimo.
+            {t('recipes.heroSubtitle')}
           </Text>
         </View>
 
@@ -260,56 +273,56 @@ export default function RecipeDiscoveryScreen() {
               <View style={styles.budgetLabelRow}>
                 <MaterialCommunityIcons name="cash-multiple" size={16} color={colors.outline} />
                 <Text style={[styles.budgetLabel, typography.labelSm]}>
-                  PRESUPUESTO DISPONIBLE
+                  {t('recipes.budgetAvailable')}
                 </Text>
               </View>
               <Text style={[styles.budgetAmount, typography.headlineMd]}>
-                {formatCopCurrency(budget)}
+                {format.currency(budget)}
               </Text>
             </View>
 
             <View style={styles.servingsCol}>
               <Text style={[styles.servingsLabel, typography.labelSm]}>
-                COMENSALES
+                {t('recipes.diners')}
               </Text>
               <Stepper
                 value={servings}
                 min={1}
                 max={12}
                 step={1}
-                unit="pers."
+                unit={t('recipes.dinersUnit')}
                 disabled={isUpdatingServings}
                 onChange={handleServingsChange}
-                accessibilityLabel="Ajustar número de comensales"
+                accessibilityLabel={t('recipes.dinersStepperLabel')}
               />
             </View>
           </View>
         </Card>
 
         {/* 4.1. Aviso de error de persistencia de comensales o presupuesto */}
-        {storageError && (
+        {localizedStorageError && (
           <Card
             variant="outlined"
             style={styles.storageErrorCard}
             testID="recipes-storage-error"
             accessibilityRole="text"
-            accessibilityLabel={`Aviso de error: ${storageError}`}
+            accessibilityLabel={t('recipes.storageErrorLabel', { message: localizedStorageError })}
           >
             <View style={styles.storageErrorRow}>
               <MaterialCommunityIcons name="alert-circle-outline" size={20} color={colors.error} />
               <View style={styles.storageErrorTextCol}>
                 <Text style={[styles.storageErrorTitle, typography.labelMd]}>
-                  Error de almacenamiento
+                  {t('recipes.storageErrorTitle')}
                 </Text>
                 <Text style={[styles.storageErrorDesc, typography.bodySm]}>
-                  {storageError}
+                  {localizedStorageError}
                 </Text>
               </View>
               <Pressable
                 testID="recipes-dismiss-storage-error-button"
                 onPress={clearStorageError}
                 accessibilityRole="button"
-                accessibilityLabel="Descartar mensaje de error"
+                accessibilityLabel={t('recipes.dismissError')}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
                 <MaterialCommunityIcons name="close" size={18} color={colors.textSecondary} />
@@ -325,7 +338,7 @@ export default function RecipeDiscoveryScreen() {
             style={styles.storageErrorCard}
             testID="recipes-persistence-warning"
             accessibilityRole="text"
-            accessibilityLabel={`Aviso: ${persistenceWarning}`}
+            accessibilityLabel={t('recipes.persistenceWarningLabel', { message: persistenceWarning })}
           >
             <View
               style={styles.storageErrorRow}
@@ -336,7 +349,7 @@ export default function RecipeDiscoveryScreen() {
               <MaterialCommunityIcons name="cloud-off-outline" size={20} color={colors.error} />
               <View style={styles.storageErrorTextCol}>
                 <Text style={[styles.storageErrorTitle, typography.labelMd]}>
-                  Recetas no guardadas en este dispositivo
+                  {t('recipes.persistenceWarningTitle')}
                 </Text>
                 <Text style={[styles.storageErrorDesc, typography.bodySm]}>
                   {persistenceWarning}
@@ -346,7 +359,7 @@ export default function RecipeDiscoveryScreen() {
                 testID="recipes-dismiss-persistence-warning-button"
                 onPress={clearPersistenceWarning}
                 accessibilityRole="button"
-                accessibilityLabel="Descartar aviso de guardado"
+                accessibilityLabel={t('recipes.dismissPersistenceWarning')}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
                 <MaterialCommunityIcons name="close" size={18} color={colors.textSecondary} />
@@ -359,15 +372,15 @@ export default function RecipeDiscoveryScreen() {
         <View style={styles.aiActionSection}>
           <Button
             testID="recipes-generate-ai-button"
-            title={isGenerating ? 'Generando recetas con IA...' : 'Generar recetas con IA'}
+            title={isGenerating ? t('recipes.generating') : t('recipes.generate')}
             variant="primary"
             size="lg"
             fullWidth
             loading={isGenerating}
             disabled={isGenerating || summary.totalCount === 0}
             onPress={handleGenerateRecipes}
-            accessibilityLabel="Generar recetas personalizadas con inteligencia artificial"
-            accessibilityHint="Envía tus ingredientes y presupuesto actuales a Gemini para crear opciones culinarias a medida"
+            accessibilityLabel={t('recipes.generateLabel')}
+            accessibilityHint={t('recipes.generateHint')}
             leftIcon={
               !isGenerating ? (
                 <MaterialCommunityIcons name="creation" size={20} color={colors.onPrimary} />
@@ -383,16 +396,16 @@ export default function RecipeDiscoveryScreen() {
               <MaterialCommunityIcons name="update" size={22} color={colors.onTertiaryContainer} />
               <View style={styles.staleNoticeTextCol}>
                 <Text style={[styles.staleNoticeTitle, typography.labelMd]}>
-                  Tu despensa o presupuesto cambiaron
+                  {t('recipes.staleTitle')}
                 </Text>
                 <Text style={[styles.staleNoticeDesc, typography.bodySm]}>
-                  Las sugerencias actuales fueron calculadas con tu estado anterior. Actualiza para optimizar tus opciones.
+                  {t('recipes.staleDesc')}
                 </Text>
               </View>
             </View>
             <Button
               testID="recipes-stale-regenerate-button"
-              title="Actualizar recetas"
+              title={t('recipes.refresh')}
               variant="outline"
               size="sm"
               disabled={isGenerating || summary.totalCount === 0}
@@ -402,21 +415,21 @@ export default function RecipeDiscoveryScreen() {
         )}
 
         {/* 4.4. Tarjeta de error de API al generar con IA */}
-        {error && !isGenerating && (
+        {localizedError && !isGenerating && (
           <Card variant="outlined" style={styles.apiErrorCard} testID="recipes-api-error-card">
             <View style={styles.apiErrorRow}>
               <MaterialCommunityIcons name="alert-circle-outline" size={24} color={colors.error} />
               <View style={styles.apiErrorTextCol}>
                 <Text style={[styles.apiErrorTitle, typography.headlineMd]}>
-                  No se pudieron generar las recetas
+                  {t('recipes.apiErrorTitle')}
                 </Text>
-                <Text style={[styles.apiErrorDesc, typography.bodySm]}>{error}</Text>
+                <Text style={[styles.apiErrorDesc, typography.bodySm]}>{localizedError}</Text>
               </View>
             </View>
             <View style={styles.apiErrorActions}>
               <Button
                 testID="recipes-retry-button"
-                title="Reintentar"
+                title={t('common.retry')}
                 variant="primary"
                 size="sm"
                 disabled={isGenerating || summary.totalCount === 0}
@@ -424,7 +437,7 @@ export default function RecipeDiscoveryScreen() {
               />
               <Button
                 testID="recipes-dismiss-api-error-button"
-                title="Descartar"
+                title={t('recipes.dismiss')}
                 variant="ghost"
                 size="sm"
                 onPress={clearError}
@@ -439,7 +452,7 @@ export default function RecipeDiscoveryScreen() {
             testID="recipes-search-input"
             value={searchQuery}
             onChangeText={setSearchQuery}
-            placeholder="Buscar por receta o ingrediente..."
+            placeholder={t('recipes.searchPlaceholder')}
             leftIcon={
               <MaterialCommunityIcons name="magnify" size={20} color={colors.outline} />
             }
@@ -449,14 +462,14 @@ export default function RecipeDiscoveryScreen() {
                   testID="recipes-clear-search-button"
                   onPress={() => setSearchQuery('')}
                   accessibilityRole="button"
-                  accessibilityLabel="Limpiar búsqueda"
+                  accessibilityLabel={t('recipes.clearSearch')}
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 >
                   <MaterialCommunityIcons name="close" size={18} color={colors.outline} />
                 </Pressable>
               ) : undefined
             }
-            accessibilityLabel="Buscar recetas"
+            accessibilityLabel={t('recipes.searchLabel')}
           />
 
           <ScrollView
@@ -466,35 +479,35 @@ export default function RecipeDiscoveryScreen() {
           >
             <Chip
               testID="filter-chip-all"
-              label="Todas"
+              label={t('recipes.filterAll')}
               variant="filter"
               selected={activeFilter === 'all'}
               onPress={() => setActiveFilter('all')}
             />
             <Chip
               testID="filter-chip-low-cost"
-              label="Bajo costo (≤ $3.000)"
+              label={t('recipes.filterLowCost', { amount: format.currency(3000, false) })}
               variant="filter"
               selected={activeFilter === 'low-cost'}
               onPress={() => setActiveFilter('low-cost')}
             />
             <Chip
               testID="filter-chip-quick"
-              label="Rápidas (≤ 25 min)"
+              label={t('recipes.filterQuick')}
               variant="filter"
               selected={activeFilter === 'quick'}
               onPress={() => setActiveFilter('quick')}
             />
             <Chip
               testID="filter-chip-max-30"
-              label="≤ 30 min"
+              label={t('recipes.filterMax30')}
               variant="filter"
               selected={maxMinutesFilter === 30}
               onPress={() => setMaxMinutesFilter((prev) => (prev === 30 ? null : 30))}
             />
             <Chip
               testID="filter-chip-urgent"
-              label="Aprovecha urgentes"
+              label={t('recipes.filterUrgent')}
               variant="filter"
               selected={activeFilter === 'urgent'}
               onPress={() => setActiveFilter('urgent')}
@@ -508,13 +521,13 @@ export default function RecipeDiscoveryScreen() {
             style={styles.centerContainer}
             testID="recipes-loading-state"
             accessibilityRole="progressbar"
-            accessibilityLabel="Buscando las mejores recetas..."
+            accessibilityLabel={t('recipes.loadingLabel')}
           >
             <ActivityIndicator size="large" color={colors.primary} />
             <Text style={[styles.loadingText, typography.bodyMd]}>
               {isGenerating
-                ? 'Generando recetas personalizadas con IA...'
-                : 'Buscando las mejores recetas para tu despensa...'}
+                ? t('recipes.loadingGenerating')
+                : t('recipes.loadingSearching')}
             </Text>
           </View>
         ) : recipes.length === 0 ? (
@@ -528,11 +541,10 @@ export default function RecipeDiscoveryScreen() {
           >
             <MaterialCommunityIcons name="silverware-fork-knife" size={40} color={colors.outline} />
             <Text style={[styles.emptyTitle, typography.headlineMd]}>
-              Aún no has generado recetas
+              {t('recipes.noGeneratedTitle')}
             </Text>
             <Text style={[styles.emptyDesc, typography.bodySm]}>
-              Usa “Generar recetas con IA” para obtener recomendaciones basadas en tu despensa y
-              presupuesto actuales.
+              {t('recipes.noGeneratedDesc')}
             </Text>
           </Card>
         ) : filteredRecipes.length === 0 ? (
@@ -543,14 +555,14 @@ export default function RecipeDiscoveryScreen() {
           >
             <MaterialCommunityIcons name="silverware-fork-knife" size={40} color={colors.outline} />
             <Text style={[styles.emptyTitle, typography.headlineMd]}>
-              No encontramos recetas con estos filtros
+              {t('recipes.noResultsTitle')}
             </Text>
             <Text style={[styles.emptyDesc, typography.bodySm]}>
-              Prueba cambiando el término de búsqueda o ajusta los criterios de selección.
+              {t('recipes.noResultsDesc')}
             </Text>
             <Button
               testID="recipes-reset-filter-button"
-              title="Restablecer filtros"
+              title={t('recipes.resetFilters')}
               variant="outline"
               size="sm"
               onPress={() => {
@@ -588,6 +600,7 @@ function RecipeCardItem({ recipe, isDominant, onPress }: RecipeCardItemProps) {
   const typography = useTypography();
   const { colors } = useAppTheme();
   const styles = useThemeStyles(createStyles);
+  const { t, tp, locale, format } = useLocale();
   const availableCount = recipe.availableIngredients.length;
   const totalIngredientsCount = recipe.ingredients.length;
   const image = useMemo(() => getRecipeImageSource(recipe), [recipe]);
@@ -613,7 +626,7 @@ function RecipeCardItem({ recipe, isDominant, onPress }: RecipeCardItemProps) {
         <View style={styles.convenienceBadge}>
           <MaterialCommunityIcons name="check-decagram" size={14} color={colors.onTertiaryContainer} importantForAccessibility="no" accessibilityElementsHidden={true} />
           <Text style={[styles.convenienceBadgeText, typography.labelSm]}>
-            {String(recipe.convenience)}
+            {localizeMessage(String(recipe.convenience), locale, { passthroughUnknown: true })}
           </Text>
         </View>
 
@@ -645,9 +658,9 @@ function RecipeCardItem({ recipe, isDominant, onPress }: RecipeCardItemProps) {
               <MaterialCommunityIcons name="fridge-outline" size={18} color={colors.primary} />
             </View>
             <View style={styles.metricTextCol}>
-              <Text style={[styles.metricLabel, typography.labelSm]}>Despensa</Text>
+              <Text style={[styles.metricLabel, typography.labelSm]}>{t('recipes.metricPantry')}</Text>
               <Text style={[styles.metricValue, typography.labelMd]}>
-                {availableCount} de {totalIngredientsCount} listos
+                {t('recipes.metricReady', { available: availableCount, total: totalIngredientsCount })}
               </Text>
             </View>
           </View>
@@ -657,9 +670,9 @@ function RecipeCardItem({ recipe, isDominant, onPress }: RecipeCardItemProps) {
               <MaterialCommunityIcons name="cart-outline" size={18} color={colors.secondary} />
             </View>
             <View style={styles.metricTextCol}>
-              <Text style={[styles.metricLabel, typography.labelSm]}>Compra estimada</Text>
+              <Text style={[styles.metricLabel, typography.labelSm]}>{t('recipes.metricPurchase')}</Text>
               <Text style={[styles.metricValue, typography.labelMd, { color: colors.secondary, fontWeight: '700' }]}>
-                {formatCopCurrency(recipe.estimatedMissingCost)}
+                {format.currency(recipe.estimatedMissingCost)}
               </Text>
             </View>
           </View>
@@ -669,12 +682,12 @@ function RecipeCardItem({ recipe, isDominant, onPress }: RecipeCardItemProps) {
         <View style={styles.metaRow}>
           <View style={styles.metaPill}>
             <MaterialCommunityIcons name="clock-outline" size={16} color={colors.textSecondary} />
-            <Text style={[styles.metaText, typography.bodySm]}>{recipe.totalMinutes} min</Text>
+            <Text style={[styles.metaText, typography.bodySm]}>{t('minutesShort', { count: recipe.totalMinutes })}</Text>
           </View>
           <View style={styles.metaDivider} />
           <View style={styles.metaPill}>
             <MaterialCommunityIcons name="account-group" size={16} color={colors.textSecondary} />
-            <Text style={[styles.metaText, typography.bodySm]}>{recipe.servings} personas</Text>
+            <Text style={[styles.metaText, typography.bodySm]}>{tp('people', recipe.servings)}</Text>
           </View>
         </View>
 
@@ -691,14 +704,14 @@ function RecipeCardItem({ recipe, isDominant, onPress }: RecipeCardItemProps) {
         {/* Botón de acción principal */}
         <Button
           testID={`recipe-view-button-${recipe.id}`}
-          title="Ver receta"
+          title={t('recipes.viewRecipe')}
           variant="primary"
           size="md"
           fullWidth
           onPress={onPress}
           rightIcon={<MaterialCommunityIcons name="arrow-right" size={18} color={colors.onPrimary} />}
-          accessibilityLabel={`Ver receta completa: ${recipe.name}`}
-          accessibilityHint="Abre el detalle completo de la receta con ingredientes y pasos"
+          accessibilityLabel={t('recipes.viewRecipeLabel', { name: recipe.name })}
+          accessibilityHint={t('recipes.viewRecipeHint')}
         />
       </View>
     </Card>

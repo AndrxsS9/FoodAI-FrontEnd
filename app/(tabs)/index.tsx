@@ -17,7 +17,8 @@ import { getRecipeImageSource } from '../../src/utils/recipeImageCatalog';
 import { usePantry } from '../../src/context/PantryContext';
 import { useBudget } from '../../src/context/BudgetContext';
 import { useRecipes } from '../../src/context/RecipeContext';
-import { formatCopCurrency } from '../../src/types/recipe';
+import { useLocale } from '../../src/context/LocaleContext';
+import { localizeCodedError, localizeMessage } from '../../src/locales/messages';
 import {
   hasBackendConvenienceScore,
   resolveDailyRecommendationState,
@@ -39,12 +40,16 @@ export default function HomeScreen() {
   const styles = useThemeStyles(createStyles);
   const typography = useTypography();
   const router = useRouter();
+  const { t, tp, locale, format } = useLocale();
 
   // Dynamic shared budget state from authoritative BudgetContext
   const { budget, setBudget } = useBudget();
   const [budgetModalVisible, setBudgetModalVisible] = useState(false);
   const [tempBudgetText, setTempBudgetText] = useState(String(budget));
   const [budgetError, setBudgetError] = useState<string | undefined>(undefined);
+  // Mensajes de dominio en español: se traducen solo al mostrarse.
+  const localizedBudgetError =
+    localizeMessage(budgetError, locale, { fallbackKey: 'messages.budget.budgetPersistFailed' }) ?? undefined;
 
   const handleOpenBudgetModal = () => {
     setTempBudgetText(String(budget));
@@ -101,6 +106,7 @@ export default function HomeScreen() {
     isRestoring: isRecipesRestoring,
     isStale,
     error: recipeError,
+    errorCode: recipeErrorCode,
     selectRecipe,
   } = useRecipes();
 
@@ -186,21 +192,21 @@ export default function HomeScreen() {
             source={require('../../assets/images/logo.png')}
             style={styles.logoImage}
             resizeMode="contain"
-            accessibilityLabel="Logotipo de Recetario por Presupuesto"
+            accessibilityLabel={t('home.logoLabel')}
           />
           <View style={styles.headerTextCol}>
             <Text
               style={[styles.headerSubtext, typography.labelSm]}
               numberOfLines={1}
             >
-              RECETARIO POR PRESUPUESTO
+              {t('home.brandSubtitle')}
             </Text>
             <Text
               style={[styles.headerTitle, typography.headlineMd]}
               numberOfLines={1}
               accessibilityRole="header"
             >
-              Inicio
+              {t('home.title')}
             </Text>
           </View>
         </View>
@@ -208,8 +214,8 @@ export default function HomeScreen() {
         <Pressable
           testID="home-profile-avatar"
           accessibilityRole="button"
-          accessibilityLabel="Perfil de usuario"
-          accessibilityHint="Ir a la pestaña de perfil"
+          accessibilityLabel={t('home.profileLabel')}
+          accessibilityHint={t('home.profileHint')}
           onPress={() => router.push('/(tabs)/perfil')}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           style={({ pressed }) => [
@@ -238,34 +244,34 @@ export default function HomeScreen() {
           </Text>
           <View style={styles.greetingPill}>
             <Text style={[styles.greetingCategory, typography.labelSm]}>
-              COCINA INTELIGENTE Y CONSCIENTE
+              {t('home.heroCategory')}
             </Text>
           </View>
           <Text
             style={[styles.greetingHeadline, typography.headlineXlMobile]}
             accessibilityRole="header"
           >
-            ¿Qué podemos preparar hoy?
+            {t('home.heroHeadline')}
           </Text>
           <Text style={[styles.greetingSubtitle, typography.bodyMd]}>
-            Primero usa lo que tienes. Después decide qué comprar.
+            {t('home.heroSubtitle')}
           </Text>
           <View style={styles.heroChipsRow}>
             <View style={styles.heroChip}>
               <Text style={[styles.heroChipText, typography.labelSm]}>
-                🥬 {summary.totalCount} en despensa
+                {t('home.chipInPantry', { count: summary.totalCount })}
               </Text>
             </View>
             {summary.urgentCount > 0 && (
               <View style={[styles.heroChip, styles.heroChipUrgent]}>
                 <Text style={[styles.heroChipUrgentText, typography.labelSm]}>
-                  ⏰ {summary.urgentCount} por usar
+                  {t('home.chipToUse', { count: summary.urgentCount })}
                 </Text>
               </View>
             )}
             <View style={[styles.heroChip, styles.heroChipBudget]}>
               <Text style={[styles.heroChipBudgetText, typography.labelSm]}>
-                💰 Control de presupuesto
+                {t('home.chipBudget')}
               </Text>
             </View>
           </View>
@@ -279,10 +285,10 @@ export default function HomeScreen() {
             </View>
             <View style={styles.scannerHeaderText}>
               <Text style={[styles.cardTitle, typography.headlineMd]}>
-                Escanear alimentos
+                {t('home.scanTitle')}
               </Text>
               <Text style={[styles.cardSubtitle, typography.bodySm]}>
-                Muéstrame qué tienes
+                {t('home.scanSubtitle')}
               </Text>
             </View>
           </View>
@@ -291,8 +297,8 @@ export default function HomeScreen() {
           <Pressable
             testID="home-viewfinder-press"
             accessibilityRole="button"
-            accessibilityLabel="Abrir visor de cámara"
-            accessibilityHint="Abre el escáner de alimentos con IA"
+            accessibilityLabel={t('home.viewfinderLabel')}
+            accessibilityHint={t('home.viewfinderHint')}
             onPress={() => router.push('/escaner' as any)}
             style={styles.viewfinderWrapper}
           >
@@ -300,7 +306,7 @@ export default function HomeScreen() {
               source={require('../../assets/images/scanner-viewfinder.jpg')}
               style={styles.viewfinderImage}
               resizeMode="cover"
-              accessibilityLabel="Vista previa del escáner con ingredientes en la mesa de cocina"
+              accessibilityLabel={t('home.viewfinderImageLabel')}
             />
             <View style={styles.viewfinderOverlay}>
               <View style={styles.viewfinderReticle}>
@@ -311,13 +317,13 @@ export default function HomeScreen() {
 
           <Button
             testID="home-scan-button"
-            title="Tomar foto"
+            title={t('home.takePhoto')}
             variant="primary"
             size="lg"
             fullWidth
             onPress={() => router.push('/escaner' as any)}
-            accessibilityLabel="Tomar foto de los alimentos"
-            accessibilityHint="Abre el escáner fotográfico con IA"
+            accessibilityLabel={t('home.takePhotoLabel')}
+            accessibilityHint={t('home.takePhotoHint')}
             leftIcon={<MaterialCommunityIcons name="camera-plus-outline" size={20} color={colors.onPrimary} />}
           />
         </Card>
@@ -329,10 +335,10 @@ export default function HomeScreen() {
           onPress={() => router.push('/(tabs)/despensa')}
           accessibilityLabel={
             summary.totalCount === 0
-              ? 'Resumen de despensa: sin alimentos registrados. Toca para registrar ingredientes.'
-              : `Resumen de despensa: ${summary.totalCount} productos, ${summary.urgentCount} por consumir pronto`
+              ? t('home.pantryCardEmptyLabel')
+              : t('home.pantryCardLabel', { total: summary.totalCount, urgent: summary.urgentCount })
           }
-          accessibilityHint="Toca para ir a la pantalla de despensa"
+          accessibilityHint={t('home.pantryCardHint')}
           testID="home-pantry-card"
         >
           <View style={styles.cardHeaderRow}>
@@ -341,7 +347,7 @@ export default function HomeScreen() {
                 <MaterialCommunityIcons name="fridge-outline" size={22} color={colors.primary} />
               </View>
               <Text style={[styles.cardTitle, typography.headlineMd]}>
-                Tu despensa
+                {t('home.yourPantry')}
               </Text>
             </View>
             <View style={styles.pantryBadgeRow}>
@@ -349,7 +355,7 @@ export default function HomeScreen() {
                 style={[styles.countBadge, typography.labelMd]}
                 testID="home-pantry-total-count"
               >
-                {summary.totalCount} producto{summary.totalCount === 1 ? '' : 's'}
+                {summary.totalCount} {tp('home.productsUnit', summary.totalCount)}
               </Text>
               <MaterialCommunityIcons name="chevron-right" size={18} color={colors.primary} />
             </View>
@@ -358,10 +364,10 @@ export default function HomeScreen() {
           {summary.totalCount === 0 ? (
             <View style={styles.emptyPantryBox} testID="home-pantry-empty-state">
               <Text style={[styles.emptyPantryTitle, typography.bodyMd]}>
-                Sin alimentos registrados
+                {t('home.noFoodsTitle')}
               </Text>
               <Text style={[styles.emptyPantryText, typography.bodySm]}>
-                Toca aquí para registrar tus ingredientes y optimizar tu presupuesto.
+                {t('home.noFoodsText')}
               </Text>
             </View>
           ) : summary.urgentCount > 0 ? (
@@ -371,11 +377,11 @@ export default function HomeScreen() {
                 <View style={styles.urgentBannerLeft}>
                   <MaterialCommunityIcons name="clock-outline" size={18} color={colors.secondary} />
                   <Text style={[styles.urgentBannerTitle, typography.labelSm]}>
-                    {summary.urgentCount} consumir pronto
+                    {t('home.urgentBanner', { count: summary.urgentCount })}
                   </Text>
                 </View>
                 <Text style={[styles.urgentBannerTag, typography.labelSm]}>
-                  Prioritarios
+                  {t('home.priority')}
                 </Text>
               </View>
 
@@ -399,11 +405,11 @@ export default function HomeScreen() {
                 <View style={styles.okBannerLeft}>
                   <MaterialCommunityIcons name="check-circle" size={18} color={colors.primary} />
                   <Text style={[styles.okBannerTitle, typography.labelSm]}>
-                    Todos al día
+                    {t('home.allOk')}
                   </Text>
                 </View>
                 <Text style={[styles.okBannerTag, typography.labelSm]}>
-                  Sin urgencias
+                  {t('home.noUrgencies')}
                 </Text>
               </View>
 
@@ -432,27 +438,27 @@ export default function HomeScreen() {
             <View style={styles.budgetCol}>
               <View style={styles.budgetLabelRow}>
                 <Text style={[styles.budgetLabel, typography.labelSm]}>
-                  PRESUPUESTO DISPONIBLE
+                  {t('home.budgetAvailable')}
                 </Text>
               </View>
               <Text
                 style={[styles.budgetAmount, typography.headlineXl]}
-                accessibilityLabel={`Presupuesto disponible: ${budget.toLocaleString('es-CO')} pesos colombianos`}
+                accessibilityLabel={t('home.budgetAmountLabel', { amount: format.number(budget, 0) })}
               >
-                ${budget.toLocaleString('es-CO')}
-                <Text style={[styles.budgetCurrency, typography.labelMd]}> COP</Text>
+                {format.currency(budget, false)}
+                <Text style={[styles.budgetCurrency, typography.labelMd]}>{t('home.currencySuffix')}</Text>
               </Text>
             </View>
 
             <Button
               testID="home-adjust-budget-button"
-              title="Ajustar"
+              title={t('home.adjust')}
               variant="outline"
               size="sm"
               style={styles.adjustButton}
               onPress={handleOpenBudgetModal}
-              accessibilityLabel="Ajustar presupuesto disponible"
-              accessibilityHint="Abre un formulario para actualizar el presupuesto disponible"
+              accessibilityLabel={t('home.adjustLabel')}
+              accessibilityHint={t('home.adjustHint')}
               leftIcon={<MaterialCommunityIcons name="tune" size={16} color={colors.textPrimary} />}
             />
           </View>
@@ -465,12 +471,12 @@ export default function HomeScreen() {
               <View style={styles.sectionTitleRow}>
                 <MaterialCommunityIcons name="creation" size={20} color={colors.tertiary} />
                 <Text style={[styles.sectionTitle, typography.headlineMd]}>
-                  Recomendación del día
+                  {t('home.recommendationTitle')}
                 </Text>
               </View>
               {recommendedRecipe && (
                 <Text style={[styles.sectionSubtitle, typography.labelSm]}>
-                  Según tu despensa y presupuesto actuales
+                  {t('home.recommendationSubtitle')}
                 </Text>
               )}
             </View>
@@ -492,60 +498,59 @@ export default function HomeScreen() {
                 accessibilityLiveRegion="polite"
               >
                 {recommendation.kind === 'generating'
-                  ? 'Generando recomendaciones con tu despensa actual...'
-                  : 'Cargando tu despensa...'}
+                  ? t('home.generatingRecommendations')
+                  : t('home.loadingPantry')}
               </Text>
             </Card>
           ) : recommendation.kind === 'empty-pantry' ? (
             renderStateCard({
               testID: 'home-recommendation-empty-pantry',
               icon: 'fridge-outline',
-              title: 'Tu despensa está vacía',
-              message:
-                'Registra o escanea tus alimentos para recibir una recomendación basada en lo que realmente tienes.',
+              title: t('home.emptyPantryTitle'),
+              message: t('home.emptyPantryMessage'),
               actionTestID: 'home-recommendation-go-pantry-button',
-              actionTitle: 'Ir a mi despensa',
+              actionTitle: t('home.goToPantry'),
               actionIcon: 'plus-circle-outline',
               onAction: goToPantry,
-              actionHint: 'Abre la pantalla de despensa para registrar ingredientes',
+              actionHint: t('home.goToPantryHint'),
             })
           ) : recommendation.kind === 'demo' ? (
             renderStateCard({
               testID: 'home-recommendation-demo-state',
               icon: 'creation',
-              title: 'Aún no tienes una recomendación personalizada',
-              message:
-                'Genera recetas con IA a partir de tu despensa y presupuesto. Las recetas de ejemplo no se muestran aquí porque no están calculadas para ti.',
+              title: t('home.demoTitle'),
+              message: t('home.demoMessage'),
               actionTestID: 'home-recommendation-generate-button',
-              actionTitle: 'Generar recomendaciones',
+              actionTitle: t('home.generateRecommendations'),
               actionIcon: 'silverware-fork-knife',
               onAction: goToRecipeGeneration,
-              actionHint: 'Abre Recetas, donde puedes generar recomendaciones con IA',
+              actionHint: t('home.generateHint'),
             })
           ) : recommendation.kind === 'stale' ? (
             renderStateCard({
               testID: 'home-recommendation-stale-state',
               icon: 'update',
-              title: 'Tu despensa o preferencias cambiaron',
-              message:
-                'La recomendación anterior se calculó con otra despensa, presupuesto, número de personas o tiempo. Actualízala para ver costos vigentes.',
+              title: t('home.staleTitle'),
+              message: t('home.staleMessage'),
               actionTestID: 'home-recommendation-refresh-button',
-              actionTitle: 'Actualizar recomendación',
+              actionTitle: t('home.refreshRecommendation'),
               actionIcon: 'refresh',
               onAction: goToRecipeGeneration,
-              actionHint: 'Abre Recetas para volver a generar recomendaciones con tus datos actuales',
+              actionHint: t('home.refreshHint'),
             })
           ) : recommendation.kind === 'error' ? (
             renderStateCard({
               testID: 'home-recommendation-error-state',
               icon: 'alert-circle-outline',
-              title: 'No se pudo generar tu recomendación',
-              message: recommendation.message,
+              title: t('home.errorTitle'),
+              message:
+                localizeCodedError('recipes', recipeErrorCode, recommendation.message, locale) ??
+                recommendation.message,
               actionTestID: 'home-recommendation-generate-button',
-              actionTitle: 'Ir a Recetas para reintentar',
+              actionTitle: t('home.retryInRecipes'),
               actionIcon: 'silverware-fork-knife',
               onAction: goToRecipeGeneration,
-              actionHint: 'Abre Recetas, donde puedes reintentar la generación',
+              actionHint: t('home.retryHint'),
             })
           ) : recommendedRecipe && recommendedScore ? (
             <Card
@@ -568,13 +573,15 @@ export default function HomeScreen() {
                   <View
                     style={styles.convenienceBadge}
                     accessibilityRole="text"
-                    accessibilityLabel={`Afinidad estimada por IA: ${recommendedRecipe.convenience}`}
+                    accessibilityLabel={t('home.affinityLabel', {
+                      value: localizeMessage(String(recommendedRecipe.convenience), locale, { passthroughUnknown: true }) ?? '',
+                    })}
                   >
                     <MaterialCommunityIcons name="check-decagram" size={16} color={colors.onTertiaryContainer} importantForAccessibility="no" accessibilityElementsHidden={true} />
                     <Text style={[styles.convenienceText, typography.labelSm]}>
                       {typeof recommendedRecipe.convenience === 'number'
-                        ? `${recommendedRecipe.convenience}% conveniente`
-                        : recommendedRecipe.convenience}
+                        ? t('home.convenientPercent', { value: recommendedRecipe.convenience })
+                        : localizeMessage(recommendedRecipe.convenience, locale, { passthroughUnknown: true })}
                     </Text>
                   </View>
                 )}
@@ -584,13 +591,13 @@ export default function HomeScreen() {
                   <View style={styles.recipeMetaPill}>
                     <MaterialCommunityIcons name="timer-outline" size={14} color={META_PILL_FOREGROUND} />
                     <Text style={[styles.recipeMetaText, typography.labelSm]}>
-                      {recommendedRecipe.totalMinutes} min
+                      {t('minutesShort', { count: recommendedRecipe.totalMinutes })}
                     </Text>
                   </View>
                   <View style={styles.recipeMetaPill}>
                     <MaterialCommunityIcons name="account-group" size={14} color={META_PILL_FOREGROUND} />
                     <Text style={[styles.recipeMetaText, typography.labelSm]}>
-                      {recommendedRecipe.servings} persona{recommendedRecipe.servings === 1 ? '' : 's'}
+                      {tp('people', recommendedRecipe.servings)}
                     </Text>
                   </View>
                 </View>
@@ -614,8 +621,10 @@ export default function HomeScreen() {
                     >
                       <MaterialCommunityIcons name="fridge-outline" size={20} color={colors.primary} />
                       <Text style={[styles.highlightText, typography.bodySm]}>
-                        Ya tienes {recommendedScore.availableCount} de{' '}
-                        {recommendedScore.availableCount + recommendedScore.missingCount} ingredientes
+                        {t('home.coverage', {
+                          available: recommendedScore.availableCount,
+                          total: recommendedScore.availableCount + recommendedScore.missingCount,
+                        })}
                       </Text>
                     </View>
                   )}
@@ -628,7 +637,7 @@ export default function HomeScreen() {
                     >
                       <MaterialCommunityIcons name="piggy-bank-outline" size={20} color={colors.primary} />
                       <Text style={[styles.highlightText, typography.bodySm]}>
-                        No necesitas comprar ingredientes adicionales
+                        {t('home.noPurchaseNeeded')}
                       </Text>
                     </View>
                   ) : recommendedRecipe.withinBudget ? (
@@ -638,9 +647,9 @@ export default function HomeScreen() {
                     >
                       <MaterialCommunityIcons name="piggy-bank-outline" size={20} color={colors.primary} />
                       <Text style={[styles.highlightText, typography.bodySm]}>
-                        Solo necesitas aproximadamente{' '}
+                        {t('home.onlyNeedPrefix')}{' '}
                         <Text style={[styles.highlightBold, { color: colors.primary }]}>
-                          {formatCopCurrency(recommendedRecipe.estimatedMissingCost, false)}
+                          {format.currency(recommendedRecipe.estimatedMissingCost, false)}
                         </Text>
                       </Text>
                     </View>
@@ -651,11 +660,11 @@ export default function HomeScreen() {
                     >
                       <MaterialCommunityIcons name="alert-outline" size={20} color={colors.onErrorContainer} />
                       <Text style={[styles.highlightText, typography.bodySm]}>
-                        Compra estimada de{' '}
+                        {t('home.estimatedPurchasePrefix')}{' '}
                         <Text style={styles.highlightBold}>
-                          {formatCopCurrency(recommendedRecipe.estimatedMissingCost, false)}
+                          {format.currency(recommendedRecipe.estimatedMissingCost, false)}
                         </Text>
-                        : supera tu presupuesto
+                        {t('home.overBudgetSuffix')}
                       </Text>
                     </View>
                   )}
@@ -675,14 +684,13 @@ export default function HomeScreen() {
                     style={[styles.rankNote, typography.labelSm]}
                     testID="home-recommendation-rank-note"
                   >
-                    Elegida entre tus {candidateCount} recetas generadas según presupuesto,
-                    ingredientes que ya tienes y costo de lo que falta.
+                    {t('home.rankNote', { count: candidateCount })}
                   </Text>
                 )}
 
                 <Button
                   testID="home-view-recipe-button"
-                  title="Ver receta"
+                  title={t('home.viewRecipe')}
                   variant="primary"
                   size="lg"
                   fullWidth
@@ -690,8 +698,8 @@ export default function HomeScreen() {
                     selectRecipe(recommendedRecipe);
                     router.push(`/recetas/${recommendedRecipe.id}` as any);
                   }}
-                  accessibilityLabel={`Ver receta de ${recommendedRecipe.name}`}
-                  accessibilityHint="Muestra los pasos detallados de la receta"
+                  accessibilityLabel={t('home.viewRecipeLabel', { name: recommendedRecipe.name })}
+                  accessibilityHint={t('home.viewRecipeHint')}
                   rightIcon={<MaterialCommunityIcons name="arrow-right" size={18} color={colors.onPrimary} />}
                 />
               </View>
@@ -700,14 +708,13 @@ export default function HomeScreen() {
             renderStateCard({
               testID: 'home-empty-recipe-state',
               icon: 'book-open-variant',
-              title: 'Sin recomendaciones disponibles',
-              message:
-                'Aún no hay recetas generadas para tu despensa y presupuesto actuales. Genera recomendaciones con IA desde Recetas.',
+              title: t('home.noRecommendationsTitle'),
+              message: t('home.noRecommendationsMessage'),
               actionTestID: 'home-recommendation-generate-button',
-              actionTitle: 'Generar recomendaciones',
+              actionTitle: t('home.generateRecommendations'),
               actionIcon: 'silverware-fork-knife',
               onAction: goToRecipeGeneration,
-              actionHint: 'Abre Recetas, donde puedes generar recomendaciones con IA',
+              actionHint: t('home.generateHint'),
             })
           )}
         </View>
@@ -723,33 +730,33 @@ export default function HomeScreen() {
           <View
             style={styles.budgetModalCard}
             accessibilityRole="alert"
-            accessibilityLabel="Diálogo de ajuste de presupuesto"
+            accessibilityLabel={t('home.budgetDialogLabel')}
           >
             <View style={styles.modalIconBox}>
               <MaterialCommunityIcons name="wallet-outline" size={28} color={colors.primary} />
             </View>
 
             <Text style={[styles.modalTitle, typography.headlineMd]}>
-              Ajustar presupuesto
+              {t('home.budgetDialogTitle')}
             </Text>
 
             <Text style={[styles.modalDescription, typography.bodySm]}>
-              Ingresa el presupuesto disponible en pesos colombianos (COP). Este valor se guarda en tus preferencias para estimar y recomendar tus recetas.
+              {t('home.budgetDialogDesc')}
             </Text>
 
             <View style={styles.budgetInputContainer}>
               <Input
                 testID="budget-input-field"
-                label="Presupuesto disponible (COP)"
-                placeholder="Ej. 25000"
+                label={t('home.budgetInputLabel')}
+                placeholder={t('home.budgetInputPlaceholder')}
                 keyboardType="numeric"
                 value={tempBudgetText}
                 onChangeText={(val) => {
                   setTempBudgetText(val);
                   if (budgetError) setBudgetError(undefined);
                 }}
-                errorMessage={budgetError}
-                helperText="Ingresa un valor mayor o igual a 0"
+                errorMessage={localizedBudgetError}
+                helperText={t('home.budgetInputHelper')}
                 leftElement={
                   <Text style={styles.currencyPrefix}>$</Text>
                 }
@@ -759,21 +766,21 @@ export default function HomeScreen() {
             <View style={styles.modalButtonsRow}>
               <Button
                 testID="budget-cancel-button"
-                title="Cancelar"
+                title={t('common.cancel')}
                 variant="outline"
                 size="md"
                 style={styles.modalButtonFlex}
                 onPress={handleCloseBudgetModal}
-                accessibilityLabel="Cancelar ajuste de presupuesto"
+                accessibilityLabel={t('home.budgetCancelLabel')}
               />
               <Button
                 testID="budget-confirm-button"
-                title="Confirmar"
+                title={t('common.confirm')}
                 variant="primary"
                 size="md"
                 style={styles.modalButtonFlex}
                 onPress={handleSaveBudget}
-                accessibilityLabel="Confirmar nuevo presupuesto"
+                accessibilityLabel={t('home.budgetConfirmLabel')}
               />
             </View>
           </View>

@@ -106,8 +106,11 @@ export function mapSupabaseAuthError(error: unknown): string {
 /**
  * Obtiene el nombre para mostrar del usuario a partir de sus metadatos o correo.
  */
-export function getUserDisplayName(user: AuthUser | null | undefined): string {
-  if (!user) return 'Usuario';
+export function getUserDisplayName(
+  user: AuthUser | null | undefined,
+  fallback: string = 'Usuario'
+): string {
+  if (!user) return fallback;
 
   const metadata = user.user_metadata;
   if (metadata) {
@@ -129,7 +132,7 @@ export function getUserDisplayName(user: AuthUser | null | undefined): string {
     }
   }
 
-  return 'Usuario';
+  return fallback;
 }
 
 /**

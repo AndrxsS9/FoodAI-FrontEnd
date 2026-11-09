@@ -16,6 +16,8 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { AppColors, getAppSurfaces, radius, spacing, useTypography, useThemeColors, useThemeStyles } from '../../theme';
+import { useLocale } from '../../context/LocaleContext';
+import { localizeMessage } from '../../locales/messages';
 import { AuthUser, getAvatarInitials, getUserDisplayName } from '../../types/auth';
 import { Button } from '../common';
 
@@ -33,15 +35,20 @@ export function ProfileHeader({
   const typography = useTypography();
   const colors = useThemeColors();
   const styles = useThemeStyles(createStyles);
-  const displayName = getUserDisplayName(user);
-  const email = user?.email ?? 'Correo no disponible';
+  const { t, locale } = useLocale();
+  const displayName = getUserDisplayName(user, t('profile.header.defaultUser'));
+  const email = user?.email ?? t('profile.header.emailUnavailable');
   const initials = getAvatarInitials(displayName || email);
   const isEmailVerified = Boolean(user?.email_confirmed_at || user?.confirmed_at);
 
   const [isEditModalVisible, setIsEditModalVisible] = useState(false);
   const [tempName, setTempName] = useState(displayName);
-  const [nameError, setNameError] = useState<string | null>(null);
+  const [nameError, setNameError] = useState<'required' | null>(null);
+  const localizedNameError = nameError ? t('profile.header.nameRequired') : null;
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const localizedSubmitError = localizeMessage(submitError, locale, {
+    fallbackKey: 'messages.profile.saveNameFailed',
+  });
 
   const handleOpenEditModal = () => {
     setTempName(displayName);
@@ -60,7 +67,7 @@ export function ProfileHeader({
   const handleSaveName = async () => {
     const trimmed = tempName.trim();
     if (!trimmed) {
-      setNameError('Por favor ingresa tu nombre.');
+      setNameError('required');
       return;
     }
 
@@ -83,7 +90,7 @@ export function ProfileHeader({
           <View
             style={styles.avatarCircle}
             accessibilityRole="image"
-            accessibilityLabel={`Avatar con iniciales ${initials}`}
+            accessibilityLabel={t('profile.header.avatarLabel', { initials })}
             testID="profile-avatar-initials"
           >
             <Text style={[styles.avatarText, typography.headlineMd]}>{initials}</Text>
@@ -107,7 +114,7 @@ export function ProfileHeader({
                 pressed && styles.editNameButtonPressed,
               ]}
               accessibilityRole="button"
-              accessibilityLabel="Editar nombre de usuario"
+              accessibilityLabel={t('profile.header.editNameLabel')}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               testID="btn-edit-name"
             >
@@ -127,20 +134,20 @@ export function ProfileHeader({
             {isEmailVerified ? (
               <View
                 style={styles.verifiedBadge}
-                accessibilityLabel="Correo electrónico verificado"
+                accessibilityLabel={t('profile.header.emailVerifiedLabel')}
                 testID="profile-email-badge"
               >
                 <MaterialCommunityIcons name="check-circle" size={12} color={colors.success} />
-                <Text style={[styles.verifiedBadgeText, typography.labelSm]}>Verificado</Text>
+                <Text style={[styles.verifiedBadgeText, typography.labelSm]}>{t('profile.header.emailVerified')}</Text>
               </View>
             ) : (
               <View
                 style={styles.unverifiedBadge}
-                accessibilityLabel="Correo electrónico sin verificar"
+                accessibilityLabel={t('profile.header.emailUnverifiedLabel')}
                 testID="profile-email-badge"
               >
                 <MaterialCommunityIcons name="clock-outline" size={12} color={colors.warning} />
-                <Text style={[styles.unverifiedBadgeText, typography.labelSm]}>Sin verificar</Text>
+                <Text style={[styles.unverifiedBadgeText, typography.labelSm]}>{t('profile.header.emailUnverified')}</Text>
               </View>
             )}
           </View>
@@ -162,7 +169,7 @@ export function ProfileHeader({
           <Pressable
             style={StyleSheet.absoluteFill}
             onPress={handleCloseEditModal}
-            accessibilityLabel="Cerrar modal de edición de nombre"
+            accessibilityLabel={t('profile.header.closeEditNameLabel')}
           />
 
           <View style={styles.dialogCard}>
@@ -171,18 +178,18 @@ export function ProfileHeader({
                 <MaterialCommunityIcons name="account" size={24} color={colors.primary} />
               </View>
               <Text style={[styles.dialogTitle, typography.headlineMd]}>
-                Editar nombre
+                {t('profile.header.editNameTitle')}
               </Text>
             </View>
 
             <Text style={[styles.dialogSubtitle, typography.bodySm]}>
-              Ingresa el nombre con el que te identificarás en FoodAI.
+              {t('profile.header.editNameSubtitle')}
             </Text>
 
-            {submitError && (
+            {localizedSubmitError && (
               <View style={styles.errorBox} testID="edit-name-submit-error">
                 <MaterialCommunityIcons name="alert-circle-outline" size={16} color={colors.error} />
-                <Text style={[styles.errorText, typography.bodySm]}>{submitError}</Text>
+                <Text style={[styles.errorText, typography.bodySm]}>{localizedSubmitError}</Text>
               </View>
             )}
 
@@ -201,19 +208,19 @@ export function ProfileHeader({
                     if (nameError) setNameError(null);
                     if (submitError) setSubmitError(null);
                   }}
-                  placeholder="Tu nombre completo"
+                  placeholder={t('profile.header.namePlaceholder')}
                   placeholderTextColor={colors.textTertiary}
                   autoCapitalize="words"
                   autoCorrect={false}
                   editable={!isUpdatingName}
-                  accessibilityLabel="Nombre de usuario"
+                  accessibilityLabel={t('profile.header.nameInputLabel')}
                   testID="name-input"
                 />
                 {tempName.length > 0 && !isUpdatingName && (
                   <Pressable
                     onPress={() => setTempName('')}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    accessibilityLabel="Borrar nombre"
+                    accessibilityLabel={t('profile.header.clearNameLabel')}
                   >
                     <MaterialCommunityIcons name="close-circle-outline" size={18} color={colors.outline} />
                   </Pressable>
@@ -222,7 +229,7 @@ export function ProfileHeader({
 
               {nameError && (
                 <Text style={[styles.fieldErrorText, typography.bodySm]} testID="edit-name-error">
-                  {nameError}
+                  {localizedNameError}
                 </Text>
               )}
             </View>
@@ -230,7 +237,7 @@ export function ProfileHeader({
             <View style={styles.dialogActionsRow}>
               <Button
                 testID="cancel-name-button"
-                title="Cancelar"
+                title={t('common.cancel')}
                 variant="outline"
                 size="md"
                 onPress={handleCloseEditModal}
@@ -240,7 +247,7 @@ export function ProfileHeader({
 
               <Button
                 testID="save-name-button"
-                title={isUpdatingName ? 'Guardando...' : 'Guardar'}
+                title={isUpdatingName ? t('profile.header.saving') : t('common.save')}
                 variant="primary"
                 size="md"
                 onPress={handleSaveName}

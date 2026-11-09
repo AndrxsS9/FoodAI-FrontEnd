@@ -13,6 +13,8 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { AppColors, radius, spacing, useTypography, useThemeColors, useThemeStyles } from '../../theme';
+import { useLocale } from '../../context/LocaleContext';
+import { localizeMessage } from '../../locales/messages';
 import { Button } from '../common';
 
 export interface LogoutDialogProps {
@@ -35,6 +37,8 @@ export function LogoutDialog({
   const typography = useTypography();
   const colors = useThemeColors();
   const styles = useThemeStyles(createStyles);
+  const { t, locale } = useLocale();
+  const localizedError = localizeMessage(error, locale, { fallbackKey: 'messages.profile.logoutFailed' });
 
   return (
     <View style={styles.logoutSection}>
@@ -47,8 +51,8 @@ export function LogoutDialog({
         onPress={onOpenDialog}
         disabled={isLoggingOut}
         accessibilityRole="button"
-        accessibilityLabel="Cerrar sesión"
-        accessibilityHint="Cierra la sesión actual en este dispositivo"
+        accessibilityLabel={t('profile.logout.button')}
+        accessibilityHint={t('profile.logout.buttonHint')}
         testID="btn-logout"
       >
         {isLoggingOut ? (
@@ -57,14 +61,14 @@ export function LogoutDialog({
           <>
             <MaterialCommunityIcons name="logout" size={18} color={colors.secondary} />
             <Text style={[styles.logoutButtonText, typography.labelMd]}>
-              Cerrar sesión
+              {t('profile.logout.button')}
             </Text>
           </>
         )}
       </Pressable>
 
       <Text style={[styles.logoutCaptionText, typography.bodySm]}>
-        Tus datos de despensa permanecen guardados en este dispositivo.
+        {t('profile.logout.caption')}
       </Text>
 
       {/* Modal de confirmación de cierre de sesión */}
@@ -83,7 +87,7 @@ export function LogoutDialog({
             onPress={() => {
               if (!isLoggingOut) onCloseDialog();
             }}
-            accessibilityLabel="Cerrar diálogo de confirmación"
+            accessibilityLabel={t('profile.logout.closeDialogLabel')}
           />
 
           <View style={styles.dialogCard}>
@@ -95,17 +99,17 @@ export function LogoutDialog({
               style={[styles.dialogTitle, typography.headlineMd]}
               testID="logout-dialog-title"
             >
-              ¿Deseas cerrar tu sesión actual?
+              {t('profile.logout.dialogTitle')}
             </Text>
 
             <Text style={[styles.dialogMessage, typography.bodyMd]}>
-              Tus datos de despensa permanecen guardados en este dispositivo. Tendrás que iniciar sesión nuevamente para acceder a tu cuenta.
+              {t('profile.logout.dialogMessage')}
             </Text>
 
-            {error && (
+            {localizedError && (
               <View style={styles.dialogErrorBox} testID="logout-error-banner">
                 <Text style={[styles.dialogErrorText, typography.bodySm]}>
-                  {error}
+                  {localizedError}
                 </Text>
               </View>
             )}
@@ -113,7 +117,7 @@ export function LogoutDialog({
             <View style={styles.dialogButtonsCol}>
               <Button
                 testID="logout-confirm-button"
-                title={isLoggingOut ? 'Cerrando sesión...' : 'Cerrar sesión'}
+                title={isLoggingOut ? t('profile.logout.loggingOut') : t('profile.logout.button')}
                 variant="secondary"
                 size="md"
                 fullWidth
@@ -124,7 +128,7 @@ export function LogoutDialog({
 
               <Button
                 testID="logout-cancel-button"
-                title="Cancelar"
+                title={t('common.cancel')}
                 variant="outline"
                 size="md"
                 fullWidth

@@ -15,6 +15,9 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../src/context/AuthContext';
 import { isValidEmail, isValidPassword, MIN_PASSWORD_LENGTH } from '../../src/types/auth';
+import { useLocale } from '../../src/context/LocaleContext';
+import type { MessageKey } from '../../src/locales';
+import { localizeMessage } from '../../src/locales/messages';
 import {
   AppColors,
   radius,
@@ -29,6 +32,7 @@ export default function RegisterScreen() {
   const router = useRouter();
   const { colors } = useAppTheme();
   const styles = useThemeStyles(createStyles);
+  const { t, tx, locale } = useLocale();
   const { signUp, isSubmitting, authError, clearAuthError } = useAuth();
 
   const [email, setEmail] = useState('');
@@ -37,7 +41,8 @@ export default function RegisterScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-  const [localError, setLocalError] = useState<string | null>(null);
+  // Se guarda la clave (no el texto) para que el mensaje siga el idioma activo.
+  const [localError, setLocalError] = useState<MessageKey | null>(null);
   const [emailTouched, setEmailTouched] = useState(false);
   const [passwordTouched, setPasswordTouched] = useState(false);
   const [confirmPasswordTouched, setConfirmPasswordTouched] = useState(false);
@@ -53,17 +58,17 @@ export default function RegisterScreen() {
 
   const emailError =
     emailTouched && trimmedEmail.length > 0 && !isEmailValid
-      ? 'Ingresa un correo electrónico con formato válido.'
+      ? t('auth.emailFormatInvalid')
       : null;
 
   const passwordError =
     passwordTouched && password.length > 0 && !isPasswordLengthValid
-      ? `La contraseña debe contener al menos ${MIN_PASSWORD_LENGTH} caracteres.`
+      ? t('auth.register.passwordTooShortField', { min: MIN_PASSWORD_LENGTH })
       : null;
 
   const confirmPasswordError =
     confirmPasswordTouched && confirmPassword.length > 0 && !doPasswordsMatch
-      ? 'Las contraseñas no coinciden.'
+      ? t('auth.register.passwordsDontMatch')
       : null;
 
   const isFormComplete =
@@ -98,27 +103,27 @@ export default function RegisterScreen() {
     setConfirmPasswordTouched(true);
 
     if (!trimmedEmail) {
-      setLocalError('Por favor, ingresa tu correo electrónico.');
+      setLocalError('auth.emailRequired');
       return;
     }
 
     if (!isEmailValid) {
-      setLocalError('Por favor, ingresa un correo electrónico válido.');
+      setLocalError('auth.emailInvalid');
       return;
     }
 
     if (!password) {
-      setLocalError('Por favor, ingresa una contraseña.');
+      setLocalError('auth.register.passwordRequired');
       return;
     }
 
     if (!isPasswordLengthValid) {
-      setLocalError(`La contraseña debe tener al menos ${MIN_PASSWORD_LENGTH} caracteres.`);
+      setLocalError('auth.register.passwordTooShort');
       return;
     }
 
     if (!doPasswordsMatch) {
-      setLocalError('Las contraseñas no coinciden.');
+      setLocalError('auth.register.passwordsDontMatch');
       return;
     }
 
@@ -144,7 +149,9 @@ export default function RegisterScreen() {
     }
   };
 
-  const displayedError = localError || authError;
+  const displayedError = localError
+    ? tx(localError, { min: MIN_PASSWORD_LENGTH })
+    : localizeMessage(authError, locale, { fallbackKey: 'messages.auth.fallback' });
 
   // Vista de confirmación de correo pendiente
   if (isConfirmationPending) {
@@ -156,11 +163,11 @@ export default function RegisterScreen() {
           </View>
 
           <Text style={[styles.headline, typography.headlineLg]} accessibilityRole="header">
-            Verifica tu correo electrónico
+            {t('auth.register.verifyTitle')}
           </Text>
 
           <Text style={[styles.confirmationMessage, typography.bodyMd]}>
-            Hemos enviado un enlace de confirmación a:
+            {t('auth.register.verifySent')}
           </Text>
 
           <View style={styles.emailPill}>
@@ -170,9 +177,9 @@ export default function RegisterScreen() {
           </View>
 
           <Text style={[styles.confirmationSubtext, typography.bodySm]}>
-            1. Revisa tu bandeja de entrada y confirma tu cuenta abriendo el enlace en tu navegador web.
+            {t('auth.register.verifyStep1')}
             {'\n\n'}
-            2. Una vez confirmada tu cuenta en el navegador, regresa a FoodAI e inicia sesión manualmente con tu correo y contraseña.
+            {t('auth.register.verifyStep2')}
           </Text>
 
           <Pressable
@@ -187,10 +194,10 @@ export default function RegisterScreen() {
               router.replace('/(auth)/login');
             }}
             accessibilityRole="button"
-            accessibilityLabel="Ir a iniciar sesión"
+            accessibilityLabel={t('auth.register.goToLogin')}
           >
             <Text style={[styles.submitButtonText, typography.labelLg]}>
-              Ir a iniciar sesión
+              {t('auth.register.goToLogin')}
             </Text>
             <MaterialIcons name="arrow-forward" size={20} color={colors.onPrimary} />
           </Pressable>
@@ -216,11 +223,11 @@ export default function RegisterScreen() {
             <View
               style={styles.categoryBadge}
               accessibilityRole="text"
-              accessibilityLabel="Categoría: Nueva cuenta"
+              accessibilityLabel={t('auth.register.badgeLabel')}
             >
               <MaterialIcons name="eco" size={16} color={colors.primary} />
               <Text style={[styles.categoryBadgeText, typography.labelSm]}>
-                HOGAR INTELIGENTE
+                {t('common.smartHome')}
               </Text>
             </View>
 
@@ -228,11 +235,11 @@ export default function RegisterScreen() {
               style={[styles.headline, typography.headlineXl]}
               accessibilityRole="header"
             >
-              Crear cuenta
+              {t('auth.register.title')}
             </Text>
 
             <Text style={[styles.subtitle, typography.bodyMd]}>
-              Regístrate para planificar tus comidas, registrar tu despensa y cocinar sin desperdiciar alimentos.
+              {t('auth.register.subtitle')}
             </Text>
           </View>
 
@@ -256,7 +263,7 @@ export default function RegisterScreen() {
             {/* Campo: Correo electrónico */}
             <View style={styles.inputGroup}>
               <Text style={[styles.inputLabel, typography.labelMd]}>
-                Correo electrónico
+                {t('auth.emailLabel')}
               </Text>
               <View
                 style={[
@@ -273,7 +280,7 @@ export default function RegisterScreen() {
                 <TextInput
                   testID="register-email-input"
                   style={[styles.textInput, typography.bodyMd]}
-                  placeholder="ejemplo@correo.com"
+                  placeholder={t('auth.emailPlaceholder')}
                   placeholderTextColor={colors.textSecondary}
                   keyboardType="email-address"
                   autoCapitalize="none"
@@ -282,8 +289,8 @@ export default function RegisterScreen() {
                   onChangeText={handleEmailChange}
                   onBlur={() => setEmailTouched(true)}
                   editable={!isSubmitting}
-                  accessibilityLabel="Correo electrónico"
-                  accessibilityHint="Ingresa una dirección de correo para tu nueva cuenta"
+                  accessibilityLabel={t('auth.emailLabel')}
+                  accessibilityHint={t('auth.register.emailHint')}
                 />
               </View>
               {emailError ? (
@@ -296,7 +303,7 @@ export default function RegisterScreen() {
             {/* Campo: Contraseña */}
             <View style={styles.inputGroup}>
               <Text style={[styles.inputLabel, typography.labelMd]}>
-                Contraseña
+                {t('auth.passwordLabel')}
               </Text>
               <View
                 style={[
@@ -313,7 +320,7 @@ export default function RegisterScreen() {
                 <TextInput
                   testID="register-password-input"
                   style={[styles.textInput, typography.bodyMd]}
-                  placeholder={`Mínimo ${MIN_PASSWORD_LENGTH} caracteres`}
+                  placeholder={t('auth.register.passwordPlaceholder', { min: MIN_PASSWORD_LENGTH })}
                   placeholderTextColor={colors.textSecondary}
                   secureTextEntry={!showPassword}
                   autoCapitalize="none"
@@ -322,8 +329,8 @@ export default function RegisterScreen() {
                   onChangeText={handlePasswordChange}
                   onBlur={() => setPasswordTouched(true)}
                   editable={!isSubmitting}
-                  accessibilityLabel="Contraseña"
-                  accessibilityHint={`Ingresa una contraseña segura de al menos ${MIN_PASSWORD_LENGTH} caracteres`}
+                  accessibilityLabel={t('auth.passwordLabel')}
+                  accessibilityHint={t('auth.register.passwordHint', { min: MIN_PASSWORD_LENGTH })}
                 />
                 <Pressable
                   testID="register-password-toggle"
@@ -331,7 +338,7 @@ export default function RegisterScreen() {
                   onPress={() => setShowPassword((prev) => !prev)}
                   hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                   accessibilityRole="button"
-                  accessibilityLabel={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                  accessibilityLabel={showPassword ? t('auth.hidePassword') : t('auth.showPassword')}
                 >
                   <MaterialIcons
                     name={showPassword ? 'visibility' : 'visibility-off'}
@@ -350,7 +357,7 @@ export default function RegisterScreen() {
             {/* Campo: Confirmar contraseña */}
             <View style={styles.inputGroup}>
               <Text style={[styles.inputLabel, typography.labelMd]}>
-                Confirmar contraseña
+                {t('auth.register.confirmPasswordLabel')}
               </Text>
               <View
                 style={[
@@ -367,7 +374,7 @@ export default function RegisterScreen() {
                 <TextInput
                   testID="register-confirm-password-input"
                   style={[styles.textInput, typography.bodyMd]}
-                  placeholder="Repite tu contraseña"
+                  placeholder={t('auth.register.confirmPasswordPlaceholder')}
                   placeholderTextColor={colors.textSecondary}
                   secureTextEntry={!showConfirmPassword}
                   autoCapitalize="none"
@@ -376,8 +383,8 @@ export default function RegisterScreen() {
                   onChangeText={handleConfirmPasswordChange}
                   onBlur={() => setConfirmPasswordTouched(true)}
                   editable={!isSubmitting}
-                  accessibilityLabel="Confirmar contraseña"
-                  accessibilityHint="Vuelve a ingresar la misma contraseña para confirmarla"
+                  accessibilityLabel={t('auth.register.confirmPasswordLabel')}
+                  accessibilityHint={t('auth.register.confirmPasswordHint')}
                   onSubmitEditing={handleSubmit}
                   returnKeyType="done"
                 />
@@ -389,8 +396,8 @@ export default function RegisterScreen() {
                   accessibilityRole="button"
                   accessibilityLabel={
                     showConfirmPassword
-                      ? 'Ocultar confirmación de contraseña'
-                      : 'Mostrar confirmación de contraseña'
+                      ? t('auth.register.hideConfirmPassword')
+                      : t('auth.register.showConfirmPassword')
                   }
                 >
                   <MaterialIcons
@@ -418,7 +425,7 @@ export default function RegisterScreen() {
               onPress={handleSubmit}
               disabled={isSubmitting || !isFormComplete}
               accessibilityRole="button"
-              accessibilityLabel={isSubmitting ? 'Registrando cuenta...' : 'Registrarme'}
+              accessibilityLabel={isSubmitting ? t('auth.register.submitting') : t('auth.register.submit')}
               accessibilityState={{
                 disabled: isSubmitting || !isFormComplete,
                 busy: isSubmitting,
@@ -429,7 +436,7 @@ export default function RegisterScreen() {
               ) : (
                 <>
                   <Text style={[styles.submitButtonText, typography.labelLg]}>
-                    Registrarme
+                    {t('auth.register.submit')}
                   </Text>
                   <MaterialIcons name="person-add" size={20} color={colors.onPrimary} />
                 </>
@@ -440,7 +447,7 @@ export default function RegisterScreen() {
           {/* Enlace hacia inicio de sesión */}
           <View style={styles.switchRow}>
             <Text style={[styles.switchPromptText, typography.bodyMd]}>
-              ¿Ya tienes cuenta?
+              {t('auth.register.haveAccount')}
             </Text>
             <Pressable
               testID="register-login-link"
@@ -450,10 +457,10 @@ export default function RegisterScreen() {
               }}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               accessibilityRole="button"
-              accessibilityLabel="Iniciar sesión con cuenta existente"
+              accessibilityLabel={t('auth.register.signInLabel')}
             >
               <Text style={[styles.switchLinkText, typography.labelLg]}>
-                Iniciar sesión
+                {t('auth.register.signIn')}
               </Text>
             </Pressable>
           </View>

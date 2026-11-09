@@ -28,8 +28,6 @@ import {
   CreateIngredientInput,
   INGREDIENT_CATEGORIES,
   INGREDIENT_UNITS,
-  INGREDIENT_UNIT_LABELS,
-  INGREDIENT_UNIT_NAMES,
   Ingredient,
   IngredientCategory,
   IngredientUnit,
@@ -59,6 +57,11 @@ import {
 } from '../../utils/ingredientMapper';
 import { getCategoryVisual } from './categoryVisuals';
 import { ExpirationDateField } from './ExpirationDateField';
+import { useLocale } from '../../context/LocaleContext';
+import type { MessageKey } from '../../locales';
+import { getCategoryLabel, getUnitName, getUnitShortLabel } from '../../locales/labels';
+import { formatSemanticWarning, formatUnitNameList } from '../../locales/domainText';
+import { localizeMessage } from '../../locales/messages';
 
 export type IngredientFormSaveData = Omit<
   CreateIngredientInput,
@@ -112,24 +115,8 @@ function computeOfferedConversion(
   return String(rounded);
 }
 
-function formatUnitList(units: IngredientUnit[]): string {
-  const names = units.map((u) => INGREDIENT_UNIT_NAMES[u]);
-  if (names.length <= 1) return names.join('');
-  return `${names.slice(0, -1).join(', ')} o ${names[names.length - 1]}`;
-}
-
 /** Etiquetas compactas para los chips de unidad (el nombre completo se anuncia por accesibilidad). */
-const UNIT_CHIP_LABELS: Record<IngredientUnit, string> = {
-  unidad: 'Unidad',
-  g: 'g',
-  kg: 'kg',
-  ml: 'ml',
-  l: 'l',
-  cucharada: 'Cda.',
-  cucharadita: 'Cdta.',
-  taza: 'Taza',
-  desconocida: 'Otra',
-};
+const unitChipKey = (unit: IngredientUnit) => `ingredientForm.unitChip.${unit}` as MessageKey;
 
 function IngredientFormSheet({
   initialIngredient,
@@ -140,6 +127,11 @@ function IngredientFormSheet({
   const typography = useTypography();
   const { colors, activeColorScheme } = useAppTheme();
   const styles = useThemeStyles(createStyles);
+  const { t, tx, locale } = useLocale();
+  const formatUnitList = (units: IngredientUnit[]) => formatUnitNameList(units, locale);
+  // Los errores de validación son mensajes de dominio en español: se traducen al mostrarse.
+  const localizeError = (message?: string) =>
+    localizeMessage(message, locale, { fallbackKey: 'messages.pantry.fallback' }) ?? undefined;
   const isEditing = Boolean(initialIngredient);
 
   const [name, setName] = useState(initialIngredient?.name ?? '');
@@ -379,14 +371,14 @@ function IngredientFormSheet({
       <Pressable
         style={StyleSheet.absoluteFill}
         onPress={onClose}
-        accessibilityLabel="Cerrar formulario de ingrediente"
+        accessibilityLabel={t('ingredientForm.closeLabel')}
       />
 
       <View
         style={styles.sheetContainer}
         accessibilityViewIsModal={true}
         aria-modal={true}
-        accessibilityLabel={isEditing ? 'Editar alimento' : 'Agregar nuevo alimento'}
+        accessibilityLabel={isEditing ? t('ingredientForm.editTitle') : t('ingredientForm.addTitleLabel')}
       >
         <View style={styles.sheetDragBar} />
 
@@ -400,12 +392,12 @@ function IngredientFormSheet({
           </View>
           <View style={styles.headerTextCol}>
             <Text style={[styles.headerTitle, typography.headlineMd]}>
-              {isEditing ? 'Editar alimento' : 'Agregar alimento'}
+              {isEditing ? t('ingredientForm.editTitle') : t('ingredientForm.addTitle')}
             </Text>
             <Text style={[styles.headerSubtitle, typography.bodySm]}>
               {isEditing
-                ? 'Actualiza cantidad, categoría o fecha.'
-                : 'Súmalo a tu despensa en segundos.'}
+                ? t('ingredientForm.editSubtitle')
+                : t('ingredientForm.addSubtitle')}
             </Text>
           </View>
 
@@ -417,7 +409,7 @@ function IngredientFormSheet({
             ]}
             onPress={onClose}
             accessibilityRole="button"
-            accessibilityLabel="Cerrar modal"
+            accessibilityLabel={t('ingredientForm.closeModal')}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
             <MaterialCommunityIcons name="close" size={20} color={colors.textSecondary} />
@@ -437,7 +429,7 @@ function IngredientFormSheet({
             <View style={styles.errorBanner}>
               <MaterialCommunityIcons name="alert-circle-outline" size={18} color={colors.error} />
               <Text style={[styles.errorBannerText, typography.bodySm]}>
-                {errors.form}
+                {localizeMessage(errors.form, locale, { fallbackKey: 'ingredientForm.saveFailed' })}
               </Text>
             </View>
           )}
@@ -448,8 +440,8 @@ function IngredientFormSheet({
               onFocus={() => handleFieldFocus('name')}
               onBlur={() => handleFieldBlur('name')}
               testID="ingredient-name-input"
-              label="Nombre del alimento *"
-              placeholder="Ej. Pechuga de pollo, Tomate, Arroz"
+              label={t('ingredientForm.nameLabel')}
+              placeholder={t('ingredientForm.namePlaceholder')}
               value={name}
               onChangeText={(text) => {
                 setName(text);
@@ -457,12 +449,12 @@ function IngredientFormSheet({
                   setErrors((prev) => ({ ...prev, name: '' }));
                 }
               }}
-              error={errors.name}
+              error={localizeError(errors.name)}
               leftIcon={
                 <MaterialCommunityIcons name="food-outline" size={20} color={colors.outline} />
               }
               autoCapitalize="sentences"
-              accessibilityLabel="Nombre del alimento"
+              accessibilityLabel={t('ingredientForm.nameA11y')}
               containerStyle={styles.inputContainer}
             />
           </View>
@@ -476,7 +468,7 @@ function IngredientFormSheet({
               onFocus={() => handleFieldFocus('quantity')}
               onBlur={() => handleFieldBlur('quantity')}
               testID="ingredient-quantity-input"
-              label="Cantidad *"
+              label={t('ingredientForm.quantityLabel')}
               placeholder="1"
               keyboardType="decimal-pad"
               value={quantityText}
@@ -495,20 +487,20 @@ function IngredientFormSheet({
                   setErrors((prev) => ({ ...prev, quantity: '' }));
                 }
               }}
-              error={errors.quantity}
+              error={localizeError(errors.quantity)}
               leftIcon={
                 <MaterialCommunityIcons name="scale-balance" size={20} color={colors.outline} />
               }
               rightIcon={
                 <Text style={[styles.unitSuffix, typography.labelMd]}>
-                  {INGREDIENT_UNIT_LABELS[unit]}
+                  {getUnitShortLabel(unit, locale)}
                 </Text>
               }
-              accessibilityLabel="Cantidad del alimento"
+              accessibilityLabel={t('ingredientForm.quantityA11y')}
               containerStyle={styles.inputContainer}
             />
 
-            <View style={styles.chipsWrap} accessibilityLabel="Unidad de medida">
+            <View style={styles.chipsWrap} accessibilityLabel={t('ingredientForm.unitGroupLabel')}>
               {INGREDIENT_UNITS.map((unitOpt) => {
                 const isSelected = unit === unitOpt;
                 const isRecommended = measurement.suggestedUnits.includes(unitOpt);
@@ -524,8 +516,8 @@ function IngredientFormSheet({
                     ]}
                     onPress={() => handleUnitSelect(unitOpt)}
                     accessibilityRole="button"
-                    accessibilityLabel={`Unidad: ${INGREDIENT_UNIT_NAMES[unitOpt]}`}
-                    accessibilityHint={isRecommended ? 'Recomendada para este alimento' : undefined}
+                    accessibilityLabel={t('ingredientForm.unitOptionLabel', { unit: getUnitName(unitOpt, locale) })}
+                    accessibilityHint={isRecommended ? t('ingredientForm.recommendedHint') : undefined}
                     accessibilityState={{ selected: isSelected }}
                   >
                     <Text
@@ -535,7 +527,7 @@ function IngredientFormSheet({
                         isSelected && styles.unitChipTextSelected,
                       ]}
                     >
-                      {UNIT_CHIP_LABELS[unitOpt]}
+                      {tx(unitChipKey(unitOpt))}
                     </Text>
                   </Pressable>
                 );
@@ -550,10 +542,10 @@ function IngredientFormSheet({
                 />
                 <Text style={[styles.suggestionText, typography.bodySm]}>
                   {measurement.confidence === 'low'
-                    ? `Depende de la presentación (líquida o sólida): ${formatUnitList(measurement.suggestedUnits)}.`
+                    ? t('ingredientForm.unitDependsOnForm', { units: formatUnitList(measurement.suggestedUnits) })
                     : unitIsAutoSuggested
-                      ? `Unidad sugerida: ${formatUnitList(measurement.suggestedUnits)}. Puedes cambiarla.`
-                      : `Recomendado: ${formatUnitList(measurement.suggestedUnits)}.`}
+                      ? t('ingredientForm.unitSuggested', { units: formatUnitList(measurement.suggestedUnits) })
+                      : t('ingredientForm.unitRecommended', { units: formatUnitList(measurement.suggestedUnits) })}
                 </Text>
                 {unitTouched &&
                   suggestedUnit !== null &&
@@ -563,10 +555,10 @@ function IngredientFormSheet({
                       onPress={() => handleUnitSelect(suggestedUnit)}
                       hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}
                       accessibilityRole="button"
-                      accessibilityLabel={`Usar unidad sugerida: ${INGREDIENT_UNIT_NAMES[suggestedUnit]}`}
+                      accessibilityLabel={t('ingredientForm.useSuggestedUnitLabel', { unit: getUnitName(suggestedUnit, locale) })}
                     >
                       <Text style={[styles.suggestionAction, typography.labelMd]}>
-                        Usar {INGREDIENT_UNIT_LABELS[suggestedUnit]}
+                        {t('ingredientForm.useUnit', { unit: getUnitShortLabel(suggestedUnit, locale) })}
                       </Text>
                     </Pressable>
                   )}
@@ -586,9 +578,11 @@ function IngredientFormSheet({
                     color={colors.demoBadgeText}
                   />
                   <Text style={[styles.warningText, typography.bodySm]}>
-                    Cambiaste de {INGREDIENT_UNIT_NAMES[pendingUnitChange.from]} a{' '}
-                    {INGREDIENT_UNIT_NAMES[pendingUnitChange.to]}. La cantidad {quantityText.trim() || '—'}{' '}
-                    no se convirtió: confírmala o escribe una nueva.
+                    {t('ingredientForm.unitChanged', {
+                      from: getUnitName(pendingUnitChange.from, locale),
+                      to: getUnitName(pendingUnitChange.to, locale),
+                      quantity: quantityText.trim() || '—',
+                    })}
                   </Text>
                 </View>
                 <View style={styles.warningActions}>
@@ -601,10 +595,10 @@ function IngredientFormSheet({
                         clearPendingUnitChange();
                       }}
                       accessibilityRole="button"
-                      accessibilityLabel={`Convertir a ${pendingUnitChange.convertedText} ${INGREDIENT_UNIT_NAMES[pendingUnitChange.to]}`}
+                      accessibilityLabel={t('ingredientForm.convertLabel', { quantity: pendingUnitChange.convertedText, unit: getUnitName(pendingUnitChange.to, locale) })}
                     >
                       <Text style={[styles.warningActionText, typography.labelMd]}>
-                        Convertir a {pendingUnitChange.convertedText} {INGREDIENT_UNIT_LABELS[pendingUnitChange.to]}
+                        {t('ingredientForm.convertLabel', { quantity: pendingUnitChange.convertedText, unit: getUnitShortLabel(pendingUnitChange.to, locale) })}
                       </Text>
                     </Pressable>
                   )}
@@ -613,10 +607,10 @@ function IngredientFormSheet({
                     style={({ pressed }) => [styles.warningAction, pressed && styles.buttonPressed]}
                     onPress={clearPendingUnitChange}
                     accessibilityRole="button"
-                    accessibilityLabel={`Mantener ${quantityText.trim()} ${INGREDIENT_UNIT_NAMES[pendingUnitChange.to]}`}
+                    accessibilityLabel={t('ingredientForm.keepLabel', { quantity: quantityText.trim(), unit: getUnitName(pendingUnitChange.to, locale) })}
                   >
                     <Text style={[styles.warningActionText, typography.labelMd]}>
-                      Mantener {quantityText.trim()} {INGREDIENT_UNIT_LABELS[pendingUnitChange.to]}
+                      {t('ingredientForm.keepLabel', { quantity: quantityText.trim(), unit: getUnitShortLabel(pendingUnitChange.to, locale) })}
                     </Text>
                   </Pressable>
                 </View>
@@ -624,7 +618,7 @@ function IngredientFormSheet({
             )}
             {errors.unit && (
               <Text style={[styles.fieldError, typography.bodySm]}>
-                {errors.unit}
+                {localizeError(errors.unit)}
               </Text>
             )}
           </View>
@@ -632,7 +626,7 @@ function IngredientFormSheet({
           {/* 3. Categoría */}
           <View style={styles.fieldSection}>
             <Text style={[styles.sectionLabel, typography.labelMd]}>
-              Categoría *
+              {t('ingredientForm.categoryLabel')}
             </Text>
             <View style={styles.categoryGrid}>
               {INGREDIENT_CATEGORIES.map((catOpt) => {
@@ -649,9 +643,9 @@ function IngredientFormSheet({
                     ]}
                     onPress={() => handleCategorySelect(catOpt)}
                     accessibilityRole="button"
-                    accessibilityLabel={`Categoría: ${catOpt}`}
+                    accessibilityLabel={t('ingredientForm.categoryOptionLabel', { category: getCategoryLabel(catOpt, locale) })}
                     accessibilityHint={
-                      catOpt === suggestedCategory ? 'Recomendada para este alimento' : undefined
+                      catOpt === suggestedCategory ? t('ingredientForm.recommendedHint') : undefined
                     }
                     accessibilityState={{ selected: isSelected }}
                   >
@@ -671,7 +665,7 @@ function IngredientFormSheet({
                         isSelected && styles.categoryTileTextSelected,
                       ]}
                     >
-                      {catOpt}
+                      {getCategoryLabel(catOpt, locale)}
                     </Text>
                   </Pressable>
                 );
@@ -687,8 +681,8 @@ function IngredientFormSheet({
                   />
                   <Text style={[styles.suggestionText, typography.bodySm]}>
                     {categoryIsAutoSuggested
-                      ? 'Categoría sugerida según el nombre. Puedes cambiarla.'
-                      : `Sugerencia: ${suggestedCategory}.`}
+                      ? t('ingredientForm.categoryAutoSuggested')
+                      : t('ingredientForm.categorySuggestion', { category: getCategoryLabel(suggestedCategory, locale) })}
                   </Text>
                   {!categoryIsAutoSuggested && (
                     <Pressable
@@ -696,16 +690,16 @@ function IngredientFormSheet({
                       onPress={() => handleCategorySelect(suggestedCategory)}
                       hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}
                       accessibilityRole="button"
-                      accessibilityLabel={`Usar categoría sugerida: ${suggestedCategory}`}
+                      accessibilityLabel={t('ingredientForm.useSuggestedCategoryLabel', { category: getCategoryLabel(suggestedCategory, locale) })}
                     >
-                      <Text style={[styles.suggestionAction, typography.labelMd]}>Usar</Text>
+                      <Text style={[styles.suggestionAction, typography.labelMd]}>{t('ingredientForm.use')}</Text>
                     </Pressable>
                   )}
                 </View>
               )}
             {errors.category && (
               <Text style={[styles.fieldError, typography.bodySm]}>
-                {errors.category}
+                {localizeError(errors.category)}
               </Text>
             )}
           </View>
@@ -724,7 +718,7 @@ function IngredientFormSheet({
               <View style={styles.warningRow}>
                 <MaterialCommunityIcons name="alert-outline" size={18} color={colors.demoBadgeText} />
                 <Text style={[styles.warningTitle, typography.labelMd]}>
-                  Revisa esta combinación
+                  {t('ingredientForm.reviewCombination')}
                 </Text>
               </View>
               {semanticWarnings.map((warning) => (
@@ -733,13 +727,13 @@ function IngredientFormSheet({
                   testID={`semantic-warning-${warning.code}`}
                   style={[styles.warningText, typography.bodySm]}
                 >
-                  {warning.message}
+                  {formatSemanticWarning(warning, { name, unit, category }, locale)}
                 </Text>
               ))}
               <Text style={[styles.warningText, typography.bodySm]}>
                 {isWarningPromptActive
-                  ? 'Si los datos son correctos, pulsa «Guardar de todos modos».'
-                  : 'Puedes corregirlo o confirmarlo al guardar.'}
+                  ? t('ingredientForm.saveAnywayPrompt')
+                  : t('ingredientForm.canFixOrConfirm')}
               </Text>
             </View>
           )}
@@ -753,7 +747,7 @@ function IngredientFormSheet({
                 setErrors((prev) => ({ ...prev, expirationDate: '' }));
               }
             }}
-            error={errors.expirationDate}
+            error={localizeError(errors.expirationDate)}
           />
 
           {/* Si está editando, ofrecer botón de eliminar directo */}
@@ -769,11 +763,11 @@ function IngredientFormSheet({
                 onDeleteRequest(initialIngredient);
               }}
               accessibilityRole="button"
-              accessibilityLabel={`Eliminar ${initialIngredient.name} de la despensa`}
+              accessibilityLabel={t('ingredientForm.deleteLabel', { name: initialIngredient.name })}
             >
               <MaterialCommunityIcons name="trash-can-outline" size={18} color={colors.error} />
               <Text style={[styles.deleteTriggerText, typography.labelMd]}>
-                Eliminar este alimento
+                {t('ingredientForm.deleteThis')}
               </Text>
             </Pressable>
           )}
@@ -786,22 +780,22 @@ function IngredientFormSheet({
         >
           <Button
             testID="cancel-ingredient-form"
-            title="Cancelar"
+            title={t('common.cancel')}
             variant="outline"
             size="lg"
             style={stackFooter ? styles.footerStackedButton : styles.footerCancel}
             onPress={onClose}
             disabled={isSubmitting}
-            accessibilityLabel="Cancelar registro"
+            accessibilityLabel={t('ingredientForm.cancelLabel')}
           />
           <Button
             testID="submit-ingredient-form"
             title={
               isWarningPromptActive
-                ? 'Guardar de todos modos'
+                ? t('ingredientForm.saveAnyway')
                 : isEditing
-                  ? 'Guardar cambios'
-                  : 'Guardar alimento'
+                  ? t('ingredientForm.saveChanges')
+                  : t('ingredientForm.saveFood')
             }
             variant="primary"
             size="lg"
@@ -817,10 +811,10 @@ function IngredientFormSheet({
             }
             accessibilityLabel={
               isWarningPromptActive
-                ? 'Confirmar advertencias y guardar'
+                ? t('ingredientForm.saveAnywayLabel')
                 : isEditing
-                  ? 'Confirmar y guardar cambios'
-                  : 'Guardar nuevo ingrediente'
+                  ? t('ingredientForm.saveChangesLabel')
+                  : t('ingredientForm.saveNewLabel')
             }
           />
         </View>

@@ -12,6 +12,8 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { AppColors, radius, spacing, useTypography, useThemeColors, useThemeStyles } from '../../theme';
+import { useLocale } from '../../context/LocaleContext';
+import { localizeMessage } from '../../locales/messages';
 import { Button } from '../common';
 
 export interface ResetPreferencesDialogProps {
@@ -36,6 +38,10 @@ export function ResetPreferencesDialog({
   const typography = useTypography();
   const colors = useThemeColors();
   const styles = useThemeStyles(createStyles);
+  const { t, locale, format } = useLocale();
+  const localizedError = localizeMessage(error, locale, {
+    fallbackKey: 'messages.budget.resetPreferencesFailed',
+  });
 
   return (
     <View style={styles.resetSection}>
@@ -51,8 +57,8 @@ export function ResetPreferencesDialog({
         accessibilityState={{ disabled: isLoading || isResetting, busy: isLoading }}
         accessibilityLabel={
           isLoading
-            ? 'Cargando preferencias guardadas. Por favor espera.'
-            : 'Restablecer preferencias a los valores iniciales'
+            ? t('profile.culinary.loadingPleaseWait')
+            : t('profile.reset.buttonLabel')
         }
         testID="btn-reset-preferences"
       >
@@ -68,12 +74,12 @@ export function ResetPreferencesDialog({
             (isLoading || isResetting) && styles.textDisabled,
           ]}
         >
-          {isLoading ? 'Cargando preferencias...' : 'Restablecer preferencias'}
+          {isLoading ? t('profile.culinary.loadingShort') : t('profile.reset.button')}
         </Text>
       </Pressable>
 
       <Text style={[styles.resetCaptionText, typography.bodySm]}>
-        Tus datos de despensa y recetas permanecen guardados en este dispositivo.
+        {t('profile.reset.caption')}
       </Text>
 
       {/* Modal de confirmación */}
@@ -92,7 +98,7 @@ export function ResetPreferencesDialog({
             onPress={() => {
               if (!isResetting) onCloseDialog();
             }}
-            accessibilityLabel="Cerrar diálogo de confirmación"
+            accessibilityLabel={t('profile.reset.closeDialogLabel')}
           />
 
           <View style={styles.dialogCard}>
@@ -104,17 +110,17 @@ export function ResetPreferencesDialog({
               style={[styles.dialogTitle, typography.headlineMd]}
               testID="reset-dialog-title"
             >
-              ¿Restablecer preferencias?
+              {t('profile.reset.dialogTitle')}
             </Text>
 
             <Text style={[styles.dialogMessage, typography.bodyMd]}>
-              Se restaurará el presupuesto a $20.000 COP, las porciones a 2 personas y se eliminará el límite de tiempo. Tus alimentos en la despensa y recetas guardadas no se verán afectados.
+              {t('profile.reset.dialogMessage', { budget: format.currency(20000) })}
             </Text>
 
-            {error && (
+            {localizedError && (
               <View style={styles.dialogErrorBox}>
                 <Text style={[styles.dialogErrorText, typography.bodySm]}>
-                  {error}
+                  {localizedError}
                 </Text>
               </View>
             )}
@@ -122,7 +128,7 @@ export function ResetPreferencesDialog({
             <View style={styles.dialogButtonsCol}>
               <Button
                 testID="reset-confirm-button"
-                title={isResetting ? 'Restableciendo...' : 'Sí, restablecer preferencias'}
+                title={isResetting ? t('profile.reset.resetting') : t('profile.reset.confirm')}
                 variant="secondary"
                 size="md"
                 fullWidth
@@ -133,7 +139,7 @@ export function ResetPreferencesDialog({
 
               <Button
                 testID="reset-cancel-button"
-                title="Cancelar"
+                title={t('common.cancel')}
                 variant="outline"
                 size="md"
                 fullWidth

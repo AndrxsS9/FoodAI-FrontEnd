@@ -17,8 +17,6 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import {
   INGREDIENT_CATEGORIES,
   INGREDIENT_UNITS,
-  INGREDIENT_UNIT_LABELS,
-  INGREDIENT_UNIT_NAMES,
   IngredientCategory,
   IngredientUnit,
 } from '../../types/pantry';
@@ -45,6 +43,9 @@ import {
   useThemeStyles,
 } from '../../theme';
 import { getCategoryVisual } from '../pantry/categoryVisuals';
+import { useLocale } from '../../context/LocaleContext';
+import { getCategoryLabel, getUnitName, getUnitShortLabel } from '../../locales/labels';
+import { formatSemanticWarning } from '../../locales/domainText';
 
 /** Área táctil mínima cómoda para controles interactivos (44 pt / dp). */
 export const MIN_TOUCH_TARGET = 44;
@@ -76,6 +77,7 @@ export function DetectedIngredientCard({
   const typography = useTypography();
   const { colors, activeColorScheme } = useAppTheme();
   const styles = useThemeStyles(createStyles);
+  const { t, locale } = useLocale();
   const { width: windowWidth, fontScale } = useWindowDimensions();
   // En pantallas estrechas o con fuente grande el ancho se reserva para que el nombre siga legible
   const showCategoryTile = windowWidth >= 340 && fontScale <= 1.3;
@@ -136,7 +138,7 @@ export function DetectedIngredientCard({
           testID={`detected-checkbox-${item.id}`}
           accessibilityRole="checkbox"
           accessibilityState={{ checked: item.isSelected }}
-          accessibilityLabel={`Seleccionar ingrediente ${item.name}`}
+          accessibilityLabel={t('detectedCard.selectLabel', { name: item.name })}
           onPress={() => onToggleSelect(item.id)}
           style={styles.checkboxTouchArea}
         >
@@ -174,9 +176,9 @@ export function DetectedIngredientCard({
                 ? (event) => setNameContentHeight(event.nativeEvent.contentSize.height)
                 : undefined
             }
-            placeholder="Nombre del alimento"
+            placeholder={t('detectedCard.namePlaceholder')}
             placeholderTextColor={colors.outline}
-            accessibilityLabel="Nombre del ingrediente detectado"
+            accessibilityLabel={t('detectedCard.nameLabel')}
             multiline
             scrollEnabled={false}
             submitBehavior="blurAndSubmit"
@@ -199,7 +201,7 @@ export function DetectedIngredientCard({
                   { color: categoryVisual.color },
                 ]}
               >
-                {item.category}
+                {getCategoryLabel(item.category, locale)}
               </Text>
             </View>
 
@@ -210,7 +212,7 @@ export function DetectedIngredientCard({
               >
                 <MaterialCommunityIcons name="help-circle-outline" size={14} color={warningTone} />
                 <Text style={[styles.badgeText, typography.labelSm, styles.reviewBadgeText]}>
-                  {item.quantity === null ? 'Cantidad requerida' : 'Confirmar datos'}
+                  {item.quantity === null ? t('detectedCard.quantityRequired') : t('detectedCard.confirmData')}
                 </Text>
               </View>
             )}
@@ -237,7 +239,7 @@ export function DetectedIngredientCard({
                     isPossibleDuplicate && { color: warningTone },
                   ]}
                 >
-                  {isPossibleDuplicate ? '¿En despensa?' : 'En despensa'}
+                  {isPossibleDuplicate ? t('detectedCard.possiblyInPantry') : t('detectedCard.inPantry')}
                 </Text>
               </View>
             )}
@@ -247,7 +249,7 @@ export function DetectedIngredientCard({
         <Pressable
           testID={`detected-remove-${item.id}`}
           accessibilityRole="button"
-          accessibilityLabel={`Excluir ${item.name}`}
+          accessibilityLabel={t('detectedCard.excludeLabel', { name: item.name })}
           onPress={() => onRemove(item.id)}
           style={({ pressed }) => [styles.removeButton, pressed && styles.removeButtonPressed]}
         >
@@ -265,7 +267,7 @@ export function DetectedIngredientCard({
           <View style={styles.fieldLabelRow}>
             <View style={styles.fieldLabelGroup}>
               <MaterialCommunityIcons name="weight" size={18} color={colors.textPrimary} />
-              <Text style={[styles.fieldLabel, typography.labelLg]}>Cantidad</Text>
+              <Text style={[styles.fieldLabel, typography.labelLg]}>{t('detectedCard.quantity')}</Text>
             </View>
             <Text
               testID={`detected-quantity-hint-${item.id}`}
@@ -275,7 +277,7 @@ export function DetectedIngredientCard({
                 item.quantity === null && styles.fieldHintRequired,
               ]}
             >
-              {item.quantity === null ? 'Obligatoria' : 'Estimada'}
+              {item.quantity === null ? t('detectedCard.mandatory') : t('detectedCard.estimated')}
             </Text>
           </View>
           <View
@@ -289,10 +291,10 @@ export function DetectedIngredientCard({
               style={[typography.bodyLg, styles.quantityInput]}
               value={quantityInput}
               onChangeText={handleQuantityTextChange}
-              placeholder="Ej. 2"
+              placeholder={t('detectedCard.quantityPlaceholder')}
               placeholderTextColor={colors.outline}
               keyboardType="decimal-pad"
-              accessibilityLabel={`Cantidad para ${item.name}`}
+              accessibilityLabel={t('detectedCard.quantityLabel', { name: item.name })}
             />
             <View style={styles.quantityDivider} />
             <Text
@@ -301,7 +303,7 @@ export function DetectedIngredientCard({
               numberOfLines={1}
               importantForAccessibility="no"
             >
-              {INGREDIENT_UNIT_NAMES[item.unit]}
+              {getUnitName(item.unit, locale)}
             </Text>
           </View>
         </View>
@@ -310,13 +312,13 @@ export function DetectedIngredientCard({
         <View style={styles.fieldSection} testID={`detected-unit-section-${item.id}`}>
           <View style={styles.fieldLabelGroup}>
             <MaterialCommunityIcons name="layers-outline" size={18} color={colors.textPrimary} />
-            <Text style={[styles.fieldLabel, typography.labelLg]}>Unidad</Text>
+            <Text style={[styles.fieldLabel, typography.labelLg]}>{t('detectedCard.unit')}</Text>
           </View>
           <View
             style={styles.unitOptionsWrap}
             testID={`detected-unit-options-${item.id}`}
             accessibilityRole="radiogroup"
-            accessibilityLabel={`Unidad de medida para ${item.name}`}
+            accessibilityLabel={t('detectedCard.unitGroupLabel', { name: item.name })}
           >
             {INGREDIENT_UNITS.map((u) => {
               const isSelected = item.unit === u;
@@ -330,7 +332,7 @@ export function DetectedIngredientCard({
                   ]}
                   onPress={() => onChangeUnit(item.id, u)}
                   accessibilityRole="button"
-                  accessibilityLabel={`Unidad ${INGREDIENT_UNIT_NAMES[u]}`}
+                  accessibilityLabel={t('detectedCard.unitOptionLabel', { unit: getUnitName(u, locale) })}
                   accessibilityState={{ selected: isSelected }}
                 >
                   {/* El área táctil mide 44 dp; la píldora visible es más compacta, como en la referencia */}
@@ -345,7 +347,7 @@ export function DetectedIngredientCard({
                         isSelected && styles.unitChipTextSelected,
                       ]}
                     >
-                      {INGREDIENT_UNIT_LABELS[u]}
+                      {getUnitShortLabel(u, locale)}
                     </Text>
                   </View>
                 </Pressable>
@@ -357,8 +359,8 @@ export function DetectedIngredientCard({
               testID={`detected-unit-suggestion-${item.id}`}
               style={[styles.unitSuggestionText, typography.bodySm]}
             >
-              Unidades sugeridas:{' '}
-              {unitSuggestion.suggestedUnits.map((u) => INGREDIENT_UNIT_LABELS[u]).join(', ')}
+              {t('detectedCard.suggestedUnits')}{' '}
+              {unitSuggestion.suggestedUnits.map((u) => getUnitShortLabel(u, locale)).join(', ')}
             </Text>
           )}
         </View>
@@ -376,7 +378,7 @@ export function DetectedIngredientCard({
               <View style={styles.semanticNoticeRow}>
                 <MaterialCommunityIcons name="alert-outline" size={16} color={warningTone} />
                 <Text style={[styles.semanticNoticeText, typography.bodySm]}>
-                  {warning.message}
+                  {formatSemanticWarning(warning, item, locale)}
                 </Text>
               </View>
               {warning.suggestedCategory && (
@@ -388,11 +390,11 @@ export function DetectedIngredientCard({
                   ]}
                   onPress={() => onChangeCategory(item.id, warning.suggestedCategory!)}
                   accessibilityRole="button"
-                  accessibilityLabel={`Cambiar categoría a ${warning.suggestedCategory}`}
+                  accessibilityLabel={t('detectedCard.changeCategoryToLabel', { category: getCategoryLabel(warning.suggestedCategory, locale) })}
                 >
                   <MaterialCommunityIcons name="tag-outline" size={14} color={colors.primary} />
                   <Text style={[styles.suggestedCategoryText, typography.labelMd]}>
-                    Cambiar a {warning.suggestedCategory}
+                    {t('detectedCard.changeCategoryTo', { category: getCategoryLabel(warning.suggestedCategory, locale) })}
                   </Text>
                 </Pressable>
               )}
@@ -405,7 +407,7 @@ export function DetectedIngredientCard({
                 testID={`detected-semantic-confirmed-${item.id}`}
                 style={[styles.semanticNoticeText, typography.labelMd]}
               >
-                Confirmaste que estos datos son correctos.
+                {t('detectedCard.confirmedCorrect')}
               </Text>
             </View>
           ) : (
@@ -418,10 +420,10 @@ export function DetectedIngredientCard({
                 ]}
                 onPress={() => onConfirmWarnings(item.id)}
                 accessibilityRole="button"
-                accessibilityLabel={`Confirmar que los datos de ${item.name} son correctos`}
+                accessibilityLabel={t('detectedCard.confirmCorrectLabel', { name: item.name })}
               >
                 <Text style={[styles.semanticConfirmText, typography.labelMd]}>
-                  Los datos son correctos
+                  {t('detectedCard.dataCorrect')}
                 </Text>
               </Pressable>
             )
@@ -434,7 +436,7 @@ export function DetectedIngredientCard({
         <View style={styles.errorNotice} testID={`detected-quantity-error-${item.id}`}>
           <MaterialCommunityIcons name="alert-circle-outline" size={16} color={colors.error} />
           <Text style={[styles.errorNoticeText, typography.bodySm]}>
-            Ingresa una cantidad mayor a 0 para poder guardar este alimento.
+            {t('detectedCard.quantityError')}
           </Text>
         </View>
       )}
@@ -451,22 +453,22 @@ export function DetectedIngredientCard({
             <Text style={[styles.duplicateText, typography.bodySm]}>
               {isPossibleDuplicate ? (
                 <>
-                  <Text style={{ fontWeight: '700', color: warningTone }}>Posible coincidencia: </Text>
-                  Tienes{' '}
+                  <Text style={{ fontWeight: '700', color: warningTone }}>{t('detectedCard.possibleMatch')}</Text>
+                  {t('detectedCard.youHave')}{' '}
                   <Text style={{ fontWeight: '700' }}>
                     {item.duplicateMatch.currentQuantity}{' '}
-                    {INGREDIENT_UNIT_LABELS[item.duplicateMatch.unit]}
+                    {getUnitShortLabel(item.duplicateMatch.unit, locale)}
                   </Text>{' '}
-                  de «{item.duplicateMatch.name}» en tu despensa. ¿Deseas sumar o crear un nuevo ítem?
+                  {t('detectedCard.possibleMatchSuffix', { name: item.duplicateMatch.name })}
                 </>
               ) : (
                 <>
-                  Tienes{' '}
+                  {t('detectedCard.youHave')}{' '}
                   <Text style={{ fontWeight: '700' }}>
                     {item.duplicateMatch.currentQuantity}{' '}
-                    {INGREDIENT_UNIT_LABELS[item.duplicateMatch.unit]}
+                    {getUnitShortLabel(item.duplicateMatch.unit, locale)}
                   </Text>{' '}
-                  de «{item.duplicateMatch.name}» actualmente en tu despensa.
+                  {t('detectedCard.exactMatchSuffix', { name: item.duplicateMatch.name })}
                 </>
               )}
             </Text>
@@ -476,7 +478,10 @@ export function DetectedIngredientCard({
             <View style={styles.incompatibleNotice} testID={`detected-incompatible-notice-${item.id}`}>
               <MaterialCommunityIcons name="information-outline" size={14} color={warningTone} />
               <Text style={[styles.incompatibleNoticeText, typography.bodySm]}>
-                Unidades no compatibles ({INGREDIENT_UNIT_LABELS[item.unit]} y {INGREDIENT_UNIT_LABELS[item.duplicateMatch.unit]}). No se pueden sumar directamente.
+                {t('detectedCard.incompatibleUnits', {
+                  unitA: getUnitShortLabel(item.unit, locale),
+                  unitB: getUnitShortLabel(item.duplicateMatch.unit, locale),
+                })}
               </Text>
             </View>
           )}
@@ -521,7 +526,7 @@ export function DetectedIngredientCard({
                     styles.actionOptionTextActive,
                 ]}
               >
-                Sumar a despensa
+                {t('detectedCard.addToPantry')}
               </Text>
             </Pressable>
 
@@ -551,7 +556,7 @@ export function DetectedIngredientCard({
                   item.action === 'create' && styles.actionOptionTextActive,
                 ]}
               >
-                Crear nuevo ítem
+                {t('detectedCard.createNew')}
               </Text>
             </Pressable>
           </View>
@@ -564,12 +569,12 @@ export function DetectedIngredientCard({
         style={styles.expandDetailsButton}
         onPress={() => setIsEditingDetails(!isEditingDetails)}
         accessibilityRole="button"
-        accessibilityLabel="Cambiar categoría de alimento"
+        accessibilityLabel={t('detectedCard.changeCategoryLabel')}
         accessibilityState={{ expanded: isEditingDetails }}
       >
         <MaterialCommunityIcons name="tag-outline" size={18} color={colors.primary} />
         <Text style={[styles.expandDetailsText, typography.labelLg]}>
-          {isEditingDetails ? 'Ocultar categorías' : 'Cambiar categoría'}
+          {isEditingDetails ? t('detectedCard.hideCategories') : t('detectedCard.changeCategory')}
         </Text>
         <MaterialCommunityIcons
           name={isEditingDetails ? 'chevron-up' : 'chevron-down'}
@@ -580,7 +585,7 @@ export function DetectedIngredientCard({
 
       {isEditingDetails && (
         <View style={styles.categoryPickerContainer} testID={`detected-category-picker-${item.id}`}>
-          <Text style={[styles.fieldLabel, typography.labelMd]}>Selecciona la categoría</Text>
+          <Text style={[styles.fieldLabel, typography.labelMd]}>{t('detectedCard.selectCategory')}</Text>
           <View style={styles.categoryChipsWrap}>
             {INGREDIENT_CATEGORIES.map((cat) => {
               const isSelected = item.category === cat;
@@ -598,7 +603,7 @@ export function DetectedIngredientCard({
                   ]}
                   onPress={() => onChangeCategory(item.id, cat)}
                   accessibilityRole="button"
-                  accessibilityLabel={`Categoría ${cat}`}
+                  accessibilityLabel={t('detectedCard.categoryOptionLabel', { category: getCategoryLabel(cat, locale) })}
                   accessibilityState={{ selected: isSelected }}
                 >
                   <MaterialCommunityIcons
@@ -613,7 +618,7 @@ export function DetectedIngredientCard({
                       isSelected && { color: visual.color, fontWeight: '700' },
                     ]}
                   >
-                    {cat}
+                    {getCategoryLabel(cat, locale)}
                   </Text>
                 </Pressable>
               );

@@ -9,6 +9,7 @@ import {
   ViewStyle,
 } from 'react-native';
 import { AppColors, gradientStyle, radius, spacing, useTypography, useAppTheme, useThemeStyles } from '../../theme';
+import { useLocale } from '../../context/LocaleContext';
 
 export type ButtonVariant = 'primary' | 'secondary' | 'tertiary' | 'outline' | 'ghost';
 export type ButtonSize = 'sm' | 'md' | 'lg';
@@ -53,12 +54,13 @@ export const Button: React.FC<ButtonProps> = ({
   textStyle,
 }) => {
   const typography = useTypography();
+  const { t } = useLocale();
   const { colors } = useAppTheme();
   const styles = useThemeStyles(createStyles);
 
   const isInteractive = !disabled && !loading;
   const computedAccessibilityLabel = loading
-    ? `${accessibilityLabel || title}, cargando`
+    ? t('components.loadingSuffix', { label: accessibilityLabel || title })
     : (accessibilityLabel || title);
 
   return (

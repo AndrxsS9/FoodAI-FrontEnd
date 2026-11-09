@@ -27,10 +27,9 @@ import { returnToTab } from '../../src/utils/tabNavigation';
 import { usePantry } from '../../src/context/PantryContext';
 import { useRecipes } from '../../src/context/RecipeContext';
 import { useMealPlanSafe } from '../../src/context/MealPlanContext';
-import {
-  formatCopCurrency,
-  formatIngredientQuantity,
-} from '../../src/types/recipe';
+import { useLocale } from '../../src/context/LocaleContext';
+import { formatIngredientQuantityForLocale } from '../../src/locales/labels';
+import { localizeMessage } from '../../src/locales/messages';
 import { AppColors, getAppSurfaces, radius, spacing, useAppTheme, useThemeStyles, useTypography } from '../../src/theme';
 
 export default function RecipeDetailScreen() {
@@ -40,9 +39,12 @@ export default function RecipeDetailScreen() {
   const { summary } = usePantry();
   const { colors } = useAppTheme();
   const styles = useThemeStyles(createStyles);
+  const { t, tp, locale, format } = useLocale();
+  const formatQuantity = (quantity: number | null | undefined, unit?: string) =>
+    formatIngredientQuantityForLocale(quantity, unit, locale);
 
   const recipeId = params.id ? String(params.id).trim() : '';
-  const { getRecipeById, selectRecipe, demoMeta } = useRecipes();
+  const { getRecipeById, selectRecipe } = useRecipes();
   const mealPlan = useMealPlanSafe();
 
   const plannedRecipe = useMemo(() => {
@@ -105,27 +107,27 @@ export default function RecipeDetailScreen() {
           <Pressable
             testID="recipe-detail-back-button"
             accessibilityRole="button"
-            accessibilityLabel="Volver a recetas"
+            accessibilityLabel={t('recipeDetail.backToRecipes')}
             onPress={handleBack}
             style={styles.backButton}
           >
             <MaterialCommunityIcons name="arrow-left" size={22} color={colors.textPrimary} />
           </Pressable>
-          <Text style={[styles.headerTitle, typography.headlineMd]}>Detalle de receta</Text>
+          <Text style={[styles.headerTitle, typography.headlineMd]}>{t('recipeDetail.title')}</Text>
         </View>
 
         <View style={styles.notFoundContainer} testID="recipe-not-found-state">
           <Card variant="outlined" style={styles.notFoundCard}>
             <MaterialCommunityIcons name="magnify-close" size={48} color={colors.outline} />
             <Text style={[styles.notFoundTitle, typography.headlineMd]}>
-              Receta no encontrada
+              {t('recipeDetail.notFoundTitle')}
             </Text>
             <Text style={[styles.notFoundDesc, typography.bodyMd]}>
-              El identificador solicitado «{recipeId || 'desconocido'}» no corresponde a ninguna receta disponible.
+              {t('recipeDetail.notFoundDesc', { id: recipeId || t('recipeDetail.unknownId') })}
             </Text>
             <Button
               testID="recipe-not-found-return-button"
-              title="Volver al catálogo de recetas"
+              title={t('recipeDetail.backToCatalog')}
               variant="primary"
               size="md"
               onPress={() => returnToTab(router, '/recetas')}
@@ -144,7 +146,7 @@ export default function RecipeDetailScreen() {
           <Pressable
             testID="recipe-detail-back-button"
             accessibilityRole="button"
-            accessibilityLabel="Volver al catálogo de recetas"
+            accessibilityLabel={t('recipeDetail.backToCatalog')}
             hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
             onPress={handleBack}
             style={({ pressed }) => [
@@ -159,14 +161,14 @@ export default function RecipeDetailScreen() {
             numberOfLines={1}
             accessibilityRole="header"
           >
-            Detalle de receta
+            {t('recipeDetail.title')}
           </Text>
         </View>
 
         <Pressable
           testID="recipe-detail-profile-avatar"
           accessibilityRole="button"
-          accessibilityLabel="Perfil de usuario"
+          accessibilityLabel={t('recipeDetail.profileLabel')}
           onPress={() => router.push('/(tabs)/perfil')}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           style={styles.avatarButton}
@@ -190,11 +192,11 @@ export default function RecipeDetailScreen() {
             <View style={styles.demoBadge}>
               <MaterialCommunityIcons name="flask-outline" size={14} color={colors.primary} />
               <Text style={[styles.demoBadgeText, typography.labelSm]}>
-                {demoMeta.badgeLabel}
+                {t('recipes.demoBadge')}
               </Text>
             </View>
             <Text style={[styles.demoNoticeText, typography.bodySm]}>
-              {demoMeta.noticeText}
+              {t('recipes.demoNotice')}
             </Text>
           </View>
         )}
@@ -217,14 +219,14 @@ export default function RecipeDetailScreen() {
             <View style={styles.conveniencePill}>
               <MaterialCommunityIcons name="star-circle-outline" size={16} color={colors.onTertiaryContainer} importantForAccessibility="no" accessibilityElementsHidden={true} />
               <Text style={[styles.conveniencePillText, typography.labelMd]}>
-                {String(recipe.convenience)}
+                {localizeMessage(String(recipe.convenience), locale, { passthroughUnknown: true })}
               </Text>
             </View>
 
             <View style={styles.heroTitleBottom}>
               <View style={styles.pantryTag}>
                 <Text style={[styles.pantryTagText, typography.labelSm]}>
-                  APROVECHA TU DESPENSA
+                  {t('recipeDetail.pantryTag')}
                 </Text>
               </View>
               <Text
@@ -244,9 +246,9 @@ export default function RecipeDetailScreen() {
             <View style={styles.metricIconBox}>
               <MaterialCommunityIcons name="timer-outline" size={20} color={colors.primary} />
             </View>
-            <Text style={[styles.metricLabel, typography.labelSm]}>Tiempo</Text>
+            <Text style={[styles.metricLabel, typography.labelSm]}>{t('recipeDetail.metricTime')}</Text>
             <Text style={[styles.metricMain, typography.labelLg]}>
-              {recipe.totalMinutes} min
+              {t('minutesShort', { count: recipe.totalMinutes })}
             </Text>
           </View>
 
@@ -254,9 +256,9 @@ export default function RecipeDetailScreen() {
             <View style={styles.metricIconBox}>
               <MaterialCommunityIcons name="account-group" size={20} color={colors.primary} />
             </View>
-            <Text style={[styles.metricLabel, typography.labelSm]}>Porciones</Text>
+            <Text style={[styles.metricLabel, typography.labelSm]}>{t('recipeDetail.metricServings')}</Text>
             <Text style={[styles.metricMain, typography.labelLg]}>
-              {recipe.servings} personas
+              {tp('people', recipe.servings)}
             </Text>
           </View>
 
@@ -264,7 +266,7 @@ export default function RecipeDetailScreen() {
             <View style={[styles.metricIconBox, { backgroundColor: colors.errorContainer }]}>
               <MaterialCommunityIcons name="cash-multiple" size={20} color={colors.secondary} />
             </View>
-            <Text style={[styles.metricLabel, typography.labelSm]}>Compra aprox.</Text>
+            <Text style={[styles.metricLabel, typography.labelSm]}>{t('recipeDetail.metricPurchase')}</Text>
             <Text
               style={[
                 styles.metricMain,
@@ -272,7 +274,7 @@ export default function RecipeDetailScreen() {
                 { color: colors.secondary, fontWeight: '700' },
               ]}
             >
-              {formatCopCurrency(recipe.estimatedMissingCost, false)}
+              {format.currency(recipe.estimatedMissingCost, false)}
             </Text>
           </View>
         </View>
@@ -284,7 +286,7 @@ export default function RecipeDetailScreen() {
               <View style={styles.timingItem} testID="recipe-prep-minutes">
                 <MaterialCommunityIcons name="timer-sand-empty" size={16} color={colors.primary} />
                 <Text style={[styles.timingText, typography.labelSm]}>
-                  Preparación: <Text style={styles.timingValue}>{recipe.prepMinutes} min</Text>
+                  {t('recipeDetail.prepLabel')}<Text style={styles.timingValue}>{t('minutesShort', { count: recipe.prepMinutes })}</Text>
                 </Text>
               </View>
             )}
@@ -292,7 +294,7 @@ export default function RecipeDetailScreen() {
               <View style={styles.timingItem} testID="recipe-cook-minutes">
                 <MaterialCommunityIcons name="fire" size={16} color={colors.secondary} />
                 <Text style={[styles.timingText, typography.labelSm]}>
-                  Cocción: <Text style={styles.timingValue}>{recipe.cookMinutes} min</Text>
+                  {t('recipeDetail.cookLabel')}<Text style={styles.timingValue}>{t('minutesShort', { count: recipe.cookMinutes })}</Text>
                 </Text>
               </View>
             )}
@@ -309,13 +311,13 @@ export default function RecipeDetailScreen() {
                 color={recipe.withinBudget ? colors.primary : colors.secondary}
               />
               <Text style={[styles.budgetStatusTitle, typography.labelMd]}>
-                {recipe.withinBudget ? 'Compatible con tu presupuesto' : 'Supera tu presupuesto'}
+                {recipe.withinBudget ? t('recipeDetail.withinBudget') : t('recipeDetail.overBudget')}
               </Text>
             </View>
             <Text style={[styles.budgetStatusRemaining, typography.labelLg]}>
               {recipe.withinBudget
-                ? `Te quedan: ${formatCopCurrency(recipe.budgetRemaining)}`
-                : `Excede por: ${formatCopCurrency(Math.abs(recipe.budgetRemaining))}`}
+                ? t('recipeDetail.remaining', { amount: format.currency(recipe.budgetRemaining) })
+                : t('recipeDetail.exceeds', { amount: format.currency(Math.abs(recipe.budgetRemaining)) })}
             </Text>
           </View>
 
@@ -337,18 +339,18 @@ export default function RecipeDetailScreen() {
                 <MaterialCommunityIcons name="fridge-outline" size={18} color={colors.primary} />
               </View>
               <Text style={[styles.sectionTitle, typography.headlineMd]}>
-                Ya tienes en casa
+                {t('recipeDetail.availableTitle')}
               </Text>
             </View>
             <View style={styles.countBadge}>
               <Text style={[styles.countBadgeText, typography.labelSm]}>
-                {recipe.availableIngredients.length} ingrediente{recipe.availableIngredients.length === 1 ? '' : 's'}
+                {tp('recipeDetail.ingredientsCount', recipe.availableIngredients.length)}
               </Text>
             </View>
           </View>
 
           <Text style={[styles.sectionSubtitle, typography.bodySm]}>
-            Disponible en tus reservas actuales sin coste adicional. Puedes marcar los que tengas a mano:
+            {t('recipeDetail.availableSubtitle')}
           </Text>
 
           <View style={styles.ingredientsList}>
@@ -368,7 +370,7 @@ export default function RecipeDetailScreen() {
                   onPress={() => toggleCheck(item.name)}
                   accessibilityRole="checkbox"
                   accessibilityState={{ checked: isChecked }}
-                  accessibilityLabel={`${item.name}, cantidad: ${formatIngredientQuantity(item.quantity, item.unit)}`}
+                  accessibilityLabel={t('recipeDetail.ingredientQuantityLabel', { name: item.name, quantity: formatQuantity(item.quantity, item.unit) })}
                   testID={`available-ingredient-${index}`}
                 >
                   <View style={styles.ingredientLeft}>
@@ -389,14 +391,14 @@ export default function RecipeDetailScreen() {
                       </Text>
                       {isUrgent && (
                         <Text style={[styles.urgentInlineTag, typography.labelSm]}>
-                          Consumir pronto
+                          {t('recipeDetail.consumeSoon')}
                         </Text>
                       )}
                     </View>
                   </View>
 
                   <Text style={[styles.ingredientQuantity, typography.labelMd]}>
-                    {formatIngredientQuantity(item.quantity, item.unit)}
+                    {formatQuantity(item.quantity, item.unit)}
                   </Text>
                 </Pressable>
               );
@@ -412,12 +414,12 @@ export default function RecipeDetailScreen() {
                 <MaterialCommunityIcons name="cart-outline" size={18} color={colors.secondary} />
               </View>
               <Text style={[styles.sectionTitle, typography.headlineMd, { color: colors.secondary }]}>
-                Necesitas comprar
+                {t('recipeDetail.missingTitle')}
               </Text>
             </View>
             <View style={[styles.countBadge, { backgroundColor: colors.errorContainer }]}>
               <Text style={[styles.countBadgeText, typography.labelSm, { color: colors.secondary }]}>
-                {recipe.missingIngredients.length} faltante{recipe.missingIngredients.length === 1 ? '' : 's'}
+                {tp('recipeDetail.missingCount', recipe.missingIngredients.length)}
               </Text>
             </View>
           </View>
@@ -426,7 +428,7 @@ export default function RecipeDetailScreen() {
             <Card variant="outlined" style={styles.allReadyCard}>
               <MaterialCommunityIcons name="check-all" size={24} color={colors.primary} />
               <Text style={[styles.allReadyText, typography.bodyMd]}>
-                ¡Tienes todos los ingredientes necesarios en tu despensa! No requieres compras extra.
+                {t('recipeDetail.allReady')}
               </Text>
             </Card>
           ) : (
@@ -444,18 +446,18 @@ export default function RecipeDetailScreen() {
                         {item.name}
                       </Text>
                       <Text style={[styles.ingredientQuantitySub, typography.bodySm]}>
-                        {formatIngredientQuantity(item.quantity, item.unit)}
+                        {formatQuantity(item.quantity, item.unit)}
                       </Text>
                     </View>
                   </View>
 
                   {item.estimatedCost ? (
                     <Text style={[styles.missingCostText, typography.labelMd]}>
-                      ~{formatCopCurrency(item.estimatedCost, false)}
+                      ~{format.currency(item.estimatedCost, false)}
                     </Text>
                   ) : (
                     <Text style={[styles.missingCostText, typography.bodySm, { color: colors.outline }]}>
-                      Precio pendiente
+                      {t('recipeDetail.pricePending')}
                     </Text>
                   )}
                 </View>
@@ -466,11 +468,11 @@ export default function RecipeDetailScreen() {
                 <View style={styles.totalMissingLeft}>
                   <MaterialCommunityIcons name="receipt-text-outline" size={20} color={colors.secondary} />
                   <Text style={[styles.totalMissingLabel, typography.labelLg]}>
-                    Compra estimada
+                    {t('recipeDetail.estimatedPurchase')}
                   </Text>
                 </View>
                 <Text style={[styles.totalMissingAmount, typography.headlineMd]}>
-                  {formatCopCurrency(recipe.estimatedMissingCost)}
+                  {format.currency(recipe.estimatedMissingCost)}
                 </Text>
               </View>
             </View>
@@ -485,12 +487,12 @@ export default function RecipeDetailScreen() {
                 <MaterialCommunityIcons name="silverware-fork-knife" size={18} color={colors.primary} />
               </View>
               <Text style={[styles.sectionTitle, typography.headlineMd]}>
-                Preparación
+                {t('recipeDetail.stepsTitle')}
               </Text>
             </View>
             <View style={styles.countBadge}>
               <Text style={[styles.countBadgeText, typography.labelSm]}>
-                {recipe.steps.length} pasos
+                {tp('recipeDetail.stepsCount', recipe.steps.length)}
               </Text>
             </View>
           </View>
@@ -516,14 +518,14 @@ export default function RecipeDetailScreen() {
       <View style={styles.fixedBottomBar}>
         <Button
           testID="recipe-start-cooking-button"
-          title="Preparar esta receta (Modo Cocina)"
+          title={t('recipeDetail.startCooking')}
           variant="primary"
           size="lg"
           fullWidth
           onPress={handleStartCooking}
           leftIcon={<MaterialCommunityIcons name="silverware-fork-knife" size={20} color={colors.onPrimary} />}
-          accessibilityLabel="Iniciar Modo Cocina guiado paso a paso"
-          accessibilityHint="Abre la pantalla de cocina interactiva para preparar la receta"
+          accessibilityLabel={t('recipeDetail.startCookingLabel')}
+          accessibilityHint={t('recipeDetail.startCookingHint')}
         />
       </View>
     </SafeAreaView>

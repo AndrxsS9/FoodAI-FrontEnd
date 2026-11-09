@@ -32,6 +32,7 @@ import {
 import { useBudget } from './BudgetContext';
 import { usePantrySafe } from './PantryContext';
 import { useAuthSafe } from './AuthContext';
+import { DATA_NOT_READY_CODE } from './RecipeContext';
 import {
   mealPlanApi as defaultMealPlanApi,
   MealPlanApiError,
@@ -40,6 +41,30 @@ import {
   createMealPlanStorage,
   MealPlanStorageAdapter,
 } from '../services/storage/mealPlanStorage';
+
+/**
+ * Motivo (no sensible) por el que el estado visible del plan no pudo sincronizarse con el
+ * almacenamiento del dispositivo (Fase 28B).
+ * - save_failed: el plan se generó, pero no quedó guardado (sigue disponible en memoria).
+ * - completion_save_failed: el cambio de completado de un día no se guardó y NO se aplicó.
+ * - clear_failed: el plan no se pudo eliminar del dispositivo y sigue guardado.
+ */
+export type MealPlanPersistenceWarningCode =
+  | 'save_failed'
+  | 'completion_save_failed'
+  | 'clear_failed';
+
+export const MEAL_PLAN_PERSISTENCE_WARNING_MESSAGES: Record<MealPlanPersistenceWarningCode, string> = {
+  save_failed:
+    'Tu plan se generó correctamente, pero no pudimos guardarlo en este dispositivo. Sigue disponible ahora, aunque podría no conservarse si cierras la app.',
+  completion_save_failed:
+    'No pudimos guardar el cambio en este dispositivo, así que el día conserva su estado anterior. Intenta de nuevo.',
+  clear_failed:
+    'No pudimos eliminar el plan de este dispositivo; sigue guardado. Intenta de nuevo.',
+};
+
+const DATA_NOT_READY_MESSAGE =
+  'Todavía estamos cargando tu despensa y tu presupuesto. Intenta de nuevo en un momento.';
 
 export interface MealPlanContextValue {
   plan: ClientMealPlan | null;
@@ -50,6 +75,13 @@ export interface MealPlanContextValue {
   lastGeneratedAt: string | null;
   error: string | null;
   errorCode: string | null;
+  /**
+   * Aviso no bloqueante cuando el almacenamiento local falló. Nunca contiene detalles internos.
+   * Se retira tras una escritura verificada del plan completo.
+   */
+  persistenceWarning: string | null;
+  persistenceWarningCode: MealPlanPersistenceWarningCode | null;
+  clearPersistenceWarning: () => void;
   generateMealPlan: (options?: { maxMinutes?: number }) => Promise<ClientMealPlan | null>;
   cancelGeneration: () => void;
   clearMealPlan: () => Promise<void>;
@@ -69,6 +101,9 @@ const defaultMealPlanContextValue: MealPlanContextValue = {
   lastGeneratedAt: null,
   error: null,
   errorCode: null,
+  persistenceWarning: null,
+  persistenceWarningCode: null,
+  clearPersistenceWarning: () => {},
   generateMealPlan: async () => null,
   cancelGeneration: () => {},
   clearMealPlan: async () => {},
@@ -104,9 +139,10 @@ export function MealPlanProvider({
     return createMealPlanStorage(effectiveUserId);
   }, [storageAdapter, effectiveUserId]);
 
-  const { budget, servings, maxMinutes } = useBudget();
+  const { budget, servings, maxMinutes, isLoading: isBudgetLoading } = useBudget();
   const pantry = usePantrySafe();
   const ingredients = useMemo(() => pantry?.ingredients ?? [], [pantry?.ingredients]);
+  const isPantryLoading = pantry?.isLoading ?? false;
 
   const [plan, setPlan] = useState<ClientMealPlan | null>(initialPlan);
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -120,12 +156,22 @@ export function MealPlanProvider({
   const [lastSnapshot, setLastSnapshot] = useState<MealPlanGenerationSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [errorCode, setErrorCode] = useState<string | null>(null);
+  const [persistenceWarningCode, setPersistenceWarningCode] =
+    useState<MealPlanPersistenceWarningCode | null>(null);
+  // Hidratación conjunta (plan restaurado + despensa + presupuesto). Concluye una sola vez por
+  // usuario: hasta entonces no se puede evaluar la obsolescencia sin producir avisos falsos.
+  const [hasHydrated, setHasHydrated] = useState<boolean>(false);
 
   // Referencias para control de concurrencia y cancelación
   const activeAbortControllerRef = useRef<AbortController | null>(null);
   const isGeneratingRef = useRef<boolean>(false);
   const operationVersionRef = useRef<number>(0);
   const activeUserIdRef = useRef<string | null>(effectiveUserId);
+  // Último plan/snapshot aceptados (sin esperar al render). Los cambios de completado se calculan
+  // sobre ellos dentro de una cola serializada para que dos cambios seguidos no se pisen.
+  const latestPlanRef = useRef<ClientMealPlan | null>(initialPlan);
+  const latestSnapshotRef = useRef<MealPlanGenerationSnapshot | null>(null);
+  const completionQueueRef = useRef<Promise<void>>(Promise.resolve());
 
   // Ajuste de estado inmediato durante render al cambiar de usuario (evita intermediate renders y cascading effects)
   const [prevUserIdState, setPrevUserIdState] = useState<string | null>(effectiveUserId);
@@ -139,7 +185,32 @@ export function MealPlanProvider({
     setError(null);
     setErrorCode(null);
     setIsRestoring(Boolean(effectiveUserId));
+    setPersistenceWarningCode(null);
+    setHasHydrated(false);
   }
+
+  if (!hasHydrated && !isRestoring && !isPantryLoading && !isBudgetLoading) {
+    setHasHydrated(true);
+  }
+
+  // Sincroniza las referencias con el estado confirmado (p. ej. tras el reinicio por cambio de
+  // usuario). Las operaciones que aceptan un plan nuevo también las actualizan de inmediato.
+  useEffect(() => {
+    latestPlanRef.current = plan;
+    latestSnapshotRef.current = lastSnapshot;
+  }, [plan, lastSnapshot]);
+
+  /** Acepta un plan (y su snapshot) como estado actual en memoria y en las referencias. */
+  const acceptPlanState = useCallback(
+    (nextPlan: ClientMealPlan | null, nextSnapshot: MealPlanGenerationSnapshot | null) => {
+      latestPlanRef.current = nextPlan;
+      latestSnapshotRef.current = nextSnapshot;
+      setPlan(nextPlan);
+      setLastSnapshot(nextSnapshot);
+      setLastGeneratedAt(nextSnapshot?.generatedAt ?? null);
+    },
+    []
+  );
 
   // Huella digital reproducible de la despensa actual
   const currentPantryFingerprint = useMemo(() => {
@@ -172,9 +243,7 @@ export function MealPlanProvider({
           effectiveUserId === activeUserIdRef.current &&
           stored
         ) {
-          setPlan(stored.plan);
-          setLastSnapshot(stored.snapshot);
-          setLastGeneratedAt(stored.snapshot.generatedAt);
+          acceptPlanState(stored.plan, stored.snapshot);
         }
       } catch (err) {
         console.warn('[MealPlanContext] Error al restaurar plan de usuario:', err);
@@ -190,7 +259,7 @@ export function MealPlanProvider({
     return () => {
       isMounted = false;
     };
-  }, [effectiveUserId, activeStorage, initialPlan, storageAdapter]);
+  }, [effectiveUserId, activeStorage, initialPlan, storageAdapter, acceptPlanState]);
 
   // Compatibilidad con pruebas unitarias que inyectan storageAdapter
   useEffect(() => {
@@ -201,9 +270,7 @@ export function MealPlanProvider({
         .getStoredMealPlan()
         .then((stored) => {
           if (stored && isMounted && restorationVersion === operationVersionRef.current) {
-            setPlan(stored.plan);
-            setLastSnapshot(stored.snapshot);
-            setLastGeneratedAt(stored.snapshot.generatedAt);
+            acceptPlanState(stored.plan, stored.snapshot);
           }
         })
         .catch((err) => {
@@ -218,11 +285,16 @@ export function MealPlanProvider({
     return () => {
       isMounted = false;
     };
-  }, [storageAdapter, initialPlan, activeStorage]);
+  }, [storageAdapter, initialPlan, activeStorage, acceptPlanState]);
 
   // Detección reactiva de obsolescencia
   const isStale = useMemo(() => {
     if (!lastSnapshot || !plan) {
+      return false;
+    }
+    // Sin hidratación completa no se puede comparar: una despensa o un presupuesto que aún no se
+    // han cargado tras el reinicio no significan que hayan cambiado.
+    if (!hasHydrated) {
       return false;
     }
 
@@ -236,6 +308,7 @@ export function MealPlanProvider({
   }, [
     lastSnapshot,
     plan,
+    hasHydrated,
     currentPantryFingerprint,
     budget,
     servings,
@@ -279,53 +352,88 @@ export function MealPlanProvider({
     return plan.days.filter((d) => Boolean(d.isCompleted)).length;
   }, [plan]);
 
+  /**
+   * Cambia el estado de completado de un día (Fase 28B: persistencia primero).
+   * El cambio solo se muestra cuando el almacenamiento lo confirma; si la escritura falla, el día
+   * conserva su estado anterior y se expone `completion_save_failed`. Así lo visible nunca diverge
+   * de lo guardado. Los cambios se encadenan en una cola y cada uno parte del último plan aceptado,
+   * por lo que dos cambios seguidos sobre días distintos no se pisan.
+   */
   const toggleDayCompleted = useCallback(
-    async (dayNumber: number, forceCompleted?: boolean): Promise<void> => {
-      if (!plan || !plan.days) return;
-      const dayIndex = plan.days.findIndex((d) => d.day === dayNumber);
-      if (dayIndex === -1) return;
+    (dayNumber: number, forceCompleted?: boolean): Promise<void> => {
+      const run = async (): Promise<void> => {
+        const basePlan = latestPlanRef.current;
+        if (!basePlan || !basePlan.days) return;
+        const dayIndex = basePlan.days.findIndex((d) => d.day === dayNumber);
+        if (dayIndex === -1) return;
 
-      const currentDay = plan.days[dayIndex];
-      const newCompleted = forceCompleted !== undefined ? forceCompleted : !currentDay.isCompleted;
-      const completedAt = newCompleted ? new Date().toISOString() : null;
+        const currentDay = basePlan.days[dayIndex];
+        const newCompleted = forceCompleted !== undefined ? forceCompleted : !currentDay.isCompleted;
+        if (Boolean(currentDay.isCompleted) === newCompleted) return;
+        const completedAt = newCompleted ? new Date().toISOString() : null;
 
-      const updatedDays = plan.days.map((d) => {
-        if (d.day === dayNumber) {
-          return {
-            ...d,
-            isCompleted: newCompleted,
-            completedAt,
-          };
+        const updatedDays = basePlan.days.map((d) => {
+          if (d.day === dayNumber) {
+            return {
+              ...d,
+              isCompleted: newCompleted,
+              completedAt,
+            };
+          }
+          return d;
+        });
+
+        const newCompletedCount = updatedDays.filter((d) => Boolean(d.isCompleted)).length;
+        const updatedPlan: ClientMealPlan = {
+          ...basePlan,
+          days: updatedDays,
+          completedDaysCount: newCompletedCount,
+        };
+
+        const snapshot = latestSnapshotRef.current;
+        if (!snapshot) {
+          // Plan sin snapshot (inyectado solo en memoria): no existe persistencia que sincronizar.
+          latestPlanRef.current = updatedPlan;
+          setPlan(updatedPlan);
+          return;
         }
-        return d;
-      });
 
-      const newCompletedCount = updatedDays.filter((d) => Boolean(d.isCompleted)).length;
-      const updatedPlan: ClientMealPlan = {
-        ...plan,
-        days: updatedDays,
-        completedDaysCount: newCompletedCount,
-      };
+        const requestUserId = activeUserIdRef.current;
+        const isStillCurrent = () =>
+          requestUserId === activeUserIdRef.current && latestPlanRef.current === basePlan;
 
-      setPlan(updatedPlan);
-
-      if (lastSnapshot) {
         try {
-          await activeStorage.saveMealPlan(updatedPlan, lastSnapshot);
+          await activeStorage.saveMealPlan(updatedPlan, snapshot);
         } catch (err) {
           console.warn('[MealPlanContext] Error al guardar estado de completado:', err);
+          if (isStillCurrent()) {
+            setPersistenceWarningCode('completion_save_failed');
+          }
+          return;
         }
-      }
+
+        // Un plan más reciente (regeneración, eliminación o cambio de usuario) prevalece.
+        if (!isStillCurrent()) return;
+        latestPlanRef.current = updatedPlan;
+        setPlan(updatedPlan);
+        // Escritura verificada del plan completo: memoria y almacenamiento coinciden.
+        setPersistenceWarningCode(null);
+      };
+
+      const next = completionQueueRef.current.then(run, run);
+      completionQueueRef.current = next.catch(() => {});
+      return next;
     },
-    [plan, lastSnapshot, activeStorage]
+    [activeStorage]
   );
 
   const markRecipeCompleted = useCallback(
     async (recipeId: string): Promise<void> => {
-      if (!plan || !plan.days || !recipeId) return;
+      const currentPlan = latestPlanRef.current;
+      if (!currentPlan || !currentPlan.days || !recipeId) return;
       const clean = recipeId.trim().toLowerCase();
 
-      const foundDay = plan.days.find((d) => {
+      const foundDay = currentPlan.days.find((d) => {
         const recipeIdLower = d.recipe.id.toLowerCase();
         if (recipeIdLower === clean) return true;
         if (d.recipe.instanceId?.toLowerCase() === clean) return true;
@@ -339,8 +447,12 @@ export function MealPlanProvider({
         await toggleDayCompleted(foundDay.day, true);
       }
     },
-    [plan, toggleDayCompleted]
+    [toggleDayCompleted]
   );
+
+  const clearPersistenceWarning = useCallback(() => {
+    setPersistenceWarningCode(null);
+  }, []);
 
   const clearError = useCallback(() => {
     setError(null);
@@ -368,6 +480,15 @@ export function MealPlanProvider({
       // 1. Guard contra llamadas concurrentes duplicadas
       if (isGeneratingRef.current) {
         return plan;
+      }
+
+      // 1b. Hidratación (Fase 28B): una despensa aún cargando no es una despensa vacía y un
+      //     presupuesto por defecto no es el del usuario. Se rechaza ANTES de cualquier efecto
+      //     secundario (cancelaciones, versión, restauración) y nunca se llama al backend.
+      if (isPantryLoading || isBudgetLoading) {
+        setError(DATA_NOT_READY_MESSAGE);
+        setErrorCode(DATA_NOT_READY_CODE);
+        throw new MealPlanApiError(DATA_NOT_READY_MESSAGE, DATA_NOT_READY_CODE, 0);
       }
 
       // 2. Cancelar cualquier solicitud anterior pendiente
@@ -445,17 +566,26 @@ export function MealPlanProvider({
           generatedAt,
         };
 
-        setPlan(normalizedPlan);
-        setLastSnapshot(snapshot);
-        setLastGeneratedAt(snapshot.generatedAt);
+        acceptPlanState(normalizedPlan, snapshot);
         setError(null);
         setErrorCode(null);
 
-        // 8. Persistir localmente de forma segura
+        // 8. Persistir localmente. Un fallo NO invalida la generación (el plan sigue en memoria),
+        //    pero tampoco se oculta: se expone un aviso explícito. Solo la operación vigente del
+        //    usuario activo aplica el resultado (una generación cancelada o superada no avisa).
+        const isCurrentOperation = () =>
+          currentOpVersion === operationVersionRef.current &&
+          requestUserId === activeUserIdRef.current;
         try {
           await activeStorage.saveMealPlan(normalizedPlan, snapshot);
+          if (isCurrentOperation()) {
+            setPersistenceWarningCode(null);
+          }
         } catch (storageErr) {
           console.warn('[MealPlanContext] Advertencia: No se pudo persistir el plan localmente:', storageErr);
+          if (isCurrentOperation()) {
+            setPersistenceWarningCode('save_failed');
+          }
         }
 
         return normalizedPlan;
@@ -493,6 +623,8 @@ export function MealPlanProvider({
     [
       plan,
       ingredients,
+      isPantryLoading,
+      isBudgetLoading,
       budget,
       servings,
       maxMinutes,
@@ -500,15 +632,23 @@ export function MealPlanProvider({
       mealPlanApiClient,
       activeStorage,
       effectiveUserId,
+      acceptPlanState,
     ]
   );
 
+  /**
+   * Elimina el plan (Fase 28B: persistencia primero). Solo se declara eliminado en memoria cuando
+   * el almacenamiento confirma el borrado. Si falla, el plan sigue visible (resincronizado con lo
+   * guardado si hace falta) y se expone `clear_failed`: nunca se afirma una eliminación que no ocurrió.
+   */
   const clearMealPlan = useCallback(async (): Promise<void> => {
     operationVersionRef.current++;
     cancelGeneration();
-    setPlan(null);
-    setLastSnapshot(null);
-    setLastGeneratedAt(null);
+    const clearVersion = operationVersionRef.current;
+    const requestUserId = activeUserIdRef.current;
+    const isStillCurrent = () =>
+      clearVersion === operationVersionRef.current && requestUserId === activeUserIdRef.current;
+
     setIsRestoring(false);
     setError(null);
     setErrorCode(null);
@@ -517,8 +657,36 @@ export function MealPlanProvider({
       await activeStorage.clearMealPlan();
     } catch (err) {
       console.warn('[MealPlanContext] Error al limpiar el almacenamiento local del plan:', err);
+      if (!isStillCurrent()) return;
+      // Si una restauración en curso quedó invalidada, se vuelve a leer lo guardado para que lo
+      // visible coincida con lo que sigue persistido.
+      if (!latestPlanRef.current) {
+        try {
+          const stored = await activeStorage.getStoredMealPlan();
+          if (stored && isStillCurrent()) {
+            acceptPlanState(stored.plan, stored.snapshot);
+          }
+        } catch (readErr) {
+          console.warn('[MealPlanContext] No se pudo releer el plan tras un borrado fallido:', readErr);
+        }
+      }
+      if (isStillCurrent()) {
+        setPersistenceWarningCode('clear_failed');
+      }
+      return;
     }
-  }, [cancelGeneration, activeStorage]);
+
+    if (!isStillCurrent()) return;
+    acceptPlanState(null, null);
+    setPersistenceWarningCode(null);
+  }, [cancelGeneration, activeStorage, acceptPlanState]);
+
+  // Un aviso de "datos aún cargando" deja de ser cierto en cuanto termina la hidratación:
+  // se deja de exponer (derivado en render) para no mostrar un error obsoleto (igual que RecipeContext).
+  const isResolvedDataNotReady =
+    errorCode === DATA_NOT_READY_CODE && !isPantryLoading && !isBudgetLoading;
+  const exposedError = isResolvedDataNotReady ? null : error;
+  const exposedErrorCode = isResolvedDataNotReady ? null : errorCode;
 
 
   // Limpieza al desmontar
@@ -545,8 +713,13 @@ export function MealPlanProvider({
       isRestoring,
       isStale,
       lastGeneratedAt,
-      error,
-      errorCode,
+      error: exposedError,
+      errorCode: exposedErrorCode,
+      persistenceWarning: persistenceWarningCode
+        ? MEAL_PLAN_PERSISTENCE_WARNING_MESSAGES[persistenceWarningCode]
+        : null,
+      persistenceWarningCode,
+      clearPersistenceWarning,
       generateMealPlan,
       cancelGeneration,
       clearMealPlan,
@@ -563,8 +736,10 @@ export function MealPlanProvider({
       isRestoring,
       isStale,
       lastGeneratedAt,
-      error,
-      errorCode,
+      exposedError,
+      exposedErrorCode,
+      persistenceWarningCode,
+      clearPersistenceWarning,
       generateMealPlan,
       cancelGeneration,
       clearMealPlan,

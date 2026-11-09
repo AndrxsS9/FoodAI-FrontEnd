@@ -48,7 +48,6 @@ import {
 } from '../../src/utils/imageUtils';
 import {
   areUnitsCompatibleForAddition,
-  combineIngredientQuantities,
   mapDetectedToScannedItems,
 } from '../../src/utils/ingredientMapper';
 import {
@@ -65,7 +64,7 @@ export default function ScannerScreen() {
   const styles = useThemeStyles(createStyles);
   const insets = useSafeAreaInsets();
   const { width: windowWidth } = useWindowDimensions();
-  const { ingredients, addIngredient, updateIngredient } = usePantry();
+  const { ingredients, addIngredient, mergeIngredientQuantity } = usePantry();
 
   // Estados del flujo
   const [step, setStep] = useState<ScannerStep>('capture');
@@ -470,20 +469,10 @@ export default function ScannerScreen() {
       let failedCount = 0;
       const failedNames: string[] = [];
 
-      // Mapa acumulativo en memoria para rastrear el inventario confirmado y prevenir "lost updates"
-      // si múltiples alimentos detectados corresponden al mismo registro en la despensa.
-      const runningPantry = new Map<
-        string,
-        { quantity: number; unit: IngredientUnit; name: string }
-      >();
-      for (const ing of ingredients) {
-        runningPantry.set(ing.id, {
-          quantity: ing.quantity,
-          unit: ing.unit,
-          name: ing.name,
-        });
-      }
-
+      // Los ítems se procesan en secuencia. Cada suma sobre un alimento existente se calcula dentro de
+      // PantryContext contra el estado PERSISTIDO más reciente y en la sección serializada de la
+      // despensa (Fase 28B), nunca contra la instantánea de React tomada al revisar. Así se acumulan
+      // varias detecciones del mismo alimento y no se pierden mutaciones concurrentes.
       for (const item of selectedItems) {
         try {
           if (
@@ -494,41 +483,18 @@ export default function ScannerScreen() {
             const targetId =
               item.duplicateMatch.pantryIngredientId ||
               (item.duplicateMatch as unknown as { id: string }).id;
-            const currentRecord = runningPantry.get(targetId);
 
-            if (currentRecord) {
-              const combined = combineIngredientQuantities(
-                currentRecord.quantity,
-                currentRecord.unit,
-                item.quantity,
-                item.unit
-              );
+            const mergeResult = await mergeIngredientQuantity(
+              targetId,
+              item.quantity,
+              item.unit
+            );
 
-              if (combined.success) {
-                await updateIngredient({
-                  id: targetId,
-                  quantity: combined.newQuantity,
-                  unit: combined.unit,
-                });
-                runningPantry.set(targetId, {
-                  ...currentRecord,
-                  quantity: combined.newQuantity,
-                  unit: combined.unit,
-                });
-                updatedCount += 1;
-              } else {
-                // Si las unidades no son compatibles, NUNCA sumar silenciosamente.
-                // Guardar como ítem separado para garantizar la fidelidad del inventario.
-                await addIngredient({
-                  name: item.name.trim(),
-                  quantity: item.quantity,
-                  unit: item.unit,
-                  category: item.category,
-                });
-                savedCount += 1;
-              }
+            if (mergeResult.status === 'merged') {
+              updatedCount += 1;
             } else {
-              // Si no se encuentra en el mapa, agregarlo como nuevo
+              // 'incompatible_units': NUNCA sumar silenciosamente; se guarda como ítem separado.
+              // 'not_found': el registro ya no existe; se conserva lo escaneado como alimento nuevo.
               await addIngredient({
                 name: item.name.trim(),
                 quantity: item.quantity,

@@ -14,10 +14,13 @@ import {
   CreateIngredientInput,
   Ingredient,
   IngredientCategory,
+  IngredientUnit,
   PantrySummary,
   UpdateIngredientInput,
   getExpirationStatus,
 } from '../types/pantry';
+import { combineIngredientQuantities } from '../utils/ingredientMapper';
+import { isValidQuantityValue } from '../utils/pantryValidation';
 import {
   PantryStorageAdapter,
   createPantryStorage,
@@ -128,6 +131,17 @@ export interface ConsumeRecipeResult {
   error?: string;
 }
 
+/**
+ * Resultado de sumar una cantidad a un alimento existente contra el estado persistido (Fase 28B).
+ * - merged: la suma se aplicó y persistió en la unidad del registro existente.
+ * - incompatible_units: las unidades no son sumables (p. ej. masa vs. volumen); no se modificó nada.
+ * - not_found: el registro ya no existe en el almacenamiento; no se modificó nada.
+ */
+export type MergeIngredientQuantityResult =
+  | { status: 'merged'; ingredient: Ingredient }
+  | { status: 'incompatible_units'; ingredient: Ingredient }
+  | { status: 'not_found' };
+
 export interface PantryContextValue {
   ingredients: Ingredient[];
   isLoading: boolean;
@@ -137,6 +151,16 @@ export interface PantryContextValue {
   updateIngredient: (input: UpdateIngredientInput) => Promise<Ingredient>;
   deleteIngredient: (id: string) => Promise<void>;
   adjustQuantity: (id: string, delta: number) => Promise<void>;
+  /**
+   * Suma `quantity` (en `unit`) al alimento `id` leyendo el estado persistido más reciente dentro
+   * de la misma sección serializada que el resto de mutaciones. Nunca convierte masa en volumen
+   * ni suma unidades incompatibles.
+   */
+  mergeIngredientQuantity: (
+    id: string,
+    quantity: number,
+    unit: IngredientUnit
+  ) => Promise<MergeIngredientQuantityResult>;
   refresh: () => Promise<void>;
   clearStorageError: () => void;
   consumeRecipeIngredients: (
@@ -198,6 +222,14 @@ export function PantryProvider({
   const inFlightDeductionsRef = React.useRef<Set<string>>(new Set());
   const pantryMutationLockRef = React.useRef<Promise<any>>(Promise.resolve());
 
+  /**
+   * Sección crítica única para TODAS las mutaciones de la despensa (Fase 28B).
+   * El adaptador ya serializa cada operación individual (cola FIFO), pero consumeRecipeIngredients
+   * abarca varias operaciones (leer → ledger → escribir lista completa → confirmar/rollback). Sin
+   * este candado, una mutación individual podía colarse entre la lectura y la escritura y perderse.
+   * Reglas: el candado no es reentrante, por lo que dentro de `action` solo se usa `activeStorage`
+   * (nunca otra mutación del contexto); un fallo libera el candado igualmente (sin bloqueos).
+   */
   const executePantryMutation = useCallback(async <T,>(action: () => Promise<T>): Promise<T> => {
     const prevLock = pantryMutationLockRef.current;
     let releaseLock: () => void = () => {};
@@ -332,20 +364,25 @@ export function PantryProvider({
   }, [storageAdapter, initialIngredients, activeStorage]);
 
 
+  // Las mutaciones individuales comparten el candado del consumo de recetas. La versión de la
+  // operación se asigna DENTRO del candado para que el orden de versiones coincida con el orden
+  // real de escritura: una mutación que esperó al consumo no queda descartada por versión antigua.
   const addIngredient = useCallback(
     async (input: CreateIngredientInput): Promise<Ingredient> => {
-      const opVersion = ++nextOperationVersionRef.current;
       setStorageError(null);
       try {
-        const created = await activeStorage.addIngredient(input);
-        if (opVersion >= lastAppliedVersionRef.current) {
-          lastAppliedVersionRef.current = opVersion;
-          setIngredients((prev) => [
-            created,
-            ...prev.filter((item) => item.id !== created.id),
-          ]);
-        }
-        return created;
+        return await executePantryMutation(async () => {
+          const opVersion = ++nextOperationVersionRef.current;
+          const created = await activeStorage.addIngredient(input);
+          if (opVersion >= lastAppliedVersionRef.current) {
+            lastAppliedVersionRef.current = opVersion;
+            setIngredients((prev) => [
+              created,
+              ...prev.filter((item) => item.id !== created.id),
+            ]);
+          }
+          return created;
+        });
       } catch (error) {
         const message =
           error instanceof Error
@@ -355,22 +392,24 @@ export function PantryProvider({
         throw error;
       }
     },
-    [activeStorage]
+    [activeStorage, executePantryMutation]
   );
 
   const updateIngredient = useCallback(
     async (input: UpdateIngredientInput): Promise<Ingredient> => {
-      const opVersion = ++nextOperationVersionRef.current;
       setStorageError(null);
       try {
-        const updated = await activeStorage.updateIngredient(input);
-        if (opVersion >= lastAppliedVersionRef.current) {
-          lastAppliedVersionRef.current = opVersion;
-          setIngredients((prev) =>
-            prev.map((item) => (item.id === updated.id ? updated : item))
-          );
-        }
-        return updated;
+        return await executePantryMutation(async () => {
+          const opVersion = ++nextOperationVersionRef.current;
+          const updated = await activeStorage.updateIngredient(input);
+          if (opVersion >= lastAppliedVersionRef.current) {
+            lastAppliedVersionRef.current = opVersion;
+            setIngredients((prev) =>
+              prev.map((item) => (item.id === updated.id ? updated : item))
+            );
+          }
+          return updated;
+        });
       } catch (error) {
         const message =
           error instanceof Error
@@ -380,19 +419,21 @@ export function PantryProvider({
         throw error;
       }
     },
-    [activeStorage]
+    [activeStorage, executePantryMutation]
   );
 
   const deleteIngredient = useCallback(
     async (id: string): Promise<void> => {
-      const opVersion = ++nextOperationVersionRef.current;
       setStorageError(null);
       try {
-        await activeStorage.deleteIngredient(id);
-        if (opVersion >= lastAppliedVersionRef.current) {
-          lastAppliedVersionRef.current = opVersion;
-          setIngredients((prev) => prev.filter((item) => item.id !== id));
-        }
+        await executePantryMutation(async () => {
+          const opVersion = ++nextOperationVersionRef.current;
+          await activeStorage.deleteIngredient(id);
+          if (opVersion >= lastAppliedVersionRef.current) {
+            lastAppliedVersionRef.current = opVersion;
+            setIngredients((prev) => prev.filter((item) => item.id !== id));
+          }
+        });
       } catch (error) {
         const message =
           error instanceof Error
@@ -402,7 +443,7 @@ export function PantryProvider({
         throw error;
       }
     },
-    [activeStorage]
+    [activeStorage, executePantryMutation]
   );
 
   const ingredientsRef = React.useRef(ingredients);
@@ -412,40 +453,43 @@ export function PantryProvider({
 
   const adjustQuantity = useCallback(
     async (id: string, delta: number): Promise<void> => {
-      const opVersion = ++nextOperationVersionRef.current;
       setStorageError(null);
       try {
-        if (activeStorage.adjustQuantity) {
-          const updated = await activeStorage.adjustQuantity(id, delta);
-          if (opVersion >= lastAppliedVersionRef.current) {
-            lastAppliedVersionRef.current = opVersion;
-            setIngredients((prev) =>
-              prev.map((item) => (item.id === updated.id ? updated : item))
-            );
-          }
-        } else {
-          // Adaptador sin adjustQuantity nativo: derivar del valor persistido confirmado
-          // sin aplicar mutaciones optimistas especulativas antes de tiempo.
-          const currentList = await activeStorage.getIngredients();
-          const target = currentList.find((item) => item.id === id);
-          if (!target) return;
+        await executePantryMutation(async () => {
+          const opVersion = ++nextOperationVersionRef.current;
+          if (activeStorage.adjustQuantity) {
+            const updated = await activeStorage.adjustQuantity(id, delta);
+            if (opVersion >= lastAppliedVersionRef.current) {
+              lastAppliedVersionRef.current = opVersion;
+              setIngredients((prev) =>
+                prev.map((item) => (item.id === updated.id ? updated : item))
+              );
+            }
+          } else {
+            // Adaptador sin adjustQuantity nativo: derivar del valor persistido confirmado
+            // sin aplicar mutaciones optimistas especulativas antes de tiempo. La lectura y la
+            // escritura quedan dentro del candado, por lo que ninguna otra mutación se intercala.
+            const currentList = await activeStorage.getIngredients();
+            const target = currentList.find((item) => item.id === id);
+            if (!target) return;
 
-          const newQty = Math.round((target.quantity + delta) * 1000) / 1000;
-          if (newQty <= 0) {
-            return;
-          }
+            const newQty = Math.round((target.quantity + delta) * 1000) / 1000;
+            if (newQty <= 0) {
+              return;
+            }
 
-          const updated = await activeStorage.updateIngredient({
-            id,
-            quantity: newQty,
-          });
-          if (opVersion >= lastAppliedVersionRef.current) {
-            lastAppliedVersionRef.current = opVersion;
-            setIngredients((prev) =>
-              prev.map((item) => (item.id === updated.id ? updated : item))
-            );
+            const updated = await activeStorage.updateIngredient({
+              id,
+              quantity: newQty,
+            });
+            if (opVersion >= lastAppliedVersionRef.current) {
+              lastAppliedVersionRef.current = opVersion;
+              setIngredients((prev) =>
+                prev.map((item) => (item.id === updated.id ? updated : item))
+              );
+            }
           }
-        }
+        });
       } catch (error) {
         const message =
           error instanceof Error
@@ -455,7 +499,64 @@ export function PantryProvider({
         throw error;
       }
     },
-    [activeStorage]
+    [activeStorage, executePantryMutation]
+  );
+
+  /**
+   * Fusión atómica de cantidades (Fase 28B · D4): lee el registro desde el almacenamiento (no desde
+   * la instantánea de React) y escribe la suma dentro del mismo candado que el resto de mutaciones.
+   * La compatibilidad se decide con la unidad PERSISTIDA actual: g↔kg y ml↔l se convierten a la
+   * unidad del registro; cualquier otra combinación (incluida masa↔volumen) no modifica nada y
+   * devuelve `incompatible_units` para que el llamador conserve el alimento como ítem separado.
+   */
+  const mergeIngredientQuantity = useCallback(
+    async (
+      id: string,
+      quantity: number,
+      unit: IngredientUnit
+    ): Promise<MergeIngredientQuantityResult> => {
+      setStorageError(null);
+      try {
+        if (!isValidQuantityValue(quantity)) {
+          throw new Error('La cantidad a sumar debe ser un número positivo válido.');
+        }
+
+        return await executePantryMutation(async (): Promise<MergeIngredientQuantityResult> => {
+          const currentList = await activeStorage.getIngredients();
+          const target = currentList.find((item) => item.id === id);
+          if (!target) {
+            return { status: 'not_found' };
+          }
+
+          const combined = combineIngredientQuantities(target.quantity, target.unit, quantity, unit);
+          if (!combined.success) {
+            return { status: 'incompatible_units', ingredient: target };
+          }
+
+          const opVersion = ++nextOperationVersionRef.current;
+          const updated = await activeStorage.updateIngredient({
+            id,
+            quantity: combined.newQuantity,
+            unit: combined.unit,
+          });
+          if (opVersion >= lastAppliedVersionRef.current) {
+            lastAppliedVersionRef.current = opVersion;
+            setIngredients((prev) =>
+              prev.map((item) => (item.id === updated.id ? updated : item))
+            );
+          }
+          return { status: 'merged', ingredient: updated };
+        });
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : 'Error al sumar la cantidad del alimento.';
+        setStorageError(message);
+        throw error;
+      }
+    },
+    [activeStorage, executePantryMutation]
   );
 
 
@@ -475,25 +576,30 @@ export function PantryProvider({
           : getRecipeDeductionKey(recipeOrKey);
 
       try {
-        const records = await getConsumedRecipeRecords(effectiveUserId);
-        const rec = records[targetKey];
-        if (rec && rec.status === 'pending') {
-          const currentPantry = await activeStorage.getIngredients();
-          const reconciliation = await reconcileDeductionIntent(targetKey, currentPantry, effectiveUserId);
-          if (reconciliation.status === 'aborted') {
-            return false;
+        // Serializado con el consumo (Fase 28B): una intención 'pending' de un consumo EN CURSO no
+        // debe reconciliarse a medias (se descartaría la intención antes de escribir la despensa).
+        // Al esperar el candado, la consulta observa el resultado final del consumo.
+        return await executePantryMutation(async () => {
+          const records = await getConsumedRecipeRecords(effectiveUserId);
+          const rec = records[targetKey];
+          if (rec && rec.status === 'pending') {
+            const currentPantry = await activeStorage.getIngredients();
+            const reconciliation = await reconcileDeductionIntent(targetKey, currentPantry, effectiveUserId);
+            if (reconciliation.status === 'aborted') {
+              return false;
+            }
+            return true;
           }
-          return true;
-        }
 
-        return await isRecipeDeducted(targetKey, effectiveUserId);
+          return await isRecipeDeducted(targetKey, effectiveUserId);
+        });
       } catch (err) {
         console.warn('[PantryContext] Error en checkIfRecipeDeducted; aplicando fail-closed (true):', err);
         // Fail-closed: si el ledger no está disponible o está corrupto, se asume deducida para prevenir duplicados
         return true;
       }
     },
-    [effectiveUserId, activeStorage]
+    [effectiveUserId, activeStorage, executePantryMutation]
   );
 
   const consumeRecipeIngredients = useCallback(
@@ -788,6 +894,7 @@ export function PantryProvider({
       updateIngredient,
       deleteIngredient,
       adjustQuantity,
+      mergeIngredientQuantity,
       refresh: loadFromStorage,
       clearStorageError,
       consumeRecipeIngredients,
@@ -802,6 +909,7 @@ export function PantryProvider({
       updateIngredient,
       deleteIngredient,
       adjustQuantity,
+      mergeIngredientQuantity,
       loadFromStorage,
       clearStorageError,
       consumeRecipeIngredients,

@@ -246,7 +246,8 @@ describe('Fase 6A — Cálculo de Consumo y Deducción en Despensa', () => {
 
   it('convierte unidades compatibles correctamente: l a ml (0.2l de 500ml deja 300ml)', () => {
     const recipeIngredients = [
-      { name: 'Leche', quantity: 0.2, unit: 'l' },
+      // Fase 28C-B3.2: solo una coincidencia exacta autoriza descontar («Leche» vs «Leche entera» es posible)
+      { name: 'Leche entera', quantity: 0.2, unit: 'l' },
     ];
     const plan = calculatePantryDeduction(mockPantry, recipeIngredients);
 

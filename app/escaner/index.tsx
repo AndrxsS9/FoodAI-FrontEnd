@@ -48,7 +48,9 @@ import {
 } from '../../src/utils/imageUtils';
 import {
   areUnitsCompatibleForAddition,
+  canMergeScannedItem,
   mapDetectedToScannedItems,
+  rematchScannedItemAfterRename,
 } from '../../src/utils/ingredientMapper';
 import {
   getScannedItemSemanticWarnings,
@@ -391,9 +393,13 @@ export default function ScannerScreen() {
     );
   };
 
+  // Renombrar recalcula la coincidencia con la despensa: un destino obsoleto nunca se conserva
+  // y un nuevo destino jamás se selecciona automáticamente para sumar (Fase 28C-B3.2).
   const handleChangeName = (id: string, name: string) => {
     setScannedItems((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, name } : item))
+      prev.map((item) =>
+        item.id === id ? rematchScannedItemAfterRename(item, name, ingredients) : item
+      )
     );
   };
 
@@ -445,7 +451,12 @@ export default function ScannerScreen() {
 
   const handleChangeAction = (id: string, action: ScannedIngredientAction) => {
     setScannedItems((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, action } : item))
+      prev.map((item) => {
+        if (item.id !== id) return item;
+        // Nunca aceptar una suma sin destino vigente o con unidades incompatibles
+        if (action === 'add_to_existing' && !canMergeScannedItem(item)) return item;
+        return { ...item, action };
+      })
     );
   };
 

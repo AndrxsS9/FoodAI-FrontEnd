@@ -18,7 +18,15 @@ export type DeductionItemStatus =
   | 'deductible_partial'
   | 'requires_review_unit'
   | 'requires_review_quantity'
-  | 'requires_review_not_found';
+  | 'requires_review_not_found'
+  | 'requires_review_possible_match';
+
+/**
+ * Mensaje para coincidencias solo posibles (Fase 28C-B3.2): nunca autorizan una deducción.
+ * Debe coincidir con `messages.consumption.possibleMatch` del catálogo de localización.
+ */
+export const POSSIBLE_MATCH_REVIEW_MESSAGE =
+  'Posible coincidencia en tu despensa; requiere revisión manual y no se dedujo automáticamente.';
 
 export interface PantryDeductionItem {
   recipeIngredientName: string;
@@ -146,6 +154,26 @@ export function calculatePantryDeduction(
 
     const pantryItem = (pantryIngredients || []).find((p) => p.id === matchedDuplicate.id)!;
     const currentStock = remainingStockMap.get(pantryItem.id) ?? pantryItem.quantity;
+
+    // Fase 28C-B3.2: solo una coincidencia EXACTA autoriza descontar inventario. Una coincidencia
+    // posible (ej. «Red onion» vs «Onion», «Tomate chonto» vs «Tomate») se reporta como contexto
+    // para revisión manual, sin deducción y sin tocar el stock remanente.
+    if (matchedDuplicate.matchType !== 'exact') {
+      items.push({
+        recipeIngredientName: rawName,
+        recipeQuantity: rawQuantity,
+        recipeUnit: rawUnit,
+        matchedPantryItem: pantryItem,
+        pantryUnit: pantryItem.unit,
+        deductQuantity: 0,
+        stockBefore: currentStock,
+        stockAfter: currentStock,
+        status: 'requires_review_possible_match',
+        requiresReview: true,
+        message: POSSIBLE_MATCH_REVIEW_MESSAGE,
+      });
+      continue;
+    }
 
     // Regla 7: Nunca inventar cantidades para medidas nulas o desconocidas
     if (

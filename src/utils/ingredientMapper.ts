@@ -117,6 +117,39 @@ const FOOD_RULES: FoodRule[] = [
   { terms: ['polvo de hornear', 'polvo para hornear'], category: PANTRY, presentation: 'powder', preferredUnit: 'g' },
   { terms: ['tomate de arbol'], category: VEG, presentation: 'piece', preferredUnit: 'unidad' },
 
+  // --- Frases compuestas en inglés (Fase 28C-B3.2) ---
+  // En inglés el modificador precede al núcleo («tomato sauce»), por lo que estas frases
+  // deben reconocerse completas antes que la regla de una sola palabra («tomato»).
+  { terms: ['tomato sauce', 'tomato paste', 'tomato puree'], category: PANTRY, presentation: 'solid', preferredUnit: 'g' },
+  { terms: ['soy sauce'], category: PANTRY, presentation: 'liquid', preferredUnit: 'ml' },
+  { terms: ['peanut butter'], category: PANTRY, presentation: 'solid', preferredUnit: 'g' },
+  {
+    terms: ['onion powder', 'garlic powder', 'black pepper', 'baking powder'],
+    category: PANTRY,
+    presentation: 'powder',
+    preferredUnit: 'g',
+  },
+  {
+    terms: ['chicken broth', 'chicken stock', 'beef broth', 'beef stock', 'vegetable broth'],
+    category: PANTRY,
+    presentation: 'variable',
+    variableUnits: ['ml', 'l', 'g', 'unidad'],
+  },
+  {
+    terms: ['almond milk', 'oat milk', 'soy milk', 'rice milk', 'plant milk'],
+    category: OTHER,
+    presentation: 'liquid',
+    preferredUnit: 'l',
+    altCategories: [PANTRY],
+  },
+  { terms: ['coconut milk'], category: PANTRY, presentation: 'liquid', preferredUnit: 'ml', altCategories: [OTHER] },
+  {
+    terms: ['sweet potato', 'green onion', 'spring onion', 'bell pepper'],
+    category: VEG,
+    presentation: 'piece',
+    preferredUnit: 'unidad',
+  },
+
   // --- Verduras y frutas ---
   {
     terms: [
@@ -128,6 +161,12 @@ const FOOD_RULES: FoodRule[] = [
       'patilla', 'kiwi', 'durazno', 'cereza', 'mora', 'arandano', 'coco', 'remolacha',
       'berenjena', 'repollo', 'rabano', 'yuca', 'batata', 'mazorca', 'lulo', 'uchuva',
       'granadilla', 'puerro', 'jengibre', 'albahaca', 'hierbabuena', 'arveja', 'habichuela',
+      // Nombres comunes en inglés (Fase 28C-B3.2)
+      'tomato', 'onion', 'potato', 'carrot', 'garlic', 'lemon', 'lime', 'avocado', 'apple',
+      'lettuce', 'spinach', 'parsley', 'cucumber', 'zucchini', 'pumpkin', 'mushroom',
+      'strawberry', 'orange', 'pear', 'pineapple', 'grape', 'broccoli', 'cauliflower', 'celery',
+      'watermelon', 'peach', 'cherry', 'blueberry', 'beet', 'eggplant', 'cabbage', 'radish',
+      'cassava', 'ginger', 'basil', 'pea', 'scallion', 'peaches', 'radishes',
     ],
     category: VEG,
     presentation: 'piece',
@@ -135,24 +174,27 @@ const FOOD_RULES: FoodRule[] = [
   },
 
   // --- Carnes y proteínas ---
-  { terms: ['huevo'], category: PROTEIN, presentation: 'unit', preferredUnit: 'unidad', altCategories: [DAIRY] },
+  { terms: ['huevo', 'egg'], category: PROTEIN, presentation: 'unit', preferredUnit: 'unidad', altCategories: [DAIRY] },
   {
-    terms: ['pollo', 'carne', 'res', 'cerdo', 'pescado', 'costilla', 'lomo', 'pavo', 'molida', 'sobrebarriga'],
+    terms: [
+      'pollo', 'carne', 'res', 'cerdo', 'pescado', 'costilla', 'lomo', 'pavo', 'molida', 'sobrebarriga',
+      'chicken', 'beef', 'pork', 'fish', 'turkey', 'meat',
+    ],
     category: PROTEIN,
     presentation: 'solid',
     preferredUnit: 'kg',
   },
   {
-    terms: ['jamon', 'tocineta', 'tocino', 'camaron', 'salmon', 'tofu'],
+    terms: ['jamon', 'tocineta', 'tocino', 'camaron', 'salmon', 'tofu', 'ham', 'bacon', 'shrimp'],
     category: PROTEIN,
     presentation: 'solid',
     preferredUnit: 'g',
   },
-  { terms: ['atun', 'sardina'], category: PROTEIN, presentation: 'solid', preferredUnit: 'g', altCategories: [PANTRY] },
+  { terms: ['atun', 'sardina', 'tuna', 'sardine'], category: PROTEIN, presentation: 'solid', preferredUnit: 'g', altCategories: [PANTRY] },
   {
     terms: [
       'pechuga', 'muslo', 'contramuslo', 'ala', 'alita', 'chuleta', 'filete', 'salchicha',
-      'chorizo', 'hamburguesa', 'tilapia', 'mojarra',
+      'chorizo', 'hamburguesa', 'tilapia', 'mojarra', 'sausage',
     ],
     category: PROTEIN,
     presentation: 'piece',
@@ -160,25 +202,28 @@ const FOOD_RULES: FoodRule[] = [
   },
 
   // --- Lácteos ---
-  { terms: ['leche', 'kumis', 'kefir'], category: DAIRY, presentation: 'liquid', preferredUnit: 'l', altCategories: [PANTRY] },
+  { terms: ['leche', 'kumis', 'kefir', 'milk'], category: DAIRY, presentation: 'liquid', preferredUnit: 'l', altCategories: [PANTRY] },
   {
-    terms: ['queso', 'mantequilla', 'margarina', 'cuajada', 'parmesano', 'mozzarella', 'requeson', 'arequipe'],
+    terms: [
+      'queso', 'mantequilla', 'margarina', 'cuajada', 'parmesano', 'mozzarella', 'requeson', 'arequipe',
+      'cheese', 'butter',
+    ],
     category: DAIRY,
     presentation: 'solid',
     preferredUnit: 'g',
     altCategories: [PANTRY],
   },
   {
-    terms: ['yogur', 'yogurt', 'yogures', 'crema', 'suero'],
+    terms: ['yogur', 'yogurt', 'yogures', 'crema', 'suero', 'cream'],
     category: DAIRY,
     presentation: 'variable',
     variableUnits: ['ml', 'l', 'g', 'kg', 'unidad'],
   },
 
   // --- Granos y cereales ---
-  { terms: ['arroz'], category: GRAINS, presentation: 'solid', preferredUnit: 'kg', altCategories: [PANTRY] },
+  { terms: ['arroz', 'rice'], category: GRAINS, presentation: 'solid', preferredUnit: 'kg', altCategories: [PANTRY] },
   {
-    terms: ['frijol', 'lenteja', 'garbanzo'],
+    terms: ['frijol', 'lenteja', 'garbanzo', 'bean', 'lentil', 'chickpea'],
     category: GRAINS,
     presentation: 'solid',
     preferredUnit: 'g',
@@ -188,33 +233,38 @@ const FOOD_RULES: FoodRule[] = [
     terms: [
       'avena', 'pasta', 'espagueti', 'espaguetis', 'spaghetti', 'macarron', 'fideo', 'maiz',
       'cereal', 'granola', 'quinoa', 'quinua', 'trigo', 'cuscus',
+      'oat', 'oats', 'noodle', 'corn', 'wheat',
     ],
     category: GRAINS,
     presentation: 'solid',
     preferredUnit: 'g',
     altCategories: [PANTRY],
   },
-  { terms: ['harina', 'maizena', 'fecula'], category: GRAINS, presentation: 'powder', preferredUnit: 'g', altCategories: [PANTRY] },
-  { terms: ['pan', 'tostada', 'arepa', 'tortilla'], category: GRAINS, presentation: 'piece', preferredUnit: 'unidad', altCategories: [PANTRY] },
+  { terms: ['harina', 'maizena', 'fecula', 'flour'], category: GRAINS, presentation: 'powder', preferredUnit: 'g', altCategories: [PANTRY] },
+  { terms: ['pan', 'tostada', 'arepa', 'tortilla', 'bread'], category: GRAINS, presentation: 'piece', preferredUnit: 'unidad', altCategories: [PANTRY] },
 
   // --- Alacena ---
-  { terms: ['aceite'], category: PANTRY, presentation: 'liquid', preferredUnit: 'l' },
-  { terms: ['vinagre', 'esencia', 'vainilla'], category: PANTRY, presentation: 'liquid', preferredUnit: 'ml' },
-  { terms: ['sal', 'azucar'], category: PANTRY, presentation: 'powder', preferredUnit: 'g' },
+  { terms: ['aceite', 'oil', 'olive oil'], category: PANTRY, presentation: 'liquid', preferredUnit: 'l' },
+  { terms: ['vinagre', 'esencia', 'vainilla', 'vinegar', 'vanilla'], category: PANTRY, presentation: 'liquid', preferredUnit: 'ml' },
+  { terms: ['sal', 'azucar', 'salt', 'sugar'], category: PANTRY, presentation: 'powder', preferredUnit: 'g' },
   {
     terms: [
       'pimienta', 'especia', 'especias', 'comino', 'oregano', 'canela', 'paprika', 'curry',
       'color', 'achiote', 'levadura', 'bicarbonato', 'gelatina', 'laurel', 'tomillo',
+      'cumin', 'cinnamon', 'yeast', 'thyme',
     ],
     category: PANTRY,
     presentation: 'powder',
     preferredUnit: 'g',
   },
-  { terms: ['cafe'], category: PANTRY, presentation: 'solid', preferredUnit: 'g' },
-  { terms: ['mermelada'], category: PANTRY, presentation: 'solid', preferredUnit: 'g' },
+  { terms: ['cafe', 'coffee'], category: PANTRY, presentation: 'solid', preferredUnit: 'g' },
+  { terms: ['mermelada', 'jam'], category: PANTRY, presentation: 'solid', preferredUnit: 'g' },
   { terms: ['panela', 'chocolate'], category: PANTRY, presentation: 'piece', preferredUnit: 'unidad' },
   {
-    terms: ['salsa', 'mayonesa', 'mostaza', 'ketchup', 'miel', 'caldo', 'te', 'aceituna'],
+    terms: [
+      'salsa', 'mayonesa', 'mostaza', 'ketchup', 'miel', 'caldo', 'te', 'aceituna',
+      'sauce', 'mayonnaise', 'mustard', 'honey', 'broth', 'tea', 'olive',
+    ],
     category: PANTRY,
     presentation: 'variable',
     variableUnits: ['ml', 'l', 'g', 'unidad'],
@@ -222,7 +272,10 @@ const FOOD_RULES: FoodRule[] = [
 
   // --- Bebidas: presentación líquida clara, categoría genérica ---
   {
-    terms: ['agua', 'jugo', 'zumo', 'gaseosa', 'refresco', 'bebida', 'vino', 'cerveza'],
+    terms: [
+      'agua', 'jugo', 'zumo', 'gaseosa', 'refresco', 'bebida', 'vino', 'cerveza',
+      'water', 'juice', 'soda', 'wine', 'beer',
+    ],
     category: OTHER,
     presentation: 'liquid',
     preferredUnit: 'l',
@@ -242,6 +295,8 @@ const LEADING_SKIP_WORDS = [
   'manojo', 'atado', 'racimo', 'cabeza', 'diente', 'taza', 'cucharada', 'pizca',
   'g', 'gr', 'grs', 'kg', 'kgs', 'ml', 'l', 'lt', 'lts', 'cc', 'lb', 'lbs', 'oz', 'und',
   'mini', 'baby', 'fresco', 'fresca', 'organico', 'organica',
+  // Equivalentes en inglés (Fase 28C-B3.2)
+  'of', 'a', 'an', 'the', 'bag', 'can', 'box', 'bottle', 'jar', 'pack', 'package', 'fresh', 'organic',
 ];
 
 /**
@@ -254,8 +309,8 @@ const PRESENTATION_MODIFIERS: {
   presentation: FoodPresentation;
   appliesTo?: FoodPresentation[];
 }[] = [
-  { words: ['liquido', 'liquida', 'bebible'], presentation: 'liquid' },
-  { words: ['polvo'], presentation: 'powder' },
+  { words: ['liquido', 'liquida', 'bebible', 'liquid'], presentation: 'liquid' },
+  { words: ['polvo', 'powder', 'powdered'], presentation: 'powder' },
   {
     words: ['solido', 'solida', 'griego', 'griega', 'cremoso', 'cremosa'],
     presentation: 'solid',
@@ -315,7 +370,28 @@ function classificationTokens(text: string): string[] {
   return normalizeIngredientName(text)
     .split(/[^a-z0-9]+/)
     .filter(Boolean)
-    .map(stemSpanishWord);
+    .map(singularizeFoodWord);
+}
+
+/** Indica si algún término conocido empieza exactamente en la posición `pos`. */
+function findTermAt(
+  terms: CompiledFoodTerm[],
+  tokens: string[],
+  pos: number
+): CompiledFoodTerm | null {
+  for (const term of terms) {
+    const len = term.tokens.length;
+    if (pos + len > tokens.length) continue;
+    let matches = true;
+    for (let k = 0; k < len; k += 1) {
+      if (tokens[pos + k] !== term.tokens[k]) {
+        matches = false;
+        break;
+      }
+    }
+    if (matches) return term;
+  }
+  return null;
 }
 
 function getCompiledKnowledge(): CompiledKnowledge {
@@ -331,7 +407,7 @@ function getCompiledKnowledge(): CompiledKnowledge {
   const modifiers = new Map<string, CompiledModifier>();
   for (const group of PRESENTATION_MODIFIERS) {
     for (const word of group.words) {
-      modifiers.set(stemSpanishWord(word), {
+      modifiers.set(singularizeFoodWord(word), {
         presentation: group.presentation,
         appliesTo: group.appliesTo,
       });
@@ -340,7 +416,7 @@ function getCompiledKnowledge(): CompiledKnowledge {
 
   compiledKnowledge = {
     terms,
-    skipWords: new Set(LEADING_SKIP_WORDS.map(stemSpanishWord)),
+    skipWords: new Set(LEADING_SKIP_WORDS.map(singularizeFoodWord)),
     modifiers,
   };
   return compiledKnowledge;
@@ -432,7 +508,15 @@ export function classifyIngredient(name: string): IngredientClassification {
 
   const { rule } = best.term;
 
-  if (best.position !== 0) {
+  // Compuesto al estilo inglés («orange juice», «egg noodles»): el núcleo va al final y es
+  // otro alimento de distinta categoría. No se inventa certeza sobre cuál de los dos es.
+  const adjacentTerm =
+    best.position === 0
+      ? findTermAt(knowledge.terms, tokens, best.term.tokens.length)
+      : null;
+  const isAmbiguousCompound = !!adjacentTerm && adjacentTerm.rule.category !== rule.category;
+
+  if (best.position !== 0 || isAmbiguousCompound) {
     return {
       ...UNKNOWN_CLASSIFICATION,
       confidence: 'low',
@@ -747,13 +831,158 @@ export function stemSpanishWord(word: string): string {
 }
 
 /**
+ * Singulariza una palabra de alimento en español o inglés de forma conservadora.
+ * Antes de las reglas españolas se aplican SOLO dos plurales ingleses inequívocos:
+ * `-oes` → `-o` (tomatoes → tomato, potatoes → potato) e `-ies` → `-y`
+ * (cherries → cherry). Plurales como `-ches` no se tocan para no romper «leches».
+ */
+export function singularizeFoodWord(word: string): string {
+  const clean = word.toLowerCase().trim();
+  if (clean.length > 4 && clean.endsWith('oes')) return clean.slice(0, -2);
+  if (clean.length > 4 && clean.endsWith('ies')) return clean.slice(0, -3) + 'y';
+  return stemSpanishWord(clean);
+}
+
+/**
  * Divide un nombre en tokens léxicos normalizados y lematizados.
  */
 export function tokenizeName(name: string): string[] {
   return normalizeIngredientName(name)
     .split(/\s+/)
     .filter(Boolean)
-    .map(stemSpanishWord);
+    .map(singularizeFoodWord);
+}
+
+// ---------------------------------------------------------------------------
+// Identidad bilingüe de alimentos (Fase 28C-B3.2)
+// ---------------------------------------------------------------------------
+//
+// Lista BLANCA explícita de equivalencias español ↔ inglés. Solo se aplica al nombre
+// COMPLETO (tras normalizar y singularizar), nunca a palabras sueltas dentro de un nombre
+// más largo: «onion» = «cebolla», pero «green onion» u «onion powder» no tienen identidad
+// bilingüe y por lo tanto jamás coinciden con «cebolla».
+//
+// La clave canónica es el nombre español. Los nombres guardados NO se reescriben: la
+// identidad solo se calcula para comparar.
+//
+// Se omiten deliberadamente equivalencias ambiguas (pepper ↔ pimienta/pimentón,
+// lemon/lime ↔ limón, bacon ↔ tocino/tocineta, banana ↔ banano/plátano, meat ↔ carne).
+
+const BILINGUAL_FOOD_IDENTITIES: Record<string, string[]> = {
+  cebolla: ['onion'],
+  tomate: ['tomato'],
+  huevo: ['egg'],
+  ajo: ['garlic'],
+  arroz: ['rice'],
+  pollo: ['chicken'],
+  zanahoria: ['carrot'],
+  papa: ['potato'],
+  batata: ['sweet potato'],
+  leche: ['milk'],
+  queso: ['cheese'],
+  sal: ['salt'],
+  azucar: ['sugar'],
+  mantequilla: ['butter'],
+  harina: ['flour'],
+  pan: ['bread'],
+  aceite: ['oil'],
+  frijol: ['bean'],
+  lenteja: ['lentil'],
+  garbanzo: ['chickpea'],
+  avena: ['oat', 'oats'],
+  lechuga: ['lettuce'],
+  espinaca: ['spinach'],
+  pepino: ['cucumber'],
+  brocoli: ['broccoli'],
+  coliflor: ['cauliflower'],
+  aguacate: ['avocado'],
+  manzana: ['apple'],
+  pera: ['pear'],
+  fresa: ['strawberry'],
+  pina: ['pineapple'],
+  uva: ['grape'],
+  sandia: ['watermelon'],
+  berenjena: ['eggplant'],
+  calabacin: ['zucchini'],
+  champinon: ['mushroom'],
+  apio: ['celery'],
+  repollo: ['cabbage'],
+  jengibre: ['ginger'],
+  perejil: ['parsley'],
+  albahaca: ['basil'],
+  cerdo: ['pork'],
+  pavo: ['turkey'],
+  pescado: ['fish'],
+  atun: ['tuna'],
+  camaron: ['shrimp'],
+  jamon: ['ham'],
+  yogur: ['yogurt', 'yoghurt'],
+  vinagre: ['vinegar'],
+  miel: ['honey'],
+  cafe: ['coffee'],
+  agua: ['water'],
+  canela: ['cinnamon'],
+  comino: ['cumin'],
+};
+
+/** Forma de comparación de un nombre completo: tokens singularizados unidos por espacio. */
+function identityPhrase(name: string): string {
+  return normalizeIngredientName(name)
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean)
+    .map(singularizeFoodWord)
+    .join(' ');
+}
+
+let bilingualIdentityIndex: Map<string, string> | null = null;
+
+function getBilingualIdentityIndex(): Map<string, string> {
+  if (bilingualIdentityIndex) return bilingualIdentityIndex;
+  const index = new Map<string, string>();
+  for (const [canonical, aliases] of Object.entries(BILINGUAL_FOOD_IDENTITIES)) {
+    for (const term of [canonical, ...aliases]) {
+      const phrase = identityPhrase(term);
+      // La primera equivalencia registrada gana; nunca se sobrescribe una identidad
+      if (phrase && !index.has(phrase)) index.set(phrase, canonical);
+    }
+  }
+  bilingualIdentityIndex = index;
+  return index;
+}
+
+/**
+ * Identidad canónica (español) de un nombre de alimento, o `null` si el nombre completo no
+ * está en la lista blanca bilingüe. Ej.: «Onions» → «cebolla», «Tomatoes» → «tomate»,
+ * «Onion powder» → null.
+ */
+export function getBilingualFoodIdentity(name: string): string | null {
+  if (typeof name !== 'string') return null;
+  const phrase = identityPhrase(name);
+  if (!phrase) return null;
+  return getBilingualIdentityIndex().get(phrase) ?? null;
+}
+
+/**
+ * Calificadores que convierten un alimento en OTRO producto distinto. Si la diferencia
+ * entre dos nombres incluye alguno de ellos, no se reporta ni siquiera una coincidencia
+ * posible (ej. «ajo» vs «ajo en polvo», «milk» vs «almond milk», «potato» vs «sweet potato»).
+ * Se comparan en su forma singularizada.
+ */
+const DISTINCT_FOOD_QUALIFIERS = new Set(
+  [
+    // Español
+    'polvo', 'salsa', 'pasta', 'pure', 'almendra', 'avena', 'soya', 'soja', 'coco', 'vegetal',
+    'jugo', 'zumo', 'aceite', 'caldo', 'harina', 'dulce', 'larga', 'largo', 'condensada',
+    'evaporada', 'crema', 'sopa', 'mani', 'mantequilla', 'leche',
+    // Inglés
+    'powder', 'powdered', 'sauce', 'paste', 'puree', 'green', 'spring', 'sweet', 'almond',
+    'oat', 'soy', 'coconut', 'plant', 'juice', 'oil', 'broth', 'stock', 'flour', 'bell',
+    'black', 'condensed', 'evaporated', 'cream', 'soup', 'peanut', 'butter', 'milk', 'chip',
+  ].map(singularizeFoodWord)
+);
+
+function hasDistinctFoodQualifier(longer: string[], shorter: string[]): boolean {
+  return longer.some((t) => !shorter.includes(t) && DISTINCT_FOOD_QUALIFIERS.has(t));
 }
 
 /**
@@ -769,6 +998,8 @@ export function findDuplicateInPantry(
 
   const detectedTokens = tokenizeName(name);
   if (detectedTokens.length === 0) return undefined;
+
+  const detectedIdentity = getBilingualFoodIdentity(name);
 
   let bestMatch: { ingredient: Ingredient; matchType: 'exact' | 'possible' } | undefined;
 
@@ -805,17 +1036,34 @@ export function findDuplicateInPantry(
       };
     }
 
+    // Identidad bilingüe explícita del nombre COMPLETO (ej: "Onions" vs "Cebolla").
+    // Nunca se deduce por palabras parciales: "Green onion" no tiene identidad bilingüe.
+    if (detectedIdentity && detectedIdentity === getBilingualFoodIdentity(pantryItem.name)) {
+      return {
+        id: pantryItem.id,
+        name: pantryItem.name,
+        currentQuantity: pantryItem.quantity,
+        unit: pantryItem.unit,
+        category: pantryItem.category,
+        matchType: 'exact',
+      };
+    }
+
     // 2. Coincidencia calificada de palabras completas (ej: "tomate" vs "tomate chonto")
     // Se requiere que TODAS las palabras del término más corto existan como tokens independientes
     // en el término más largo. De esta forma:
     // - "sal" jamás coincide con "salsa" ("sal" !== "salsa").
     // - "res" jamás coincide con "fresa" ("res" !== "fresa").
+    // Además, si la diferencia incluye un calificador que cambia el producto
+    // ("ajo en polvo", "almond milk", "sweet potato"), no se reporta coincidencia alguna.
     const isDetectedSubset =
       detectedTokens.length < pantryTokens.length &&
-      detectedTokens.every((t) => pantryTokens.includes(t));
+      detectedTokens.every((t) => pantryTokens.includes(t)) &&
+      !hasDistinctFoodQualifier(pantryTokens, detectedTokens);
     const isPantrySubset =
       pantryTokens.length < detectedTokens.length &&
-      pantryTokens.every((t) => detectedTokens.includes(t));
+      pantryTokens.every((t) => detectedTokens.includes(t)) &&
+      !hasDistinctFoodQualifier(detectedTokens, pantryTokens);
 
     if (isDetectedSubset || isPantrySubset) {
       if (!bestMatch) {
@@ -900,4 +1148,61 @@ export function mapDetectedToScannedItems(
       action,
     };
   });
+}
+
+/**
+ * Recalcula la coincidencia con la despensa cuando el usuario renombra un alimento detectado
+ * (Fase 28C-B3.2). Nunca conserva un destino obsoleto:
+ * - Sin coincidencia para el nuevo nombre → se elimina `duplicateMatch` y la acción es `create`.
+ * - `add_to_existing` solo se conserva si el destino es EL MISMO registro, con el mismo tipo de
+ *   coincidencia y unidades compatibles. Un destino nuevo NUNCA se selecciona automáticamente,
+ *   para no fusionar por accidente el alimento con otro tras el cambio de nombre.
+ * - Las coincidencias posibles o con unidades incompatibles exigen revisión explícita.
+ * La cantidad (incluido `null`), la unidad y la categoría elegidas no se modifican.
+ */
+export function rematchScannedItemAfterRename(
+  item: ScannedIngredientItem,
+  name: string,
+  pantryIngredients: Ingredient[]
+): ScannedIngredientItem {
+  const duplicate = name.trim()
+    ? findDuplicateInPantry(name, pantryIngredients || [])
+    : undefined;
+
+  const baseNeedsReview = item.quantity === null || item.unit === 'desconocida';
+
+  if (!duplicate) {
+    return {
+      ...item,
+      name,
+      duplicateMatch: undefined,
+      action: 'create',
+      needsReview: baseNeedsReview,
+    };
+  }
+
+  const unitsCompatible = areUnitsCompatibleForAddition(duplicate.unit, item.unit);
+  const previous = item.duplicateMatch;
+  const sameTarget =
+    !!previous && previous.id === duplicate.id && previous.matchType === duplicate.matchType;
+  const keepMerge = item.action === 'add_to_existing' && sameTarget && unitsCompatible;
+
+  return {
+    ...item,
+    name,
+    duplicateMatch: duplicate,
+    action: keepMerge ? 'add_to_existing' : 'create',
+    needsReview:
+      baseNeedsReview || duplicate.matchType !== 'exact' || !unitsCompatible,
+  };
+}
+
+/**
+ * Indica si un alimento detectado puede sumarse de forma segura a su coincidencia actual.
+ */
+export function canMergeScannedItem(item: ScannedIngredientItem): boolean {
+  return (
+    !!item.duplicateMatch &&
+    areUnitsCompatibleForAddition(item.duplicateMatch.unit, item.unit)
+  );
 }

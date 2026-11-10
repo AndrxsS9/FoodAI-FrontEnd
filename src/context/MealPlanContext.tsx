@@ -32,6 +32,7 @@ import {
 import { useBudget } from './BudgetContext';
 import { usePantrySafe } from './PantryContext';
 import { useAuthSafe } from './AuthContext';
+import { useLocale } from './LocaleContext';
 import { DATA_NOT_READY_CODE } from './RecipeContext';
 import {
   mealPlanApi as defaultMealPlanApi,
@@ -140,6 +141,13 @@ export function MealPlanProvider({
   }, [storageAdapter, effectiveUserId]);
 
   const { budget, servings, maxMinutes, isLoading: isBudgetLoading } = useBudget();
+  // Idioma activo leído mediante ref: cambiar de idioma no altera la identidad de las acciones
+  // ni dispara regeneraciones; solo se aplica a la siguiente solicitud iniciada por el usuario.
+  const { locale } = useLocale();
+  const localeRef = useRef(locale);
+  useEffect(() => {
+    localeRef.current = locale;
+  }, [locale]);
   const pantry = usePantrySafe();
   const ingredients = useMemo(() => pantry?.ingredients ?? [], [pantry?.ingredients]);
   const isPantryLoading = pantry?.isLoading ?? false;
@@ -509,6 +517,8 @@ export function MealPlanProvider({
       setErrorCode(null);
 
       const targetMaxMinutes = options?.maxMinutes ?? maxMinutes;
+      // Idioma fijado en el instante en que inicia esta solicitud
+      const requestLocale = localeRef.current;
 
       try {
         // 3. Validación estricta de la despensa: Al menos un ingrediente
@@ -534,7 +544,8 @@ export function MealPlanProvider({
           ingredients,
           budget,
           servings,
-          targetMaxMinutes
+          targetMaxMinutes,
+          requestLocale
         );
 
         // 5. Invocar al endpoint del backend

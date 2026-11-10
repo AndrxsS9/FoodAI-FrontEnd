@@ -16,7 +16,9 @@ import { File as ExpoFile, UploadTask, UploadType } from 'expo-file-system';
 import { Platform } from 'react-native';
 import {
   API_ENDPOINTS,
+  ApiLocale,
   DEFAULT_AI_SCANNER_TIMEOUT_MS,
+  appendLocaleQuery,
   buildApiUrl,
 } from './apiConfig';
 import {
@@ -111,6 +113,8 @@ export interface ScannerApiOptions {
   timeoutMs?: number;
   baseUrl?: string;
   authClient?: SupabaseAuthClientLike;
+  /** Idioma de la respuesta del backend; se envía como `?locale=` en ambos transportes. */
+  locale?: ApiLocale;
 }
 
 /**
@@ -352,7 +356,11 @@ export async function analyzeIngredientsImage(
     );
   }
 
-  const targetUrl = buildApiUrl(API_ENDPOINTS.INGREDIENTS_ANALYZE, options?.baseUrl);
+  // El idioma viaja como parámetro de consulta: el cuerpo multipart no se modifica
+  const targetUrl = appendLocaleQuery(
+    buildApiUrl(API_ENDPOINTS.INGREDIENTS_ANALYZE, options?.baseUrl),
+    options?.locale
+  );
   const timeoutMs = options?.timeoutMs ?? DEFAULT_AI_SCANNER_TIMEOUT_MS;
 
   const controller = new AbortController();

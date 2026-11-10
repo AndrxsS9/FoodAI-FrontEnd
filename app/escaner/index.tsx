@@ -260,6 +260,8 @@ export default function ScannerScreen() {
 
     // Asignar un token generacional único e incremental para esta petición
     const requestId = ++activeRequestIdRef.current;
+    // Idioma fijado al iniciar el análisis: un cambio posterior no altera esta petición
+    const requestLocale = locale;
 
     // Abortar cualquier petición previa en vuelo
     if (abortControllerRef.current) {
@@ -296,6 +298,7 @@ export default function ScannerScreen() {
       analysisStage = 'analyze';
       const detected = await scannerApi.analyzeIngredientsImage(uploadReady, {
         signal: controller.signal,
+        locale: requestLocale,
       });
 
       if (

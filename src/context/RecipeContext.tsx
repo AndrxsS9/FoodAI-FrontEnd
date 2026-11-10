@@ -33,6 +33,7 @@ import {
 import { useBudget } from './BudgetContext';
 import { usePantrySafe } from './PantryContext';
 import { useAuthSafe } from './AuthContext';
+import { useLocale } from './LocaleContext';
 import { recipeApi as defaultRecipeApi, RecipeApiError } from '../services/api/recipeApi';
 import {
   RecipeGenerationSnapshot,
@@ -174,6 +175,13 @@ export function RecipeProvider({
   }, [isPersistenceActive, storageAdapter, effectiveUserId]);
 
   const { budget, servings, maxMinutes, isLoading: isBudgetLoading } = useBudget();
+  // Idioma activo leído mediante ref: cambiar de idioma no altera la identidad de las acciones
+  // ni dispara regeneraciones; solo se aplica a la siguiente solicitud iniciada por el usuario.
+  const { locale } = useLocale();
+  const localeRef = useRef(locale);
+  useEffect(() => {
+    localeRef.current = locale;
+  }, [locale]);
   const pantry = usePantrySafe();
   const ingredients = useMemo(() => pantry?.ingredients ?? [], [pantry?.ingredients]);
   const isPantryLoading = pantry?.isLoading ?? false;
@@ -555,6 +563,8 @@ export function RecipeProvider({
       setErrorCode(null);
 
       const targetMaxMinutes = options?.maxMinutes ?? maxMinutes;
+      // Idioma fijado en el instante en que inicia esta solicitud
+      const requestLocale = localeRef.current;
 
       try {
         // 3. La despensa y el presupuesto deben estar hidratados: una despensa aún cargando no
@@ -579,7 +589,8 @@ export function RecipeProvider({
            ingredients,
           budget,
           servings,
-          targetMaxMinutes
+          targetMaxMinutes,
+          requestLocale
         );
 
         // 6. Invocar al backend real

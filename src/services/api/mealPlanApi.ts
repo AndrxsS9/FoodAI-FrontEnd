@@ -17,6 +17,7 @@ import {
   API_ENDPOINTS,
   DEFAULT_AI_MEAL_PLANS_TIMEOUT_MS,
   buildApiUrl,
+  withNormalizedLocale,
 } from './apiConfig';
 import {
   ApiAuthError,
@@ -192,7 +193,7 @@ export async function generateMealPlan(
         Accept: 'application/json',
         ...authHeaders,
       },
-      body: JSON.stringify(request),
+      body: JSON.stringify(withNormalizedLocale(request)),
       signal: controller.signal,
     });
 

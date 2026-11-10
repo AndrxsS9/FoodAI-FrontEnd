@@ -1,6 +1,7 @@
 import type { ImageSourcePropType } from 'react-native';
 import type { RecipeImageKey } from './recipeImage';
 import { resolveRecipeImageKey } from '../utils/recipeImageMatcher';
+import { ApiLocale, normalizeApiLocale } from '../services/api/apiConfig';
 
 /**
  * FoodAI - Modelos, contratos de API y tipos del dominio de recetas (Fase 2C).
@@ -45,6 +46,7 @@ export interface RecommendRecipesRequest {
   budget: number; // Número no negativo en COP
   servings: number; // Entero de 1 a 12
   maxMinutes?: number; // Opcional, entero positivo hasta 240
+  locale?: ApiLocale; // Opcional: idioma del contenido generado ('es' predeterminado en backend)
 }
 
 /**
@@ -582,7 +584,8 @@ export function mapPantryToRecommendRequest(
   pantryItems: FrontendPantryItemInput[],
   budget: number,
   servings: number = 2,
-  maxMinutes?: number
+  maxMinutes?: number,
+  locale?: ApiLocale
 ): RecommendRecipesRequest {
   const budgetValidation = validateBudgetInput(budget);
   if (!budgetValidation.isValid) {
@@ -609,6 +612,12 @@ export function mapPantryToRecommendRequest(
 
   if (maxMinutes !== undefined && maxMinutes !== null) {
     payload.maxMinutes = Math.round(maxMinutes);
+  }
+
+  // El idioma solo se agrega si el llamador lo indica: los llamadores existentes conservan su payload
+  const normalizedLocale = normalizeApiLocale(locale);
+  if (normalizedLocale !== undefined) {
+    payload.locale = normalizedLocale;
   }
 
   return payload;

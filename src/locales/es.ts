@@ -1128,6 +1128,8 @@ const es = {
       needsReviewBeforeChange: 'Esta preparación requiere revisión manual antes de modificar la despensa.',
       needsReview: 'Se requiere revisión manual.',
       notInPantry: 'No se encontró en tu despensa.',
+      possibleMatch:
+        'Posible coincidencia en tu despensa; requiere revisión manual y no se dedujo automáticamente.',
       quantityToConfirm: 'Cantidad o unidad por confirmar en la receta; no se dedujo automáticamente.',
       incompatibleUnits: 'Unidades no compatibles ({unitPantry} vs {unitRecipe}); requiere revisión manual.',
       cannotConvert: 'No fue posible convertir de {unitRecipe} a {unitPantry}.',

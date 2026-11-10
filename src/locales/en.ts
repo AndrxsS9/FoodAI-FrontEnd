@@ -1088,6 +1088,7 @@ const en: TranslationCatalog = {
       needsReviewBeforeChange: 'This preparation needs manual review before the pantry can be changed.',
       needsReview: 'Manual review required.',
       notInPantry: 'Not found in your pantry.',
+      possibleMatch: 'Possible match in your pantry; it requires manual review and was not deducted automatically.',
       quantityToConfirm: 'Quantity or unit to be confirmed in the recipe; it was not deducted automatically.',
       incompatibleUnits: 'Incompatible units ({unitPantry} vs {unitRecipe}); needs manual review.',
       cannotConvert: 'Could not convert from {unitRecipe} to {unitPantry}.',

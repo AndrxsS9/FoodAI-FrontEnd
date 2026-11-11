@@ -13,8 +13,8 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/logo.png",
-        "backgroundColor": "#FAF7F2"
+        "foregroundImage": "./assets/images/FoodAI_android_adaptive_foreground.png",
+        "backgroundColor": "#FFFFFF"
       },
       "package": "com.foodai.app",
       "permissions": [

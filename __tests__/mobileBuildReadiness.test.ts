@@ -36,8 +36,9 @@ describe('Validación de Preparación para Build Android APK (Fase 6C.1)', () =>
 
       const adaptiveIcon = appConfig.expo.android.adaptiveIcon;
       expect(adaptiveIcon).toBeDefined();
-      expect(adaptiveIcon.foregroundImage).toBe('./assets/images/logo.png');
+      expect(adaptiveIcon.foregroundImage).toBe('./assets/images/FoodAI_android_adaptive_foreground.png');
       expect(adaptiveIcon.backgroundColor).toMatch(/^#[0-9A-Fa-f]{6}$/);
+      expect(adaptiveIcon.backgroundColor).toBe('#FFFFFF');
     });
 
     it('aplica el principio de mínimo privilegio en permisos de Android: incluye CAMERA y bloquea RECORD_AUDIO', () => {

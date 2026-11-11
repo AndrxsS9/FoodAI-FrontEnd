@@ -15,6 +15,16 @@
  *   cualquier núcleo salado, y se anulan si el nombre menciona proteínas saladas.
  * - Los ingredientes reales de la receta se usan solo como verificación adicional
  *   (arroz con señales dulces → null; "tortilla" solo es huevos si lleva huevo).
+ *
+ * Nombres en inglés (recetas generadas con el idioma EN):
+ * - El inglés es "núcleo al final" ("Vegetable soup", "Grilled chicken", "Beef stew"),
+ *   así que el núcleo es la ÚLTIMA expresión del tramo principal del nombre (antes de
+ *   "with", "in", "on", "over", etc.). Los modificadores previos solo afinan o anulan
+ *   la categoría ("Chicken soup" es sopa; "Fruit salad" y "Salmon mousse" quedan sin imagen).
+ * - Cada matcher responde con una categoría, con `null` (decidió que no hay imagen fiable)
+ *   o con `undefined` (no reconoce el nombre). Si el nombre lleva conectores españoles
+ *   ("de", "con", "al"...) decide primero el matcher español; si no, el inglés. El otro
+ *   solo se consulta cuando el primero no reconoce el nombre.
  */
 import type { RecipeImageKey } from '../types/recipeImage';
 
@@ -92,6 +102,9 @@ const SWEET_NAME_TOKENS = new Set([
 const SWEET_INGREDIENT_TOKENS = new Set([
   'azucar', 'panela', 'canela', 'condensada', 'arequipe', 'pasas', 'vainilla',
 ]);
+const SWEET_INGREDIENT_TOKENS_EN = new Set([
+  'sugar', 'cinnamon', 'condensed', 'raisins', 'vanilla', 'honey', 'syrup',
+]);
 
 /** Frases inequívocas de postre que pueden aparecer con núcleos salados ("arroz", "sopa", "crema"). */
 const DESSERT_PHRASES = [
@@ -108,6 +121,8 @@ const AMBIGUOUS_PHRASES = [
   'salpicon de frutas',
   'arroz dulce',
   'arroz con dulce',
+  'fruit salad',
+  'fruit cocktail',
 ].map(phrase);
 
 const EGG_TOKENS = new Set(['huevo', 'huevos']);
@@ -145,12 +160,15 @@ const noSavory = (ctx: MatchContext) => !hasAnyToken(ctx.nameTokens, SAVORY_TOKE
 const noSweetName = (ctx: MatchContext) => !hasAnyToken(ctx.nameTokens, SWEET_NAME_TOKENS);
 const hasEgg = (ctx: MatchContext) =>
   hasAnyToken(ctx.nameTokens, EGG_TOKENS) || hasAnyToken([...ctx.ingredientTokens], EGG_TOKENS);
+/** Leche + endulzante entre los ingredientes reales (en español o en inglés). */
+const hasSweetMilkIngredients = (ing: ReadonlySet<string>) => {
+  const hasMilk = ing.has('leche') || ing.has('milk');
+  const hasSweet = [...ing].some((t) => SWEET_INGREDIENT_TOKENS.has(t) || SWEET_INGREDIENT_TOKENS_EN.has(t));
+  return hasMilk && hasSweet;
+};
 const notSweetRice = (ctx: MatchContext) => {
   if (hasAnyToken(ctx.nameTokens, SWEET_NAME_TOKENS)) return false;
-  const ing = ctx.ingredientTokens;
-  const hasMilk = ing.has('leche');
-  const hasSweet = [...ing].some((t) => SWEET_INGREDIENT_TOKENS.has(t));
-  return !(hasMilk && hasSweet);
+  return !hasSweetMilkIngredients(ctx.ingredientTokens);
 };
 
 /** Reglas de núcleo, evaluadas en orden. La primera cuyo núcleo coincide decide. */
@@ -204,12 +222,16 @@ const HEAD_RULES: readonly HeadRule[] = [
   },
 ];
 
+/** Respuesta de un matcher: categoría, `null` (sin imagen fiable) o `undefined` (no reconoce el nombre). */
+type MatchOpinion = RecipeImageKey | null | undefined;
+
 /**
  * Núcleos de preparación ("guiso de X", "salteado de X", "filete de X", "puré de X"):
- * la categoría la decide el primer complemento tras "de".
+ * la categoría la decide el primer complemento tras "de". Devuelve `undefined` si el
+ * núcleo no es una preparación conocida.
  */
-function matchPreparationHead(head: readonly string[]): RecipeImageKey | null {
-  if (head.length < 3 || head[1] !== 'de') return null;
+function matchPreparationHead(head: readonly string[]): MatchOpinion {
+  if (head.length < 3 || head[1] !== 'de') return undefined;
   const prep = head[0];
   const main = head[2];
 
@@ -240,7 +262,7 @@ function matchPreparationHead(head: readonly string[]): RecipeImageKey | null {
     if (FISH_TOKENS.has(main)) return 'fish';
     return null;
   }
-  return null;
+  return undefined;
 }
 
 function ingredientTokenSet(ingredients: RecipeImageMatchInput['ingredients']): Set<string> {
@@ -252,6 +274,336 @@ function ingredientTokenSet(ingredients: RecipeImageMatchInput['ingredients']): 
   return out;
 }
 
+/** Matcher español ("núcleo primero"): núcleo inicial y luego núcleos de preparación. */
+function matchSpanishName(nameTokens: readonly string[], ingredientTokens: ReadonlySet<string>): MatchOpinion {
+  const headStart = nameTokens.findIndex((t) => !LEADING_FILLERS.has(t));
+  if (headStart < 0) return undefined; // nombre vacío o solo relleno
+
+  const ctx: MatchContext = { head: nameTokens.slice(headStart), nameTokens, ingredientTokens };
+
+  for (const rule of HEAD_RULES) {
+    if (rule.heads.some((h) => startsWithPhrase(ctx.head, h))) {
+      return !rule.verify || rule.verify(ctx) ? rule.key : null;
+    }
+  }
+  return matchPreparationHead(ctx.head);
+}
+
+// ------------------------------------------------------------------
+// Inglés: modificadores primero, núcleo al final
+// ------------------------------------------------------------------
+
+/** Conectores que delatan un nombre con estructura española ("Arroz con pollo", "Pollo al horno"). */
+const SPANISH_MARKERS = new Set(['de', 'del', 'con', 'al', 'en', 'y', 'para', 'sin', 'la', 'las', 'los', 'el']);
+
+/** Artículos iniciales que se descartan antes de buscar el tramo principal del nombre. */
+const EN_LEADING_ARTICLES = new Set(['a', 'an', 'the', 'my', 'our']);
+
+/**
+ * Conectores que cierran el tramo principal: lo que sigue es acompañamiento
+ * ("Grilled chicken WITH rice" es pollo). Incluye los españoles para que un nombre
+ * español nunca se lea por su última palabra ("Hamburguesa de salmón" no es pescado).
+ * "and" NO corta: une modificadores ("Chicken and vegetable soup" es sopa).
+ */
+const EN_SEGMENT_BREAKERS = new Set([
+  'with', 'in', 'on', 'over', 'served', 'topped', 'plus', 'using', 'a',
+  'de', 'del', 'con', 'en', 'al', 'y', 'para', 'sin',
+]);
+
+/** Palabras finales que no son el núcleo ("Vegetable soup recipe", "Lentil stew vegan"). */
+const EN_TRAILING_FILLERS = new Set([
+  'recipe', 'style', 'vegan', 'vegetarian', 'homemade', 'healthy', 'easy', 'quick', 'express',
+]);
+
+const SAVORY_TOKENS_EN = new Set([
+  'chicken', 'beef', 'pork', 'meat', 'fish', 'salmon', 'tuna', 'tilapia', 'trout', 'cod', 'ham',
+  'bacon', 'sausage', 'sausages', 'shrimp', 'prawns', 'crab', 'seafood', 'turkey', 'garlic',
+  'onion', 'onions', 'anchovy', 'anchovies', 'sardines', 'chorizo', 'steak', 'lamb',
+]);
+const SAVORY_ANY = new Set([...SAVORY_TOKENS, ...SAVORY_TOKENS_EN]);
+
+/** Sabores inequívocos de postre: anulan huevos, pescado o pasta ("Chocolate eggs"). */
+const DESSERT_FLAVORS_EN = new Set([
+  'chocolate', 'caramel', 'vanilla', 'cocoa', 'candy', 'fudge', 'nutella', 'marshmallow',
+  'marshmallows', 'toffee', 'butterscotch',
+]);
+const SWEET_TOKENS_EN = new Set([
+  ...DESSERT_FLAVORS_EN, 'sweet', 'sugar', 'honey', 'syrup', 'cinnamon', 'dulce', 'frosted', 'candied',
+]);
+const FRUIT_TOKENS_EN = new Set([
+  'fruit', 'fruits', 'strawberry', 'strawberries', 'berry', 'berries', 'blueberry', 'blueberries',
+  'raspberry', 'raspberries', 'blackberry', 'blackberries', 'mango', 'mangoes', 'banana', 'bananas',
+  'apple', 'apples', 'pineapple', 'peach', 'peaches', 'cherry', 'cherries', 'passion', 'guava',
+  'papaya', 'melon', 'watermelon', 'grape', 'grapes', 'kiwi', 'pear', 'pears', 'orange', 'plum',
+]);
+
+const CHICKEN_TOKENS_EN = new Set(['chicken', 'pollo']);
+const BEEF_TOKENS_EN = new Set(['beef', 'meat', ...BEEF_TOKENS]);
+const FISH_TOKENS_EN = new Set([
+  'fish', 'salmon', 'tilapia', 'tuna', 'trout', 'cod', 'hake', 'catfish', 'snapper', 'mackerel',
+  'sardines', 'seabass', 'haddock', 'halibut', ...FISH_TOKENS,
+]);
+const LEGUME_TOKENS_EN = new Set([
+  'lentil', 'lentils', 'bean', 'beans', 'chickpea', 'chickpeas', 'garbanzo', 'garbanzos', ...LEGUME_TOKENS,
+]);
+/** "Green beans", "jelly beans", "coffee beans"... no son un plato de leguminosas. */
+const NON_LEGUME_BEAN_MODIFIERS = new Set([
+  'green', 'string', 'snap', 'runner', 'wax', 'french', 'jelly', 'coffee', 'vanilla', 'cocoa', 'cacao',
+]);
+const POTATO_TOKENS_EN = new Set(['potato', 'potatoes', 'cassava', ...POTATO_TOKENS]);
+const VEGETABLE_TOKENS_EN = new Set(['vegetable', 'vegetables', 'veggie', 'veggies', ...VEGETABLE_TOKENS]);
+
+interface EnglishContext {
+  /** Tokens del tramo principal previos al núcleo. */
+  modifiers: readonly string[];
+  /** Todos los tokens del nombre. */
+  nameTokens: readonly string[];
+  ingredientTokens: ReadonlySet<string>;
+}
+
+interface EnglishRule {
+  /** Núcleos que deben cerrar el tramo principal del nombre. */
+  tails: readonly (readonly string[])[];
+  resolve: (ctx: EnglishContext) => RecipeImageKey | null;
+}
+
+/** "sweet potato" es papa, no una señal dulce. */
+function withoutSweetPotato(tokens: readonly string[]): string[] {
+  return tokens.filter((t, i) => !(t === 'sweet' && (tokens[i + 1] === 'potato' || tokens[i + 1] === 'potatoes')));
+}
+const hasSweetSignalEn = (tokens: readonly string[]) =>
+  hasAnyToken(withoutSweetPotato(tokens), SWEET_TOKENS_EN) || containsPhrase(tokens, ['ice', 'cream']);
+const hasSweetOrFruitEn = (tokens: readonly string[]) =>
+  hasSweetSignalEn(tokens) || hasAnyToken(tokens, FRUIT_TOKENS_EN);
+const hasSavoryAny = (tokens: readonly string[]) => hasAnyToken(tokens, SAVORY_ANY);
+
+/** Primera categoría que decide un modificador, recorriendo en el orden del nombre. */
+function firstModifierMatch(
+  modifiers: readonly string[],
+  checks: readonly [ReadonlySet<string>, RecipeImageKey | null][]
+): RecipeImageKey | null {
+  for (let i = 0; i < modifiers.length; i++) {
+    const token = modifiers[i];
+    for (const [set, key] of checks) {
+      if (!set.has(token)) continue;
+      if (set === LEGUME_TOKENS_EN && NON_LEGUME_BEAN_MODIFIERS.has(modifiers[i - 1])) continue;
+      return key;
+    }
+  }
+  return null;
+}
+
+const SAUTE_CUES = [['sauteed'], ['saute'], ['wok'], ['stir', 'fried'], ['stir', 'fry'], ['stirfried'], ['pan', 'fried']];
+const hasSauteCue = (modifiers: readonly string[]) => SAUTE_CUES.some((c) => containsPhrase(modifiers, c));
+
+const tails = (...items: string[]) => items.map(phrase);
+const always = (key: RecipeImageKey) => () => key;
+const noImage = () => null;
+
+/** Reglas de núcleo final en inglés. Gana el núcleo MÁS LARGO que cierre el tramo ("ice cream" antes que "cream"). */
+const ENGLISH_RULES: readonly EnglishRule[] = [
+  {
+    tails: tails('soup', 'soups', 'broth', 'chowder', 'consomme', 'sancocho', 'ajiaco'),
+    resolve: ({ modifiers, nameTokens }) => {
+      if (hasSweetOrFruitEn(nameTokens)) return null;
+      return hasAnyToken(modifiers, new Set(['cream', 'creamy'])) ? 'cream-soup' : 'soup';
+    },
+  },
+  {
+    tails: tails('bisque', 'bisques'),
+    resolve: ({ nameTokens }) => (hasSweetOrFruitEn(nameTokens) ? null : 'cream-soup'),
+  },
+  {
+    tails: tails('salad', 'salads'),
+    resolve: ({ nameTokens }) =>
+      hasSweetOrFruitEn(nameTokens) || hasAnyToken(nameTokens, new Set(['dessert', 'ambrosia'])) ? null : 'salad',
+  },
+  {
+    tails: tails('rice'),
+    resolve: ({ nameTokens, ingredientTokens }) =>
+      hasSweetOrFruitEn(nameTokens) ||
+      hasAnyToken(nameTokens, new Set(['milk', 'coconut'])) ||
+      hasSweetMilkIngredients(ingredientTokens)
+        ? null
+        : 'rice-dish',
+  },
+  {
+    tails: tails(
+      'pasta', 'pastas', 'spaghetti', 'macaroni', 'lasagna', 'lasagne', 'noodles', 'penne',
+      'fettuccine', 'fettuccini', 'fusilli', 'ravioli', 'linguine', 'rigatoni', 'tagliatelle',
+      'tortellini', 'mac and cheese', 'macaroni and cheese', 'mac n cheese'
+    ),
+    resolve: ({ nameTokens }) => (hasAnyToken(nameTokens, DESSERT_FLAVORS_EN) ? null : 'pasta'),
+  },
+  {
+    tails: tails('egg', 'eggs', 'omelette', 'omelettes', 'omelet', 'omelets', 'frittata'),
+    resolve: ({ nameTokens }) =>
+      hasAnyToken(nameTokens, DESSERT_FLAVORS_EN) || nameTokens.includes('easter') ? null : 'eggs',
+  },
+  { tails: tails('chicken'), resolve: always('chicken') },
+  {
+    // Cortes de una proteína: los decide la proteína ("Chicken breast", "Salmon fillet").
+    tails: tails(
+      'breast', 'breasts', 'thigh', 'thighs', 'wing', 'wings', 'drumstick', 'drumsticks', 'tenders',
+      'strips', 'fillet', 'fillets', 'filet', 'filets', 'cutlet', 'cutlets', 'steak', 'steaks'
+    ),
+    resolve: ({ modifiers }) =>
+      firstModifierMatch(modifiers, [
+        [CHICKEN_TOKENS_EN, 'chicken'],
+        [FISH_TOKENS_EN, 'fish'],
+        [SAVORY_ANY, null],
+      ]),
+  },
+  {
+    // "Beef stew" es guiso de res; "Lentil stew" leguminosas; un guiso sin proteína clara, sin imagen.
+    tails: tails('stew', 'stews'),
+    resolve: ({ modifiers }) =>
+      firstModifierMatch(modifiers, [
+        [BEEF_TOKENS_EN, 'beef-stew'],
+        [CHICKEN_TOKENS_EN, 'chicken'],
+        [FISH_TOKENS_EN, 'fish'],
+        [LEGUME_TOKENS_EN, 'legumes'],
+        [POTATO_TOKENS_EN, 'potatoes'],
+      ]),
+  },
+  {
+    // "Grilled beef" NO es un guiso; solo "stewed/braised beef" lo es.
+    tails: tails('beef', 'meat'),
+    resolve: ({ modifiers }) => (hasAnyToken(modifiers, new Set(['stewed', 'braised'])) ? 'beef-stew' : null),
+  },
+  {
+    tails: tails(
+      'fish', 'salmon', 'tilapia', 'tuna', 'trout', 'cod', 'hake', 'catfish', 'snapper', 'mackerel',
+      'sardines', 'sea bass', 'seabass', 'haddock', 'halibut', 'mojarra'
+    ),
+    resolve: ({ nameTokens }) => (hasAnyToken(nameTokens, DESSERT_FLAVORS_EN) ? null : 'fish'),
+  },
+  {
+    tails: tails('lentils', 'lentil', 'beans', 'bean', 'chickpeas', 'garbanzos'),
+    resolve: ({ modifiers, nameTokens }) => {
+      const last = modifiers[modifiers.length - 1];
+      if (NON_LEGUME_BEAN_MODIFIERS.has(last) || hasAnyToken(nameTokens, DESSERT_FLAVORS_EN)) return null;
+      return 'legumes';
+    },
+  },
+  { tails: tails('arepa', 'arepas'), resolve: always('arepa') },
+  {
+    tails: tails('sandwich', 'sandwiches'),
+    resolve: ({ nameTokens }) =>
+      hasSweetSignalEn(nameTokens) || hasAnyToken(nameTokens, new Set(['cookie', 'cookies'])) ? null : 'sandwich',
+  },
+  {
+    tails: tails('potato', 'potatoes', 'hash browns', 'hash brown', 'yuca', 'cassava'),
+    resolve: always('potatoes'),
+  },
+  {
+    // "Mashed potatoes" ya cierra en "potatoes"; aquí "Potato wedges", "French fries"...
+    tails: tails('fries', 'wedges', 'mash', 'puree', 'skins'),
+    resolve: ({ modifiers }) => {
+      if (hasAnyToken(modifiers, POTATO_TOKENS_EN)) return 'potatoes';
+      // "Fries" sin otra hortaliza delante ("Zucchini fries" no es papa).
+      return modifiers.length === 0 || (modifiers.length === 1 && modifiers[0] === 'french') ? 'potatoes' : null;
+    },
+  },
+  {
+    // "Vegetable stir fry" son verduras salteadas; "Chicken stir fry" es pollo; con otra proteína, sin imagen.
+    tails: tails('stir fry', 'stirfry', 'stir fries'),
+    resolve: ({ modifiers }) =>
+      firstModifierMatch(modifiers, [
+        [VEGETABLE_TOKENS_EN, 'sauteed-vegetables'],
+        [CHICKEN_TOKENS_EN, 'chicken'],
+        [SAVORY_ANY, null],
+      ]),
+  },
+  {
+    // Solo verduras SALTEADAS; "Roasted vegetables" no se presenta con esa imagen.
+    tails: tails('vegetables', 'veggies'),
+    resolve: ({ modifiers }) => (hasSauteCue(modifiers) ? 'sauteed-vegetables' : null),
+  },
+  {
+    tails: tails(
+      'flan', 'brownie', 'brownies', 'mousse', 'pudding', 'puddings', 'cheesecake', 'tiramisu',
+      'cookie', 'cookies', 'custard', 'ice cream', 'gelatin', 'jello', 'parfait', 'panna cotta',
+      'tres leches'
+    ),
+    resolve: ({ modifiers, nameTokens }) => {
+      if (hasSavoryAny(nameTokens)) return null; // "Salmon mousse"
+      if (hasAnyToken(modifiers, new Set(['yorkshire', 'black', 'blood', 'corn']))) return null; // pudines salados
+      return 'dessert';
+    },
+  },
+  {
+    // Tortas, pies y tartas solo son postre con una señal dulce explícita ("Crab cakes" no).
+    tails: tails('cake', 'cakes', 'pie', 'pies', 'tart', 'tarts', 'crumble', 'cobbler'),
+    resolve: ({ modifiers, nameTokens }) => {
+      if (hasSavoryAny(nameTokens)) return null;
+      const sweet = hasSweetOrFruitEn(modifiers) || hasAnyToken(modifiers, new Set(['lemon', 'lime', 'coconut']));
+      return sweet ? 'dessert' : null;
+    },
+  },
+  {
+    tails: tails(
+      'smoothie', 'smoothies', 'juice', 'juices', 'lemonade', 'limeade', 'shake', 'shakes',
+      'milkshake', 'milkshakes', 'hot chocolate', 'agua fresca', 'iced tea', 'frappe'
+    ),
+    resolve: ({ nameTokens }) => (hasSavoryAny(nameTokens) ? null : 'beverage'),
+  },
+  {
+    // Platos reconocidos sin imagen de referencia en el catálogo: respaldo neutro explícito.
+    tails: tails(
+      'cream', 'creams', 'burger', 'burgers', 'hamburger', 'hamburgers', 'taco', 'tacos', 'burrito',
+      'burritos', 'quesadilla', 'quesadillas', 'enchiladas', 'nachos', 'pizza', 'pizzas', 'wrap',
+      'wraps', 'bowl', 'bowls', 'curry', 'curries', 'casserole', 'casseroles', 'kebab', 'kebabs',
+      'skewers', 'nuggets', 'chips', 'waffles', 'pancakes', 'crepes', 'bread', 'toast', 'bites',
+      'patties', 'croquettes', 'fritters', 'dumplings', 'rolls', 'pork', 'lamb', 'ribs', 'meatballs',
+      'meatloaf', 'shrimp', 'prawns', 'turkey', 'ham', 'empanadas', 'chili', 'sushi', 'dip', 'sauce',
+      'risotto', 'paella', 'quiche', 'gratin'
+    ),
+    resolve: noImage,
+  },
+];
+
+const endsWithPhrase = (tokens: readonly string[], target: readonly string[]) =>
+  target.length > 0 &&
+  target.length <= tokens.length &&
+  target.every((t, i) => tokens[tokens.length - target.length + i] === t);
+
+/** Tramo principal del nombre: sin artículos iniciales, hasta el primer conector, sin relleno final. */
+function englishMainSegment(nameTokens: readonly string[]): string[] {
+  let start = 0;
+  while (start < nameTokens.length && EN_LEADING_ARTICLES.has(nameTokens[start])) start++;
+  let end = start;
+  while (end < nameTokens.length && !EN_SEGMENT_BREAKERS.has(nameTokens[end])) end++;
+  while (end > start && EN_TRAILING_FILLERS.has(nameTokens[end - 1])) end--;
+  return nameTokens.slice(start, end);
+}
+
+/** Matcher inglés ("núcleo al final"). */
+function matchEnglishName(nameTokens: readonly string[], ingredientTokens: ReadonlySet<string>): MatchOpinion {
+  const segment = englishMainSegment(nameTokens);
+  if (segment.length === 0) return undefined;
+
+  let best: { rule: EnglishRule; length: number } | null = null;
+  for (const rule of ENGLISH_RULES) {
+    for (const tail of rule.tails) {
+      if (endsWithPhrase(segment, tail) && (!best || tail.length > best.length)) {
+        best = { rule, length: tail.length };
+      }
+    }
+  }
+  if (best) {
+    const modifiers = segment.slice(0, segment.length - best.length);
+    return best.rule.resolve({ modifiers, nameTokens, ingredientTokens });
+  }
+
+  // "Cream of mushroom" (sin "soup" al final) es una crema salada, salvo señales dulces.
+  if (startsWithPhrase(segment, ['cream', 'of']) && segment.length > 2) {
+    if (hasSweetOrFruitEn(nameTokens) || hasAnyToken(segment, new Set(['wheat', 'tartar']))) return null;
+    return 'cream-soup';
+  }
+  return undefined;
+}
+
 /**
  * Devuelve la categoría de imagen de referencia de una receta, o `null` si no hay
  * una coincidencia fiable. Determinista: la misma entrada produce siempre la misma salida.
@@ -259,30 +611,23 @@ function ingredientTokenSet(ingredients: RecipeImageMatchInput['ingredients']): 
 export function resolveRecipeImageKey(recipe: RecipeImageMatchInput | null | undefined): RecipeImageKey | null {
   if (!recipe) return null;
   const nameTokens = tokenize(normalizeDishText(recipe.name));
-  const headStart = nameTokens.findIndex((t) => !LEADING_FILLERS.has(t));
-  if (headStart < 0) return null; // nombre vacío o solo relleno
-
-  const ctx: MatchContext = {
-    head: nameTokens.slice(headStart),
-    nameTokens,
-    ingredientTokens: ingredientTokenSet(recipe.ingredients),
-  };
+  if (nameTokens.length === 0) return null;
+  const ingredientTokens = ingredientTokenSet(recipe.ingredients);
 
   // 1. Postres inequívocos, salvo que el nombre mencione proteínas saladas.
   if (DESSERT_PHRASES.some((p) => containsPhrase(nameTokens, p))) {
-    return noSavory(ctx) ? 'dessert' : null;
+    return hasAnyToken(nameTokens, SAVORY_TOKENS) ? null : 'dessert';
   }
 
   // 2. Frases conocidas por inducir una categoría engañosa.
   if (AMBIGUOUS_PHRASES.some((p) => containsPhrase(nameTokens, p))) return null;
 
-  // 3. Núcleo del nombre.
-  for (const rule of HEAD_RULES) {
-    if (rule.heads.some((h) => startsWithPhrase(ctx.head, h))) {
-      return !rule.verify || rule.verify(ctx) ? rule.key : null;
-    }
+  // 3. Núcleo del nombre: decide primero el idioma cuya estructura muestra el nombre.
+  const spanishFirst = nameTokens.some((t) => SPANISH_MARKERS.has(t));
+  const matchers = spanishFirst ? [matchSpanishName, matchEnglishName] : [matchEnglishName, matchSpanishName];
+  for (const match of matchers) {
+    const opinion = match(nameTokens, ingredientTokens);
+    if (opinion !== undefined) return opinion;
   }
-
-  // 4. Núcleos de preparación ("guiso de", "salteado de", ...).
-  return matchPreparationHead(ctx.head);
+  return null;
 }

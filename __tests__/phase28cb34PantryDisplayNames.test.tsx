@@ -113,7 +113,6 @@ describe('getLocalizedIngredientName — traducción visible', () => {
   });
 
   it.each([
-    'Green onion',
     'Spring onion',
     'Almond milk',
     'Leche de almendra',
@@ -122,9 +121,7 @@ describe('getLocalizedIngredientName — traducción visible', () => {
     'Peanut butter',
     'Pepper',
     'Lemon',
-    'Lime',
     'Bacon',
-    'Banana',
     'Meat',
     'Carne',
   ])('un nombre ambiguo o compuesto «%s» se conserva en ambos idiomas', (stored) => {
@@ -235,8 +232,8 @@ const PANTRY: Ingredient[] = [
     updatedAt: '2026-11-01T00:00:00.000Z',
   },
   {
-    id: 'p-green-onion',
-    name: 'Green onion',
+    id: 'p-onion-powder',
+    name: 'Onion powder',
     quantity: 2,
     unit: 'unidad',
     category: 'Verduras y frutas',
@@ -365,7 +362,7 @@ describe('Despensa — nombres visibles en el idioma activo', () => {
     expect(view.getByText('Pollo')).toBeTruthy();
     expect(view.getByText('Cebolla')).toBeTruthy();
     expect(view.getByText('Azúcar')).toBeTruthy();
-    expect(view.getByText('Green onion')).toBeTruthy();
+    expect(view.getByText('Onion powder')).toBeTruthy();
     expect(view.queryByText('Chicken')).toBeNull();
     expect(view.queryByText('Sugar')).toBeNull();
   });
@@ -379,7 +376,7 @@ describe('Despensa — nombres visibles en el idioma activo', () => {
     await waitFor(() => expect(view.getByText('Chicken')).toBeTruthy());
     expect(view.getByText('Onion')).toBeTruthy();
     expect(view.getByText('Sugar')).toBeTruthy();
-    expect(view.getByText('Green onion')).toBeTruthy();
+    expect(view.getByText('Onion powder')).toBeTruthy();
     expect(view.queryByText('Pollo')).toBeNull();
 
     await switchLocale('es');
@@ -390,7 +387,7 @@ describe('Despensa — nombres visibles en el idioma activo', () => {
     expect(adapter.updates).toEqual([]);
     expect(adapter.deletes).toEqual([]);
     expect(adapter.saves).toBe(0);
-    expect(adapter.items.map((i) => i.name)).toEqual(['Chicken', 'Cebolla', 'Sugar', 'Green onion']);
+    expect(adapter.items.map((i) => i.name)).toEqual(['Chicken', 'Cebolla', 'Sugar', 'Onion powder']);
   });
 
   it('las etiquetas de accesibilidad usan el nombre visible localizado', async () => {
@@ -424,7 +421,7 @@ describe('Despensa — nombres visibles en el idioma activo', () => {
 
     await fireEvent.changeText(search, 'onion');
     await waitFor(() => expect(view.getByTestId('ingredient-card-p-cebolla')).toBeTruthy());
-    expect(view.getByTestId('ingredient-card-p-green-onion')).toBeTruthy();
+    expect(view.getByTestId('ingredient-card-p-onion-powder')).toBeTruthy();
     expect(view.queryByTestId('ingredient-card-p-chicken')).toBeNull();
 
     // Sin tilde también encuentra «Azúcar» (guardado como «Sugar»)
@@ -435,8 +432,8 @@ describe('Despensa — nombres visibles en el idioma activo', () => {
     await switchLocale('en');
     await fireEvent.changeText(search, 'cebolla');
     await waitFor(() => expect(view.getByTestId('ingredient-card-p-cebolla')).toBeTruthy());
-    // «Green onion» no tiene identidad bilingüe: no aparece al buscar «cebolla»
-    expect(view.queryByTestId('ingredient-card-p-green-onion')).toBeNull();
+    // «Onion powder» no tiene identidad bilingüe: no aparece al buscar «cebolla»
+    expect(view.queryByTestId('ingredient-card-p-onion-powder')).toBeNull();
 
     expect(adapter.updates).toEqual([]);
     expect(adapter.saves).toBe(0);
@@ -494,7 +491,7 @@ describe('Despensa — nombres visibles en el idioma activo', () => {
     });
     await waitFor(() => expect(view.queryByTestId('ingredient-card-p-chicken')).toBeNull());
     expect(adapter.deletes).toEqual(['p-chicken']);
-    expect(adapter.items.map((i) => i.name)).toEqual(['Cebolla', 'Sugar', 'Green onion']);
+    expect(adapter.items.map((i) => i.name)).toEqual(['Cebolla', 'Sugar', 'Onion powder']);
   });
 
   it('los ajustes de cantidad usan el id original y no tocan nombre, unidad ni categoría', async () => {

@@ -929,11 +929,42 @@ const BILINGUAL_FOOD_IDENTITIES = {
 type BilingualFoodIdentityKey = keyof typeof BILINGUAL_FOOD_IDENTITIES;
 
 /**
+ * Ampliación de cobertura VISIBLE (cierre MVP): equivalencias español ↔ inglés aprobadas
+ * únicamente para MOSTRAR el nombre en el idioma activo y para la búsqueda de la despensa.
+ *
+ * NO participan en `getBilingualFoodIdentity()`, por lo que la detección de duplicados, la
+ * fusión del escáner y el descuento automático por consumo (`findDuplicateInPantry`) se
+ * comportan exactamente igual que antes. Misma normalización, misma regla de nombre COMPLETO.
+ *
+ * Distinciones preservadas: «green onion» ≠ «onion», «bell pepper» ≠ «black pepper»/«pepper»,
+ * «banana» ↔ «banano» (nunca «plátano»), «lime» ↔ «limón» («lemon» queda sin traducir).
+ * Se omiten deliberadamente formas genéricas o sin equivalente seguro: «carne»/«meat»
+ * (genéricas; solo «carne de res» ↔ «beef»), «pepper», «lemon», «paprika» y «hogao».
+ */
+const DISPLAY_ONLY_FOOD_IDENTITIES = {
+  salchicha: ['sausage'],
+  maiz: ['corn'],
+  pimenton: ['bell pepper'],
+  'cebolla larga': ['green onion'],
+  arveja: ['pea'],
+  'carne de res': ['beef'],
+  banano: ['banana'],
+  platano: ['plantain'],
+  melon: [],
+  limon: ['lime'],
+  naranja: ['orange'],
+  maracuya: ['passion fruit', 'passionfruit'],
+} satisfies Record<string, string[]>;
+
+type DisplayFoodIdentityKey = BilingualFoodIdentityKey | keyof typeof DISPLAY_ONLY_FOOD_IDENTITIES;
+
+/**
  * Etiquetas visibles (con tildes correctas) de cada identidad bilingüe aprobada. Solo se
  * usan para MOSTRAR el nombre en el idioma activo; nunca se guardan. El tipo obliga a que
- * cada identidad de la lista blanca tenga su etiqueta en ambos idiomas.
+ * cada identidad de la lista blanca (incluida la ampliación visible) tenga su etiqueta en
+ * ambos idiomas.
  */
-const BILINGUAL_FOOD_LABELS: Record<BilingualFoodIdentityKey, Record<Locale, string>> = {
+const BILINGUAL_FOOD_LABELS: Record<DisplayFoodIdentityKey, Record<Locale, string>> = {
   cebolla: { es: 'Cebolla', en: 'Onion' },
   tomate: { es: 'Tomate', en: 'Tomato' },
   huevo: { es: 'Huevo', en: 'Egg' },
@@ -988,6 +1019,19 @@ const BILINGUAL_FOOD_LABELS: Record<BilingualFoodIdentityKey, Record<Locale, str
   agua: { es: 'Agua', en: 'Water' },
   canela: { es: 'Canela', en: 'Cinnamon' },
   comino: { es: 'Comino', en: 'Cumin' },
+  // Ampliación visible (cierre MVP)
+  salchicha: { es: 'Salchicha', en: 'Sausage' },
+  maiz: { es: 'Maíz', en: 'Corn' },
+  pimenton: { es: 'Pimentón', en: 'Bell pepper' },
+  'cebolla larga': { es: 'Cebolla larga', en: 'Green onion' },
+  arveja: { es: 'Arveja', en: 'Pea' },
+  'carne de res': { es: 'Carne de res', en: 'Beef' },
+  banano: { es: 'Banano', en: 'Banana' },
+  platano: { es: 'Plátano', en: 'Plantain' },
+  melon: { es: 'Melón', en: 'Melon' },
+  limon: { es: 'Limón', en: 'Lime' },
+  naranja: { es: 'Naranja', en: 'Orange' },
+  maracuya: { es: 'Maracuyá', en: 'Passion fruit' },
 };
 
 /** Forma de comparación de un nombre completo: tokens singularizados unidos por espacio. */
@@ -999,20 +1043,38 @@ function identityPhrase(name: string): string {
     .join(' ');
 }
 
-let bilingualIdentityIndex: Map<string, string> | null = null;
-
-function getBilingualIdentityIndex(): Map<string, string> {
-  if (bilingualIdentityIndex) return bilingualIdentityIndex;
+/** Construye un índice frase → identidad canónica. La primera equivalencia registrada gana. */
+function buildIdentityIndex(
+  sources: readonly Record<string, readonly string[]>[]
+): Map<string, string> {
   const index = new Map<string, string>();
-  for (const [canonical, aliases] of Object.entries(BILINGUAL_FOOD_IDENTITIES)) {
-    for (const term of [canonical, ...aliases]) {
-      const phrase = identityPhrase(term);
-      // La primera equivalencia registrada gana; nunca se sobrescribe una identidad
-      if (phrase && !index.has(phrase)) index.set(phrase, canonical);
+  for (const source of sources) {
+    for (const [canonical, aliases] of Object.entries(source)) {
+      for (const term of [canonical, ...aliases]) {
+        const phrase = identityPhrase(term);
+        // Nunca se sobrescribe una identidad ya registrada
+        if (phrase && !index.has(phrase)) index.set(phrase, canonical);
+      }
     }
   }
-  bilingualIdentityIndex = index;
   return index;
+}
+
+let bilingualIdentityIndex: Map<string, string> | null = null;
+let displayIdentityIndex: Map<string, string> | null = null;
+
+/** Índice de COMPARACIÓN (duplicados, escáner, consumo): solo la lista blanca original. */
+function getBilingualIdentityIndex(): Map<string, string> {
+  if (!bilingualIdentityIndex) bilingualIdentityIndex = buildIdentityIndex([BILINGUAL_FOOD_IDENTITIES]);
+  return bilingualIdentityIndex;
+}
+
+/** Índice de PRESENTACIÓN: lista blanca original + ampliación solo visible. */
+function getDisplayIdentityIndex(): Map<string, string> {
+  if (!displayIdentityIndex) {
+    displayIdentityIndex = buildIdentityIndex([BILINGUAL_FOOD_IDENTITIES, DISPLAY_ONLY_FOOD_IDENTITIES]);
+  }
+  return displayIdentityIndex;
 }
 
 /**
@@ -1036,11 +1098,15 @@ export function getBilingualFoodIdentity(name: string): string | null {
  * - Si el nombre guardado ya está escrito en el idioma solicitado, se devuelve sin cambios
  *   (respeta plurales y mayúsculas del usuario). Si está en el otro idioma, se devuelve la
  *   etiqueta aprobada con tildes correctas («Sugar» → «Azúcar»).
+ * - Además de la lista blanca de comparación, usa la ampliación solo visible
+ *   (`DISPLAY_ONLY_FOOD_IDENTITIES`), que nunca afecta duplicados ni consumo.
  * - Función pura y determinista: no llama a servicios externos y nunca modifica el dato guardado.
  */
 export function getLocalizedIngredientName(name: string, locale: Locale): string {
   if (typeof name !== 'string') return name;
-  const identity = getBilingualFoodIdentity(name) as BilingualFoodIdentityKey | null;
+  const phrase = identityPhrase(name);
+  if (!phrase) return name;
+  const identity = (getDisplayIdentityIndex().get(phrase) ?? null) as DisplayFoodIdentityKey | null;
   if (!identity) return name;
   const labels = BILINGUAL_FOOD_LABELS[identity];
   if (!labels || (locale !== 'es' && locale !== 'en')) return name;

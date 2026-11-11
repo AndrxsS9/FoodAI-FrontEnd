@@ -13,6 +13,7 @@ import { Ingredient } from '../../types/pantry';
 import { AppColors, radius, spacing, useTypography, useAppTheme, useThemeStyles } from '../../theme';
 import { Button } from '../common/Button';
 import { useLocale } from '../../context/LocaleContext';
+import { getLocalizedIngredientName } from '../../utils/ingredientMapper';
 
 export interface DeleteConfirmationModalProps {
   visible: boolean;
@@ -30,11 +31,14 @@ export function DeleteConfirmationModal({
   const typography = useTypography();
   const { colors } = useAppTheme();
   const styles = useThemeStyles(createStyles);
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
 
   if (!visible || !ingredient) {
     return null;
   }
+
+  // Solo presentación: el nombre se muestra igual que en la tarjeta; la eliminación usa el id.
+  const displayName = getLocalizedIngredientName(ingredient.name, locale);
 
   return (
     <View
@@ -51,7 +55,7 @@ export function DeleteConfirmationModal({
       <View
         style={styles.modalCard}
         accessibilityRole="alert"
-        accessibilityLabel={t('deleteModal.confirmLabel', { name: ingredient.name })}
+        accessibilityLabel={t('deleteModal.confirmLabel', { name: displayName })}
       >
         <View style={styles.iconCircle}>
           <MaterialCommunityIcons name="trash-can-outline" size={32} color={colors.error} />
@@ -63,7 +67,7 @@ export function DeleteConfirmationModal({
 
         <Text style={[styles.description, typography.bodyMd]}>
           {t('deleteModal.messagePrefix')}{' '}
-          <Text style={styles.boldText}>«{ingredient.name}»</Text>
+          <Text style={styles.boldText}>«{displayName}»</Text>
           {t('deleteModal.messageSuffix')}
         </Text>
 
@@ -88,7 +92,7 @@ export function DeleteConfirmationModal({
               size="md"
               fullWidth
               onPress={onConfirm}
-              accessibilityLabel={t('deleteModal.confirmLabel', { name: ingredient.name })}
+              accessibilityLabel={t('deleteModal.confirmLabel', { name: displayName })}
               style={{ backgroundColor: colors.error }}
               textStyle={{ color: colors.onError }}
             />

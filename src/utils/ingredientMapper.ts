@@ -13,6 +13,7 @@ import {
   DuplicatePantryMatch,
   ScannedIngredientItem,
 } from '../types/scanner';
+import type { Locale } from '../services/storage/localeStorage';
 
 /**
  * Normaliza una cadena para comparación insensible a mayúsculas, tildes y espacios extra.
@@ -868,7 +869,7 @@ export function tokenizeName(name: string): string[] {
 // Se omiten deliberadamente equivalencias ambiguas (pepper ↔ pimienta/pimentón,
 // lemon/lime ↔ limón, bacon ↔ tocino/tocineta, banana ↔ banano/plátano, meat ↔ carne).
 
-const BILINGUAL_FOOD_IDENTITIES: Record<string, string[]> = {
+const BILINGUAL_FOOD_IDENTITIES = {
   cebolla: ['onion'],
   tomate: ['tomato'],
   huevo: ['egg'],
@@ -923,6 +924,70 @@ const BILINGUAL_FOOD_IDENTITIES: Record<string, string[]> = {
   agua: ['water'],
   canela: ['cinnamon'],
   comino: ['cumin'],
+} satisfies Record<string, string[]>;
+
+type BilingualFoodIdentityKey = keyof typeof BILINGUAL_FOOD_IDENTITIES;
+
+/**
+ * Etiquetas visibles (con tildes correctas) de cada identidad bilingüe aprobada. Solo se
+ * usan para MOSTRAR el nombre en el idioma activo; nunca se guardan. El tipo obliga a que
+ * cada identidad de la lista blanca tenga su etiqueta en ambos idiomas.
+ */
+const BILINGUAL_FOOD_LABELS: Record<BilingualFoodIdentityKey, Record<Locale, string>> = {
+  cebolla: { es: 'Cebolla', en: 'Onion' },
+  tomate: { es: 'Tomate', en: 'Tomato' },
+  huevo: { es: 'Huevo', en: 'Egg' },
+  ajo: { es: 'Ajo', en: 'Garlic' },
+  arroz: { es: 'Arroz', en: 'Rice' },
+  pollo: { es: 'Pollo', en: 'Chicken' },
+  zanahoria: { es: 'Zanahoria', en: 'Carrot' },
+  papa: { es: 'Papa', en: 'Potato' },
+  batata: { es: 'Batata', en: 'Sweet potato' },
+  leche: { es: 'Leche', en: 'Milk' },
+  queso: { es: 'Queso', en: 'Cheese' },
+  sal: { es: 'Sal', en: 'Salt' },
+  azucar: { es: 'Azúcar', en: 'Sugar' },
+  mantequilla: { es: 'Mantequilla', en: 'Butter' },
+  harina: { es: 'Harina', en: 'Flour' },
+  pan: { es: 'Pan', en: 'Bread' },
+  aceite: { es: 'Aceite', en: 'Oil' },
+  frijol: { es: 'Frijol', en: 'Bean' },
+  lenteja: { es: 'Lenteja', en: 'Lentil' },
+  garbanzo: { es: 'Garbanzo', en: 'Chickpea' },
+  avena: { es: 'Avena', en: 'Oats' },
+  lechuga: { es: 'Lechuga', en: 'Lettuce' },
+  espinaca: { es: 'Espinaca', en: 'Spinach' },
+  pepino: { es: 'Pepino', en: 'Cucumber' },
+  brocoli: { es: 'Brócoli', en: 'Broccoli' },
+  coliflor: { es: 'Coliflor', en: 'Cauliflower' },
+  aguacate: { es: 'Aguacate', en: 'Avocado' },
+  manzana: { es: 'Manzana', en: 'Apple' },
+  pera: { es: 'Pera', en: 'Pear' },
+  fresa: { es: 'Fresa', en: 'Strawberry' },
+  pina: { es: 'Piña', en: 'Pineapple' },
+  uva: { es: 'Uva', en: 'Grape' },
+  sandia: { es: 'Sandía', en: 'Watermelon' },
+  berenjena: { es: 'Berenjena', en: 'Eggplant' },
+  calabacin: { es: 'Calabacín', en: 'Zucchini' },
+  champinon: { es: 'Champiñón', en: 'Mushroom' },
+  apio: { es: 'Apio', en: 'Celery' },
+  repollo: { es: 'Repollo', en: 'Cabbage' },
+  jengibre: { es: 'Jengibre', en: 'Ginger' },
+  perejil: { es: 'Perejil', en: 'Parsley' },
+  albahaca: { es: 'Albahaca', en: 'Basil' },
+  cerdo: { es: 'Cerdo', en: 'Pork' },
+  pavo: { es: 'Pavo', en: 'Turkey' },
+  pescado: { es: 'Pescado', en: 'Fish' },
+  atun: { es: 'Atún', en: 'Tuna' },
+  camaron: { es: 'Camarón', en: 'Shrimp' },
+  jamon: { es: 'Jamón', en: 'Ham' },
+  yogur: { es: 'Yogur', en: 'Yogurt' },
+  vinagre: { es: 'Vinagre', en: 'Vinegar' },
+  miel: { es: 'Miel', en: 'Honey' },
+  cafe: { es: 'Café', en: 'Coffee' },
+  agua: { es: 'Agua', en: 'Water' },
+  canela: { es: 'Canela', en: 'Cinnamon' },
+  comino: { es: 'Comino', en: 'Cumin' },
 };
 
 /** Forma de comparación de un nombre completo: tokens singularizados unidos por espacio. */
@@ -960,6 +1025,28 @@ export function getBilingualFoodIdentity(name: string): string | null {
   const phrase = identityPhrase(name);
   if (!phrase) return null;
   return getBilingualIdentityIndex().get(phrase) ?? null;
+}
+
+/**
+ * Nombre VISIBLE de un ingrediente en el idioma activo (solo presentación, Fase 28C-B3.4).
+ *
+ * - Reutiliza `getBilingualFoodIdentity()`: solo se traduce un nombre COMPLETO que esté en la
+ *   lista blanca bilingüe. «Green onion», «Almond milk» u «Onion powder» no tienen identidad y
+ *   se muestran tal cual en ambos idiomas.
+ * - Si el nombre guardado ya está escrito en el idioma solicitado, se devuelve sin cambios
+ *   (respeta plurales y mayúsculas del usuario). Si está en el otro idioma, se devuelve la
+ *   etiqueta aprobada con tildes correctas («Sugar» → «Azúcar»).
+ * - Función pura y determinista: no llama a servicios externos y nunca modifica el dato guardado.
+ */
+export function getLocalizedIngredientName(name: string, locale: Locale): string {
+  if (typeof name !== 'string') return name;
+  const identity = getBilingualFoodIdentity(name) as BilingualFoodIdentityKey | null;
+  if (!identity) return name;
+  const labels = BILINGUAL_FOOD_LABELS[identity];
+  if (!labels || (locale !== 'es' && locale !== 'en')) return name;
+  const isWrittenInSpanish = identityPhrase(name) === identityPhrase(identity);
+  const storedLocale: Locale = isWrittenInSpanish ? 'es' : 'en';
+  return storedLocale === locale ? name : labels[locale];
 }
 
 /**

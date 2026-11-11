@@ -122,7 +122,8 @@ describe('Fase 28C-A · Pestañas y navegación', () => {
     expect(screen.queryByLabelText('Pestaña Despensa')).toBeNull();
     // Misma ruta y mismo contenido: sin reinicio de navegación
     expect(screen).toHavePathname('/despensa');
-    expect(screen.getByText('Pollo')).toBeTruthy();
+    // Fase 28C-B3.4: el alimento conocido «Pollo» se MUESTRA en inglés (solo presentación)
+    expect(screen.getByText('Chicken')).toBeTruthy();
     expect(screen.getByText('Meat & protein')).toBeTruthy();
     // Los proveedores de sesión no se remontaron
     expect(providerMounts).toBe(mountsBefore);

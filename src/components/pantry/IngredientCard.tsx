@@ -24,6 +24,7 @@ import {
 } from '../../theme';
 import { Card } from '../common/Card';
 import { formatShortDate } from '../../utils/dateFormat';
+import { getLocalizedIngredientName } from '../../utils/ingredientMapper';
 import { CategoryIconName, getCategoryVisual } from './categoryVisuals';
 
 export interface IngredientCardProps {
@@ -52,6 +53,9 @@ export function IngredientCard({
   const expirationLabel = getExpirationStatusLabel(expiration, locale);
   // Presentación: la categoría canónica se muestra traducida; el dato guardado no cambia.
   const categoryLabel = getCategoryLabel(ingredient.category, locale);
+  // Presentación: nombre conocido mostrado en el idioma activo; el objeto `ingredient`
+  // (id, nombre guardado, cantidad, unidad) se entrega intacto a editar/eliminar/ajustar.
+  const displayName = getLocalizedIngredientName(ingredient.name, locale);
 
   // Determinar paso de incremento según la unidad
   const step =
@@ -107,7 +111,7 @@ export function IngredientCard({
       testID={`ingredient-card-${ingredient.id}`}
       accessibilityRole="text"
       accessibilityLabel={t('ingredientCard.cardLabel', {
-        name: ingredient.name,
+        name: displayName,
         quantity: quantityDisplay,
         category: categoryLabel,
         status: expirationLabel,
@@ -128,14 +132,14 @@ export function IngredientCard({
           onPress={() => onPress && onPress(ingredient)}
           disabled={!onPress}
           accessibilityRole={onPress ? 'button' : 'none'}
-          accessibilityLabel={t('ingredientCard.viewOrEdit', { name: ingredient.name })}
+          accessibilityLabel={t('ingredientCard.viewOrEdit', { name: displayName })}
         >
           <Text
             style={[styles.nameText, typography.bodyLg]}
             numberOfLines={2}
             ellipsizeMode="tail"
           >
-            {ingredient.name}
+            {displayName}
           </Text>
           <Text style={[styles.categoryText, typography.bodySm]} numberOfLines={1}>
             {categoryLabel}
@@ -153,7 +157,7 @@ export function IngredientCard({
               ]}
               onPress={() => onEdit(ingredient)}
               accessibilityRole="button"
-              accessibilityLabel={t('ingredientCard.edit', { name: ingredient.name })}
+              accessibilityLabel={t('ingredientCard.edit', { name: displayName })}
               hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
             >
               <MaterialCommunityIcons name="pencil-outline" size={18} color={colors.textSecondary} />
@@ -169,7 +173,7 @@ export function IngredientCard({
               ]}
               onPress={() => onDelete(ingredient)}
               accessibilityRole="button"
-              accessibilityLabel={t('ingredientCard.delete', { name: ingredient.name })}
+              accessibilityLabel={t('ingredientCard.delete', { name: displayName })}
               hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
             >
               <MaterialCommunityIcons name="trash-can-outline" size={18} color={colors.error} />
@@ -207,7 +211,7 @@ export function IngredientCard({
               ]}
               onPress={handleMinus}
               accessibilityRole="button"
-              accessibilityLabel={t('ingredientCard.decrease', { name: ingredient.name })}
+              accessibilityLabel={t('ingredientCard.decrease', { name: displayName })}
               hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
             >
               <MaterialCommunityIcons name="minus" size={16} color={colors.textPrimary} />
@@ -228,7 +232,7 @@ export function IngredientCard({
               ]}
               onPress={handlePlus}
               accessibilityRole="button"
-              accessibilityLabel={t('ingredientCard.increase', { name: ingredient.name })}
+              accessibilityLabel={t('ingredientCard.increase', { name: displayName })}
               hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
             >
               <MaterialCommunityIcons name="plus" size={16} color={colors.textPrimary} />

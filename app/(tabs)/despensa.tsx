@@ -34,6 +34,7 @@ import { Ingredient } from '../../src/types/pantry';
 import { useLocale } from '../../src/context/LocaleContext';
 import { getCategoryLabel } from '../../src/locales/labels';
 import { localizeMessage } from '../../src/locales/messages';
+import { getLocalizedIngredientName, normalizeIngredientName } from '../../src/utils/ingredientMapper';
 
 export default function DespensaScreen() {
   const typography = useTypography();
@@ -71,12 +72,20 @@ export default function DespensaScreen() {
   const filteredIngredients = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     if (!query) return ingredients;
+    const normalizedQuery = normalizeIngredientName(query);
+    // Coincidencia de solo lectura sobre un texto visible; nunca modifica el inventario.
+    const matches = (text: string) =>
+      text.toLowerCase().includes(query) ||
+      (normalizedQuery.length > 0 && normalizeIngredientName(text).includes(normalizedQuery));
     return ingredients.filter(
       (item) =>
         item.name.toLowerCase().includes(query) ||
         item.category.toLowerCase().includes(query) ||
         // Búsqueda también por la etiqueta visible de la categoría (solo presentación)
-        getCategoryLabel(item.category, locale).toLowerCase().includes(query)
+        getCategoryLabel(item.category, locale).toLowerCase().includes(query) ||
+        // Búsqueda bilingüe por el nombre visible en español e inglés (solo presentación)
+        matches(getLocalizedIngredientName(item.name, 'es')) ||
+        matches(getLocalizedIngredientName(item.name, 'en'))
     );
   }, [ingredients, searchQuery, locale]);
 

@@ -1,0 +1,301 @@
+# FoodAI — APK Android Preview (EAS Build LOCAL en runner de GitHub)
+#
+# Compila el APK del perfil `preview` con `eas build --local` en un runner
+# Ubuntu de GitHub. NO usa la cola de compilación en la nube de Expo (no consume
+# cuota de EAS Build). EAS solo se usa, autenticado con EXPO_TOKEN, para:
+#   - leer las variables del entorno "preview" de EAS, y
+#   - descargar el keystore Android EXISTENTE del proyecto.
+#
+# El APK resultante se publica como artefacto del workflow. No se crea ningún
+# GitHub Release: la publicación como pre-release es un paso manual posterior.
+
+name: Android Preview APK (EAS local)
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_cert_sha256:
+        description: >-
+          (Opcional) Huella SHA-256 del certificado de un APK firmado previamente
+          por EAS. Si se indica, el build falla si la firma no coincide.
+        required: false
+        default: ''
+        type: string
+      skip_tests:
+        description: 'Omitir la puerta de calidad (typecheck + Jest) antes de compilar'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-preview-apk-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  # Identidad del proyecto que el build DEBE usar (verificada contra app.json y EAS).
+  EXPECTED_OWNER: andresyi
+  EXPECTED_PROJECT_ID: e53e26d8-f026-47ca-9e0c-3baf9778f0fb
+  EXPECTED_PACKAGE: com.foodai.app
+  EAS_CLI_VERSION: 27.7.2
+  NODE_VERSION: '24'
+  JAVA_VERSION: '17'
+  EXPO_NO_TELEMETRY: '1'
+
+jobs:
+  build-android-preview:
+    name: Build APK preview (eas build --local)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+
+    steps:
+      - name: Verificar secreto EXPO_TOKEN
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          if [ -z "${EXPO_TOKEN}" ]; then
+            echo "::error::Falta el secreto de repositorio EXPO_TOKEN (Settings → Secrets and variables → Actions)."
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Liberar espacio en disco del runner
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup /usr/share/swift || true
+          df -h /
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Configurar Java (Temurin 17)
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Instalar dependencias (npm ci)
+        run: npm ci --no-audit --no-fund
+
+      - name: Leer versión de la app y versiones Android requeridas
+        id: meta
+        run: |
+          set -euo pipefail
+          APP_VERSION=$(node -p "require('./app.json').expo.version")
+          TOML=node_modules/react-native/gradle/libs.versions.toml
+          read_toml() { sed -nE "s/^$1[[:space:]]*=[[:space:]]*\"([^\"]+)\".*/\1/p" "$TOML" | head -n1; }
+          COMPILE_SDK=$(read_toml compileSdk)
+          BUILD_TOOLS=$(read_toml buildTools)
+          NDK_VERSION=$(read_toml ndkVersion)
+          for v in APP_VERSION COMPILE_SDK BUILD_TOOLS NDK_VERSION; do
+            if [ -z "${!v}" ]; then echo "::error::No se pudo determinar $v."; exit 1; fi
+          done
+          ARTIFACT_NAME="FoodAI-v${APP_VERSION}-Android-Preview"
+          # Directorio determinista FUERA del checkout: EAS empaqueta el repositorio
+          # con git, y así ningún resultado intermedio se mezcla con el código fuente.
+          APK_OUTPUT_DIR="${RUNNER_TEMP}/foodai-apk-output"
+          echo "APK_OUTPUT_DIR=${APK_OUTPUT_DIR}" >> "$GITHUB_ENV"
+          {
+            echo "app_version=${APP_VERSION}"
+            echo "compile_sdk=${COMPILE_SDK}"
+            echo "build_tools=${BUILD_TOOLS}"
+            echo "ndk_version=${NDK_VERSION}"
+            echo "artifact_name=${ARTIFACT_NAME}"
+            echo "apk_path=${APK_OUTPUT_DIR}/${ARTIFACT_NAME}.apk"
+          } >> "$GITHUB_OUTPUT"
+          echo "App ${APP_VERSION} | compileSdk ${COMPILE_SDK} | build-tools ${BUILD_TOOLS} | NDK ${NDK_VERSION}"
+
+      - name: Instalar Android SDK / NDK requeridos
+        run: |
+          set -euo pipefail
+          SDKMANAGER="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKMANAGER" ]; then
+            echo "::error::sdkmanager no encontrado en ${SDKMANAGER}."
+            exit 1
+          fi
+          yes | "$SDKMANAGER" --licenses > /dev/null || true
+          "$SDKMANAGER" --install \
+            "platform-tools" \
+            "platforms;android-${{ steps.meta.outputs.compile_sdk }}" \
+            "build-tools;${{ steps.meta.outputs.build_tools }}" \
+            "ndk;${{ steps.meta.outputs.ndk_version }}" > /dev/null
+          echo "ANDROID_NDK_HOME=${ANDROID_HOME}/ndk/${{ steps.meta.outputs.ndk_version }}" >> "$GITHUB_ENV"
+
+      - name: Puerta de calidad (typecheck + Jest)
+        if: ${{ !inputs.skip_tests }}
+        run: |
+          npm run typecheck
+          npm test -- --runInBand
+
+      - name: Instalar EAS CLI ${{ env.EAS_CLI_VERSION }}
+        run: npm install --global "eas-cli@${EAS_CLI_VERSION}" --no-audit --no-fund
+
+      - name: Verificar autenticación Expo
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: eas whoami
+
+      - name: Verificar credenciales Android existentes en EAS (no genera nuevas)
+        id: credentials
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EXPECTED_SHA256: ${{ inputs.expected_cert_sha256 }}
+        run: node .github/scripts/check-eas-android-credentials.mjs
+
+      - name: Verificar variables del entorno "preview" de EAS
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Las variables EXPO_PUBLIC_* deben venir SOLO del entorno "preview" de EAS
+          # y de eas.json. Si el runner trae alguna, sobrescribiría a EAS en el build.
+          LEAKED=$(env | cut -d= -f1 | grep '^EXPO_PUBLIC_' || true)
+          if [ -n "$LEAKED" ]; then
+            echo "::error::El entorno del runner define variables EXPO_PUBLIC_* (${LEAKED//$'\n'/, }); elimínalas del workflow."
+            exit 1
+          fi
+          eas env:exec preview --non-interactive "node .github/scripts/validate-build-env.mjs"
+
+      - name: Compilar APK (eas build --local)
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          rm -rf "${APK_OUTPUT_DIR}"
+          mkdir -p "${APK_OUTPUT_DIR}"
+          eas build \
+            --platform android \
+            --profile preview \
+            --local \
+            --non-interactive \
+            --output "${{ steps.meta.outputs.apk_path }}"
+
+      - name: Verificar APK (firma, paquete, bundle JS embebido)
+        id: verify
+        env:
+          APK: ${{ steps.meta.outputs.apk_path }}
+          BUILD_TOOLS: ${{ steps.meta.outputs.build_tools }}
+          APP_VERSION: ${{ steps.meta.outputs.app_version }}
+          KEYSTORE_SHA256: ${{ steps.credentials.outputs.keystore_sha256 }}
+          EXPECTED_SHA256: ${{ inputs.expected_cert_sha256 }}
+        run: |
+          set -euo pipefail
+          BT="${ANDROID_HOME}/build-tools/${BUILD_TOOLS}"
+
+          if [ ! -s "$APK" ]; then
+            echo "::error::No se generó ningún APK en ${APK}."
+            ls -la "${APK_OUTPUT_DIR}" || true
+            exit 1
+          fi
+
+          # 1) Firma
+          "$BT/apksigner" verify --verbose --print-certs "$APK" > "${RUNNER_TEMP}/apksigner.txt"
+          cat "${RUNNER_TEMP}/apksigner.txt"
+          SIGNERS=$(grep -cE '^Signer #[0-9]+ certificate SHA-256 digest:' "${RUNNER_TEMP}/apksigner.txt" || true)
+          if [ "$SIGNERS" != "1" ]; then
+            echo "::error::Se esperaba exactamente 1 firmante y se encontraron ${SIGNERS}."
+            exit 1
+          fi
+          if grep -qi 'CN=Android Debug' "${RUNNER_TEMP}/apksigner.txt"; then
+            echo "::error::El APK está firmado con el certificado de depuración de Android."
+            exit 1
+          fi
+          APK_SHA256=$(sed -nE 's/^Signer #1 certificate SHA-256 digest: ([0-9a-fA-F]+).*/\1/p' "${RUNNER_TEMP}/apksigner.txt" | tr 'A-F' 'a-f')
+          APK_SHA1=$(sed -nE 's/^Signer #1 certificate SHA-1 digest: ([0-9a-fA-F]+).*/\1/p' "${RUNNER_TEMP}/apksigner.txt" | tr 'A-F' 'a-f')
+          if [ "$APK_SHA256" != "$KEYSTORE_SHA256" ]; then
+            echo "::error::La firma del APK (${APK_SHA256}) no coincide con el keystore EAS (${KEYSTORE_SHA256})."
+            exit 1
+          fi
+          # Entrada opcional: se valida el formato (64 hex, ':' y espacios permitidos);
+          # un valor no vacío e inválido falla en lugar de ignorarse.
+          EXPECTED_NORM=$(printf '%s' "$EXPECTED_SHA256" | tr -d ':[:space:]' | tr 'A-F' 'a-f')
+          if [ -n "$EXPECTED_NORM" ] && ! [[ "$EXPECTED_NORM" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::expected_cert_sha256 no es una huella SHA-256 válida (64 caracteres hexadecimales)."
+            exit 1
+          fi
+          if [ -z "$APK_SHA256" ] || [ -z "$KEYSTORE_SHA256" ]; then
+            echo "::error::No se pudo determinar la huella SHA-256 del APK o del keystore EAS."
+            exit 1
+          fi
+          if [ -n "$EXPECTED_NORM" ] && [ "$APK_SHA256" != "$EXPECTED_NORM" ]; then
+            echo "::error::La firma del APK no coincide con expected_cert_sha256."
+            exit 1
+          fi
+
+          # 2) Paquete, versión, modo release y permisos
+          "$BT/aapt2" dump badging "$APK" > "${RUNNER_TEMP}/badging.txt"
+          grep -E "^package:" "${RUNNER_TEMP}/badging.txt"
+          grep -qF "package: name='${EXPECTED_PACKAGE}' " "${RUNNER_TEMP}/badging.txt" \
+            || { echo "::error::El paquete del APK no es ${EXPECTED_PACKAGE}."; exit 1; }
+          grep -qF "versionName='${APP_VERSION}'" "${RUNNER_TEMP}/badging.txt" \
+            || { echo "::error::versionName del APK distinto de ${APP_VERSION}."; exit 1; }
+          if grep -q '^application-debuggable' "${RUNNER_TEMP}/badging.txt"; then
+            echo "::error::El APK es depurable (no es una compilación release)."
+            exit 1
+          fi
+          grep -q "uses-permission: name='android.permission.CAMERA'" "${RUNNER_TEMP}/badging.txt" \
+            || { echo "::error::El APK no declara el permiso CAMERA."; exit 1; }
+          if grep -q "uses-permission: name='android.permission.RECORD_AUDIO'" "${RUNNER_TEMP}/badging.txt"; then
+            echo "::error::El APK declara RECORD_AUDIO, que debe estar bloqueado."
+            exit 1
+          fi
+
+          # 3) Bundle JS embebido (instalable sin Metro)
+          unzip -l "$APK" > "${RUNNER_TEMP}/apk-contents.txt"
+          grep -qE ' assets/index\.android\.bundle$' "${RUNNER_TEMP}/apk-contents.txt" \
+            || { echo "::error::El APK no contiene assets/index.android.bundle (requeriría Metro)."; exit 1; }
+
+          # 4) Checksum del archivo
+          ( cd "$(dirname "$APK")" && sha256sum "$(basename "$APK")" > "$(basename "$APK").sha256" )
+          FILE_SHA256=$(cut -d' ' -f1 "${APK}.sha256")
+
+          {
+            echo "cert_sha256=${APK_SHA256}"
+            echo "cert_sha1=${APK_SHA1}"
+            echo "file_sha256=${FILE_SHA256}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Subir APK como artefacto
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ steps.meta.outputs.artifact_name }}
+          # Solo el APK y su checksum: nunca intermedios, credenciales ni .env.
+          path: |
+            ${{ steps.meta.outputs.apk_path }}
+            ${{ steps.meta.outputs.apk_path }}.sha256
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+
+      - name: Resumen
+        env:
+          ARTIFACT_NAME: ${{ steps.meta.outputs.artifact_name }}
+          APP_VERSION: ${{ steps.meta.outputs.app_version }}
+          CERT_SHA256: ${{ steps.verify.outputs.cert_sha256 }}
+          CERT_SHA1: ${{ steps.verify.outputs.cert_sha1 }}
+          FILE_SHA256: ${{ steps.verify.outputs.file_sha256 }}
+        run: |
+          {
+            echo "## FoodAI v${APP_VERSION} — APK Android Preview"
+            echo ""
+            echo "| Campo | Valor |"
+            echo "|---|---|"
+            echo "| Artefacto | \`${ARTIFACT_NAME}\` |"
+            echo "| Commit | \`${GITHUB_SHA}\` |"
+            echo "| Paquete | \`${EXPECTED_PACKAGE}\` |"
+            echo "| Perfil EAS | \`preview\` (build local, sin cuota cloud) |"
+            echo "| Certificado SHA-256 | \`${CERT_SHA256}\` |"
+            echo "| Certificado SHA-1 | \`${CERT_SHA1}\` |"
+            echo "| SHA-256 del archivo APK | \`${FILE_SHA256}\` |"
+            echo ""
+            echo "APK para pruebas internas del MVP. No apto para Play Store."
+          } >> "$GITHUB_STEP_SUMMARY"

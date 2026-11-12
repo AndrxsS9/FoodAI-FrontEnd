@@ -41,9 +41,6 @@ const MONTH_SHORT_NAMES = [
   'dic',
 ] as const;
 
-/** Iniciales de los días de la semana, comenzando en lunes. */
-export const WEEKDAY_INITIALS = ['L', 'M', 'X', 'J', 'V', 'S', 'D'] as const;
-
 /** Convierte una fecha local a `AAAA-MM-DD`. */
 export function toIsoDateString(date: Date): string {
   const y = date.getFullYear();

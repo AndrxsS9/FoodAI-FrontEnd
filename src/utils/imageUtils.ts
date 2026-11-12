@@ -305,11 +305,6 @@ export async function optimizeImageIfNeeded(image: SelectedImage): Promise<Selec
   }
 }
 
-export interface PreparedImageResult {
-  optimizedImage: SelectedImage;
-  finalSize: number | null;
-}
-
 /**
  * Pipeline estricto de seguridad para subida de imágenes:
  * 1. Valida el formato soportado (JPG, PNG, WEBP).

@@ -115,6 +115,10 @@ jobs:
           echo "App ${APP_VERSION} | compileSdk ${COMPILE_SDK} | build-tools ${BUILD_TOOLS} | NDK ${NDK_VERSION}"
 
       - name: Instalar Android SDK / NDK requeridos
+        env:
+          COMPILE_SDK: ${{ steps.meta.outputs.compile_sdk }}
+          BUILD_TOOLS: ${{ steps.meta.outputs.build_tools }}
+          NDK_VERSION: ${{ steps.meta.outputs.ndk_version }}
         run: |
           set -euo pipefail
           SDKMANAGER="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
@@ -122,13 +126,57 @@ jobs:
             echo "::error::sdkmanager no encontrado en ${SDKMANAGER}."
             exit 1
           fi
+
+          # Identificador de plataforma que exige el Android Gradle Plugin (9.x) para
+          # compileSdk: desde la API 37 un compileSdk entero N se resuelve como
+          # "android-N.0" (p. ej. compileSdk 37 -> platforms;android-37.0); hasta la
+          # API 36 sigue siendo "android-N". Un compileSdk con versión menor (36.1) se
+          # usa tal cual. Sin alternativas: nunca se instala otro nivel de API.
+          if [[ "$COMPILE_SDK" =~ ^[0-9]+$ ]]; then
+            if [ "$COMPILE_SDK" -ge 37 ]; then
+              PLATFORM_ID="android-${COMPILE_SDK}.0"
+            else
+              PLATFORM_ID="android-${COMPILE_SDK}"
+            fi
+          elif [[ "$COMPILE_SDK" =~ ^[0-9]+\.[0-9]+$ ]]; then
+            PLATFORM_ID="android-${COMPILE_SDK}"
+          else
+            echo "::error::compileSdk con formato no soportado: '${COMPILE_SDK}'."
+            exit 1
+          fi
+          PLATFORM_PKG="platforms;${PLATFORM_ID}"
+          echo "compileSdk ${COMPILE_SDK} -> ${PLATFORM_PKG}"
+
+          # Confirmar con los metadatos oficiales de sdkmanager que el paquete existe.
+          "$SDKMANAGER" --list > "${RUNNER_TEMP}/sdkmanager-list.txt"
+          sdk_ids() { awk -F'|' '{ gsub(/[[:space:]]/, "", $1); print $1 }' "$1"; }
+          if ! sdk_ids "${RUNNER_TEMP}/sdkmanager-list.txt" | grep -qxF "$PLATFORM_PKG"; then
+            echo "::error::sdkmanager no publica ${PLATFORM_PKG}. Plataformas disponibles para la API ${COMPILE_SDK%%.*}:"
+            sdk_ids "${RUNNER_TEMP}/sdkmanager-list.txt" | grep -E "^platforms;android-${COMPILE_SDK%%.*}([.-]|$)" | sort -u || true
+            exit 1
+          fi
+
           yes | "$SDKMANAGER" --licenses > /dev/null || true
           "$SDKMANAGER" --install \
             "platform-tools" \
-            "platforms;android-${{ steps.meta.outputs.compile_sdk }}" \
-            "build-tools;${{ steps.meta.outputs.build_tools }}" \
-            "ndk;${{ steps.meta.outputs.ndk_version }}" > /dev/null
-          echo "ANDROID_NDK_HOME=${ANDROID_HOME}/ndk/${{ steps.meta.outputs.ndk_version }}" >> "$GITHUB_ENV"
+            "$PLATFORM_PKG" \
+            "build-tools;${BUILD_TOOLS}" \
+            "ndk;${NDK_VERSION}" > /dev/null
+
+          # Verificar que todo quedó realmente instalado (sin alias ni enlaces).
+          "$SDKMANAGER" --list_installed > "${RUNNER_TEMP}/sdkmanager-installed.txt"
+          for pkg in "$PLATFORM_PKG" "build-tools;${BUILD_TOOLS}" "ndk;${NDK_VERSION}"; do
+            if ! sdk_ids "${RUNNER_TEMP}/sdkmanager-installed.txt" | grep -qxF "$pkg"; then
+              echo "::error::${pkg} no figura como instalado tras sdkmanager --install."
+              exit 1
+            fi
+          done
+          if [ ! -s "${ANDROID_HOME}/platforms/${PLATFORM_ID}/android.jar" ]; then
+            echo "::error::Falta ${ANDROID_HOME}/platforms/${PLATFORM_ID}/android.jar."
+            exit 1
+          fi
+          echo "Instalado: ${PLATFORM_PKG}, build-tools;${BUILD_TOOLS}, ndk;${NDK_VERSION}"
+          echo "ANDROID_NDK_HOME=${ANDROID_HOME}/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
 
       - name: Puerta de calidad (typecheck + Jest)
         if: ${{ !inputs.skip_tests }}

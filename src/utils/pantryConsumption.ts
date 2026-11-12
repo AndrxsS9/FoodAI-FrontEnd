@@ -1,0 +1,347 @@
+/**
+ * FoodAI - Lógica del dominio para el consumo y deducción de ingredientes de la despensa (Fase 6A).
+ * Implementa deducción segura, verificación de compatibilidad de unidades (g/kg, ml/l),
+ * prevención de inventario negativo y distinción clara entre deducciones exitosas
+ * e ingredientes que requieren revisión manual.
+ */
+
+import { Ingredient, IngredientUnit } from '../types/pantry';
+import { RecipeIngredient } from '../types/recipe';
+import {
+  areUnitsCompatibleForAddition,
+  convertQuantity,
+  findDuplicateInPantry,
+} from './ingredientMapper';
+
+export type DeductionItemStatus =
+  | 'deductible_full'
+  | 'deductible_partial'
+  | 'requires_review_unit'
+  | 'requires_review_quantity'
+  | 'requires_review_not_found'
+  | 'requires_review_possible_match';
+
+/**
+ * Mensaje para coincidencias solo posibles (Fase 28C-B3.2): nunca autorizan una deducción.
+ * Debe coincidir con `messages.consumption.possibleMatch` del catálogo de localización.
+ */
+export const POSSIBLE_MATCH_REVIEW_MESSAGE =
+  'Posible coincidencia en tu despensa; requiere revisión manual y no se dedujo automáticamente.';
+
+export interface PantryDeductionItem {
+  recipeIngredientName: string;
+  recipeQuantity: number | null;
+  recipeUnit: string;
+  matchedPantryItem?: Ingredient;
+  deductQuantity: number; // en la unidad del ingrediente de la despensa
+  pantryUnit?: IngredientUnit;
+  stockBefore: number;
+  stockAfter: number;
+  status: DeductionItemStatus;
+  requiresReview: boolean;
+  message: string;
+}
+
+export interface PantryDeductionPlan {
+  items: PantryDeductionItem[];
+  deductibleItems: PantryDeductionItem[];
+  reviewItems: PantryDeductionItem[];
+  canDeductAny: boolean;
+  totalDeductibleCount: number;
+  totalReviewCount: number;
+}
+
+// ==========================================
+// Autorización de consumo (defensa en profundidad)
+// ==========================================
+
+export const DEMO_RECIPE_CONSUMPTION_ERROR =
+  'Esta es una receta de demostración y no puede descontar ingredientes de tu despensa real.';
+
+export const INVALID_RECIPE_CONSUMPTION_ERROR =
+  'No fue posible verificar esta receta, por lo que no se descontaron ingredientes de tu despensa.';
+
+export type RecipeConsumptionEligibility =
+  | { eligible: true }
+  | { eligible: false; reason: 'demo_fixture' | 'invalid_recipe'; error: string };
+
+/**
+ * Determina, sin efectos secundarios, si una receta puede entrar al flujo de
+ * deducción de despensa y ledger de consumo.
+ *
+ * Política fail-closed: solo una receta estructuralmente válida marcada
+ * explícitamente con `isDemoFixture === false` es elegible. Una bandera ausente,
+ * no booleana o `true` se rechaza. No se infiere legitimidad por id, nombre o ruta.
+ */
+export function evaluateRecipeConsumptionEligibility(
+  recipe: unknown
+): RecipeConsumptionEligibility {
+  if (!recipe || typeof recipe !== 'object' || Array.isArray(recipe)) {
+    return { eligible: false, reason: 'invalid_recipe', error: INVALID_RECIPE_CONSUMPTION_ERROR };
+  }
+
+  const candidate = recipe as Record<string, unknown>;
+
+  if (candidate.isDemoFixture === true) {
+    return { eligible: false, reason: 'demo_fixture', error: DEMO_RECIPE_CONSUMPTION_ERROR };
+  }
+
+  if (candidate.isDemoFixture !== false) {
+    return { eligible: false, reason: 'invalid_recipe', error: INVALID_RECIPE_CONSUMPTION_ERROR };
+  }
+
+  const { id, instanceId } = candidate;
+  const hasValidId = typeof id === 'string' && id.trim().length > 0;
+  // Misma derivación que getRecipeDeductionKey: instanceId vacío/ausente recae en id.
+  const hasValidInstanceId =
+    instanceId === undefined ||
+    instanceId === null ||
+    instanceId === '' ||
+    (typeof instanceId === 'string' && instanceId.trim().length > 0);
+
+  if (!hasValidId || !hasValidInstanceId || !Array.isArray(candidate.ingredients)) {
+    return { eligible: false, reason: 'invalid_recipe', error: INVALID_RECIPE_CONSUMPTION_ERROR };
+  }
+
+  return { eligible: true };
+}
+
+/** Plan vacío y tipado para respuestas rechazadas que no deben calcular ni persistir nada. */
+export function createEmptyPantryDeductionPlan(): PantryDeductionPlan {
+  return {
+    items: [],
+    deductibleItems: [],
+    reviewItems: [],
+    canDeductAny: false,
+    totalDeductibleCount: 0,
+    totalReviewCount: 0,
+  };
+}
+
+export function calculatePantryDeduction(
+  pantryIngredients: Ingredient[],
+  recipeIngredients: RecipeIngredient[]
+): PantryDeductionPlan {
+  // Rastreo del stock remanente para manejar ingredientes duplicados en la misma receta
+  const remainingStockMap = new Map<string, number>();
+  for (const item of pantryIngredients || []) {
+    remainingStockMap.set(item.id, item.quantity);
+  }
+
+  const items: PantryDeductionItem[] = [];
+
+  for (const recipeIng of recipeIngredients || []) {
+    const rawName = recipeIng.name?.trim() || 'Ingrediente';
+    const rawQuantity = recipeIng.quantity;
+    const rawUnit = recipeIng.unit?.trim().toLowerCase() || '';
+
+    const matchedDuplicate = findDuplicateInPantry(rawName, pantryIngredients || []);
+
+    if (!matchedDuplicate) {
+      items.push({
+        recipeIngredientName: rawName,
+        recipeQuantity: rawQuantity,
+        recipeUnit: rawUnit,
+        deductQuantity: 0,
+        stockBefore: 0,
+        stockAfter: 0,
+        status: 'requires_review_not_found',
+        requiresReview: true,
+        message: 'No se encontró en tu despensa.',
+      });
+      continue;
+    }
+
+    const pantryItem = (pantryIngredients || []).find((p) => p.id === matchedDuplicate.id)!;
+    const currentStock = remainingStockMap.get(pantryItem.id) ?? pantryItem.quantity;
+
+    // Fase 28C-B3.2: solo una coincidencia EXACTA autoriza descontar inventario. Una coincidencia
+    // posible (ej. «Red onion» vs «Onion», «Tomate chonto» vs «Tomate») se reporta como contexto
+    // para revisión manual, sin deducción y sin tocar el stock remanente.
+    if (matchedDuplicate.matchType !== 'exact') {
+      items.push({
+        recipeIngredientName: rawName,
+        recipeQuantity: rawQuantity,
+        recipeUnit: rawUnit,
+        matchedPantryItem: pantryItem,
+        pantryUnit: pantryItem.unit,
+        deductQuantity: 0,
+        stockBefore: currentStock,
+        stockAfter: currentStock,
+        status: 'requires_review_possible_match',
+        requiresReview: true,
+        message: POSSIBLE_MATCH_REVIEW_MESSAGE,
+      });
+      continue;
+    }
+
+    // Regla 7: Nunca inventar cantidades para medidas nulas o desconocidas
+    if (
+      rawQuantity === null ||
+      rawQuantity === undefined ||
+      !Number.isFinite(rawQuantity) ||
+      rawQuantity <= 0 ||
+      rawUnit === '' ||
+      rawUnit === 'desconocida' ||
+      rawUnit === 's/u'
+    ) {
+      items.push({
+        recipeIngredientName: rawName,
+        recipeQuantity: rawQuantity,
+        recipeUnit: rawUnit,
+        matchedPantryItem: pantryItem,
+        pantryUnit: pantryItem.unit,
+        deductQuantity: 0,
+        stockBefore: currentStock,
+        stockAfter: currentStock,
+        status: 'requires_review_quantity',
+        requiresReview: true,
+        message: 'Cantidad o unidad por confirmar en la receta; no se dedujo automáticamente.',
+      });
+      continue;
+    }
+
+    // Reglas 5 y 6: Verificación de unidades compatibles
+    const unitsCompatible = areUnitsCompatibleForAddition(
+      pantryItem.unit,
+      rawUnit as IngredientUnit
+    );
+
+    if (!unitsCompatible) {
+      items.push({
+        recipeIngredientName: rawName,
+        recipeQuantity: rawQuantity,
+        recipeUnit: rawUnit,
+        matchedPantryItem: pantryItem,
+        pantryUnit: pantryItem.unit,
+        deductQuantity: 0,
+        stockBefore: currentStock,
+        stockAfter: currentStock,
+        status: 'requires_review_unit',
+        requiresReview: true,
+        message: `Unidades no compatibles (${pantryItem.unit} vs ${rawUnit}); requiere revisión manual.`,
+      });
+      continue;
+    }
+
+    // Conversión de unidades compatible (ej: g a kg, ml a l)
+    const convertedQty = convertQuantity(
+      rawQuantity,
+      rawUnit as IngredientUnit,
+      pantryItem.unit
+    );
+
+    if (convertedQty === null || !Number.isFinite(convertedQty) || convertedQty <= 0) {
+      items.push({
+        recipeIngredientName: rawName,
+        recipeQuantity: rawQuantity,
+        recipeUnit: rawUnit,
+        matchedPantryItem: pantryItem,
+        pantryUnit: pantryItem.unit,
+        deductQuantity: 0,
+        stockBefore: currentStock,
+        stockAfter: currentStock,
+        status: 'requires_review_unit',
+        requiresReview: true,
+        message: `No fue posible convertir de ${rawUnit} a ${pantryItem.unit}.`,
+      });
+      continue;
+    }
+
+    const roundedNeeded = Math.round(convertedQty * 1000) / 1000;
+
+    // Regla 8: No permitir stock negativo
+    if (roundedNeeded <= currentStock) {
+      const remaining = Math.round((currentStock - roundedNeeded) * 1000) / 1000;
+      remainingStockMap.set(pantryItem.id, remaining);
+
+      items.push({
+        recipeIngredientName: rawName,
+        recipeQuantity: rawQuantity,
+        recipeUnit: rawUnit,
+        matchedPantryItem: pantryItem,
+        pantryUnit: pantryItem.unit,
+        deductQuantity: roundedNeeded,
+        stockBefore: currentStock,
+        stockAfter: remaining,
+        status: 'deductible_full',
+        requiresReview: false,
+        message: `Se descontarán ${roundedNeeded} ${pantryItem.unit}.`,
+      });
+    } else {
+      // Stock insuficiente: consumir solo lo disponible (stockAfter = 0, jamás negativo)
+      const deductQty = currentStock;
+      remainingStockMap.set(pantryItem.id, 0);
+
+      items.push({
+        recipeIngredientName: rawName,
+        recipeQuantity: rawQuantity,
+        recipeUnit: rawUnit,
+        matchedPantryItem: pantryItem,
+        pantryUnit: pantryItem.unit,
+        deductQuantity: deductQty,
+        stockBefore: currentStock,
+        stockAfter: 0,
+        status: 'deductible_partial',
+        requiresReview: true,
+        message: `Stock insuficiente (${currentStock} ${pantryItem.unit} disponibles vs ${roundedNeeded} ${pantryItem.unit} requeridos); se agota el inventario disponible.`,
+      });
+    }
+  }
+
+  const deductibleItems = items.filter((i) => i.deductQuantity > 0);
+  const reviewItems = items.filter((i) => i.requiresReview);
+
+  return {
+    items,
+    deductibleItems,
+    reviewItems,
+    canDeductAny: deductibleItems.length > 0,
+    totalDeductibleCount: deductibleItems.length,
+    totalReviewCount: reviewItems.length,
+  };
+}
+
+export interface ApplyDeductionResult {
+  updatedPantry: Ingredient[];
+  deductedCount: number;
+}
+
+export function applyPantryDeduction(
+  currentPantry: Ingredient[],
+  plan: PantryDeductionPlan
+): ApplyDeductionResult {
+  const stockAfterMap = new Map<string, number>();
+
+  for (const item of plan.items) {
+    if (item.matchedPantryItem && item.deductQuantity > 0) {
+      stockAfterMap.set(item.matchedPantryItem.id, item.stockAfter);
+    }
+  }
+
+  const now = new Date().toISOString();
+  const updatedPantry: Ingredient[] = [];
+
+  for (const pantryItem of currentPantry || []) {
+    if (stockAfterMap.has(pantryItem.id)) {
+      const newStock = stockAfterMap.get(pantryItem.id)!;
+      // En FoodAI el esquema de despensa requiere quantity > 0.
+      // Si el alimento se agota completamente (0 stock), se remueve de la despensa activa.
+      if (newStock > 0) {
+        updatedPantry.push({
+          ...pantryItem,
+          quantity: newStock,
+          updatedAt: now,
+        });
+      }
+      // Si newStock <= 0, no se incluye (se elimina por consumo total).
+    } else {
+      updatedPantry.push(pantryItem);
+    }
+  }
+
+  return {
+    updatedPantry,
+    deductedCount: stockAfterMap.size,
+  };
+}

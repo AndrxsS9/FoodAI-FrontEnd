@@ -1,0 +1,237 @@
+import React from 'react';
+import {
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+  ViewStyle,
+} from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { AppColors, radius, spacing, useTypography, useAppTheme, useThemeStyles } from '../../theme';
+import { useLocale } from '../../context/LocaleContext';
+
+export interface StepperProps {
+  value: number;
+  onChange: (newValue: number) => void | Promise<void>;
+  min?: number;
+  max?: number;
+  step?: number;
+  unit?: string;
+  disabled?: boolean;
+  accessibilityLabel?: string;
+  accessibilityHint?: string;
+  testID?: string;
+  style?: ViewStyle;
+}
+
+const getDecimalPlaces = (num: number): number => {
+  if (!Number.isFinite(num)) return 0;
+  const parts = num.toString().split('.');
+  return parts[1] ? parts[1].length : 0;
+};
+
+const roundToPrecision = (num: number, precision: number): number => {
+  const factor = Math.pow(10, precision);
+  return Math.round(num * factor) / factor;
+};
+
+export const Stepper: React.FC<StepperProps> = ({
+  value,
+  onChange,
+  min = 0,
+  max = 9999,
+  step = 1,
+  unit,
+  disabled = false,
+  accessibilityLabel,
+  accessibilityHint,
+  testID,
+  style,
+}) => {
+  const typography = useTypography();
+  const { t } = useLocale();
+  const resolvedAccessibilityLabel = accessibilityLabel ?? t('components.stepperDefaultLabel');
+  const { colors } = useAppTheme();
+  const styles = useThemeStyles(createStyles);
+
+  // Normalize min and max bounds safely
+  const parsedMin = Number.isFinite(min) ? min : 0;
+  const parsedMax = Number.isFinite(max) ? max : 9999;
+  const safeMin = Math.min(parsedMin, parsedMax);
+  const safeMax = Math.max(parsedMin, parsedMax);
+
+  // Normalize step: must be finite and strictly positive
+  const safeStep = Number.isFinite(step) && step > 0 ? step : 1;
+
+  // Decimal precision to prevent IEEE-754 floating-point inaccuracies
+  const precision = Math.min(
+    Math.max(getDecimalPlaces(safeStep), getDecimalPlaces(value)),
+    10
+  );
+
+  // Normalize current value safely within bounds
+  const parsedValue = Number.isFinite(value) ? value : safeMin;
+  const safeValue = roundToPrecision(
+    Math.min(Math.max(parsedValue, safeMin), safeMax),
+    precision
+  );
+
+  const canDecrement = !disabled && safeValue > safeMin;
+  const canIncrement = !disabled && safeValue < safeMax;
+
+  const handleDecrement = () => {
+    if (!canDecrement) return;
+    const rawNext = safeValue - safeStep;
+    const clampedNext = Math.max(safeMin, rawNext);
+    const roundedNext = roundToPrecision(clampedNext, precision);
+    if (Number.isFinite(roundedNext)) {
+      try {
+        const result = onChange(roundedNext);
+        if (result && typeof (result as any).catch === 'function') {
+          (result as any).catch(() => {});
+        }
+      } catch {
+        // Ignorar excepciones síncronas en el callback
+      }
+    }
+  };
+
+  const handleIncrement = () => {
+    if (!canIncrement) return;
+    const rawNext = safeValue + safeStep;
+    const clampedNext = Math.min(safeMax, rawNext);
+    const roundedNext = roundToPrecision(clampedNext, precision);
+    if (Number.isFinite(roundedNext)) {
+      try {
+        const result = onChange(roundedNext);
+        if (result && typeof (result as any).catch === 'function') {
+          (result as any).catch(() => {});
+        }
+      } catch {
+        // Ignorar excepciones síncronas en el callback
+      }
+    }
+  };
+
+  const displayValue = unit ? `${safeValue} ${unit}` : `${safeValue}`;
+
+  return (
+    <View
+      testID={testID}
+      style={[styles.container, disabled && styles.containerDisabled, style]}
+      accessibilityRole="adjustable"
+      accessibilityLabel={resolvedAccessibilityLabel}
+      accessibilityValue={{
+        min: safeMin,
+        max: safeMax,
+        now: safeValue,
+        text: displayValue,
+      }}
+      accessibilityHint={accessibilityHint}
+    >
+      <Pressable
+        testID={testID ? `${testID}-minus` : 'stepper-decrement-button'}
+        onPress={handleDecrement}
+        disabled={!canDecrement}
+        accessibilityRole="button"
+        accessibilityLabel={t('components.decrease')}
+        accessibilityHint={t('components.decreaseHint', { step: unit ? `${safeStep} ${unit}` : safeStep })}
+        accessibilityState={{ disabled: !canDecrement }}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        style={({ pressed }) => [
+          styles.stepButton,
+          !canDecrement && styles.buttonDisabled,
+          pressed && canDecrement && styles.buttonPressed,
+        ]}
+      >
+        <MaterialCommunityIcons
+          name="minus"
+          size={18}
+          color={canDecrement ? colors.textPrimary : colors.textTertiary}
+        />
+      </Pressable>
+
+      <View style={styles.valueContainer}>
+        <Text
+          testID={testID ? `${testID}-value` : 'stepper-value-display'}
+          style={[
+            styles.valueText,
+            typography.labelLg,
+            disabled && styles.valueTextDisabled,
+          ]}
+          numberOfLines={1}
+        >
+          {displayValue}
+        </Text>
+      </View>
+
+      <Pressable
+        testID={testID ? `${testID}-plus` : 'stepper-increment-button'}
+        onPress={handleIncrement}
+        disabled={!canIncrement}
+        accessibilityRole="button"
+        accessibilityLabel={t('components.increase')}
+        accessibilityHint={t('components.increaseHint', { step: unit ? `${safeStep} ${unit}` : safeStep })}
+        accessibilityState={{ disabled: !canIncrement }}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        style={({ pressed }) => [
+          styles.stepButton,
+          !canIncrement && styles.buttonDisabled,
+          pressed && canIncrement && styles.buttonPressed,
+        ]}
+      >
+        <MaterialCommunityIcons
+          name="plus"
+          size={18}
+          color={canIncrement ? colors.textPrimary : colors.textTertiary}
+        />
+      </Pressable>
+    </View>
+  );
+};
+
+const createStyles = (colors: AppColors) =>
+  StyleSheet.create({
+    container: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: colors.surfaceContainerLow,
+      borderRadius: radius.full,
+      padding: 3,
+    },
+    containerDisabled: {
+      opacity: 0.6,
+    },
+    stepButton: {
+      width: 36,
+      height: 36,
+      borderRadius: radius.full,
+      backgroundColor: colors.surface,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    buttonPressed: {
+      backgroundColor: colors.surfaceContainer,
+      transform: [{ scale: 0.92 }],
+    },
+    buttonDisabled: {
+      backgroundColor: colors.surfaceContainerLow,
+      borderColor: 'transparent',
+      opacity: 0.5,
+    },
+    valueContainer: {
+      minWidth: 44,
+      paddingHorizontal: spacing.sm,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    valueText: {
+      color: colors.textPrimary,
+      fontWeight: '700',
+    },
+    valueTextDisabled: {
+      color: colors.textSecondary,
+    },
+  });

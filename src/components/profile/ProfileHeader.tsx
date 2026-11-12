@@ -1,0 +1,460 @@
+/**
+ * FoodAI - Cabecera personalizada de perfil de usuario (Fase 5B).
+ * Muestra el avatar con iniciales dinámicas, el nombre editable del usuario,
+ * su correo autenticado con indicador de verificación y el disparador de edición.
+ */
+import React, { useState } from 'react';
+import {
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { AppColors, getAppSurfaces, radius, spacing, useTypography, useThemeColors, useThemeStyles } from '../../theme';
+import { useLocale } from '../../context/LocaleContext';
+import { localizeMessage } from '../../locales/messages';
+import { AuthUser, getAvatarInitials, getUserDisplayName } from '../../types/auth';
+import { Button } from '../common';
+
+export interface ProfileHeaderProps {
+  user: AuthUser | null;
+  onUpdateDisplayName: (newName: string) => Promise<void>;
+  isUpdatingName?: boolean;
+}
+
+export function ProfileHeader({
+  user,
+  onUpdateDisplayName,
+  isUpdatingName = false,
+}: ProfileHeaderProps) {
+  const typography = useTypography();
+  const colors = useThemeColors();
+  const styles = useThemeStyles(createStyles);
+  const { t, locale } = useLocale();
+  const displayName = getUserDisplayName(user, t('profile.header.defaultUser'));
+  const email = user?.email ?? t('profile.header.emailUnavailable');
+  const initials = getAvatarInitials(displayName || email);
+  const isEmailVerified = Boolean(user?.email_confirmed_at || user?.confirmed_at);
+
+  const [isEditModalVisible, setIsEditModalVisible] = useState(false);
+  const [tempName, setTempName] = useState(displayName);
+  const [nameError, setNameError] = useState<'required' | null>(null);
+  const localizedNameError = nameError ? t('profile.header.nameRequired') : null;
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const localizedSubmitError = localizeMessage(submitError, locale, {
+    fallbackKey: 'messages.profile.saveNameFailed',
+  });
+
+  const handleOpenEditModal = () => {
+    setTempName(displayName);
+    setNameError(null);
+    setSubmitError(null);
+    setIsEditModalVisible(true);
+  };
+
+  const handleCloseEditModal = () => {
+    if (isUpdatingName) return;
+    setIsEditModalVisible(false);
+    setNameError(null);
+    setSubmitError(null);
+  };
+
+  const handleSaveName = async () => {
+    const trimmed = tempName.trim();
+    if (!trimmed) {
+      setNameError('required');
+      return;
+    }
+
+    setSubmitError(null);
+    setNameError(null);
+
+    try {
+      await onUpdateDisplayName(trimmed);
+      setIsEditModalVisible(false);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Error al guardar el nombre.';
+      setSubmitError(msg);
+    }
+  };
+
+  return (
+    <View style={styles.container}>
+      <View style={styles.card}>
+        <View style={styles.avatarSection}>
+          <View
+            style={styles.avatarCircle}
+            accessibilityRole="image"
+            accessibilityLabel={t('profile.header.avatarLabel', { initials })}
+            testID="profile-avatar-initials"
+          >
+            <Text style={[styles.avatarText, typography.headlineMd]}>{initials}</Text>
+          </View>
+        </View>
+
+        <View style={styles.infoSection}>
+          <View style={styles.nameRow}>
+            <Text
+              style={[styles.displayName, typography.headlineMd]}
+              numberOfLines={1}
+              accessibilityRole="header"
+              testID="profile-display-name"
+            >
+              {displayName}
+            </Text>
+            <Pressable
+              onPress={handleOpenEditModal}
+              style={({ pressed }) => [
+                styles.editNameButton,
+                pressed && styles.editNameButtonPressed,
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel={t('profile.header.editNameLabel')}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              testID="btn-edit-name"
+            >
+              <MaterialCommunityIcons name="pencil-outline" size={16} color={colors.primary} />
+            </Pressable>
+          </View>
+
+          <View style={styles.emailRow}>
+            <MaterialCommunityIcons name="at" size={14} color={colors.outline} />
+            <Text
+              style={[styles.emailText, typography.bodySm]}
+              numberOfLines={1}
+              testID="profile-email"
+            >
+              {email}
+            </Text>
+            {isEmailVerified ? (
+              <View
+                style={styles.verifiedBadge}
+                accessibilityLabel={t('profile.header.emailVerifiedLabel')}
+                testID="profile-email-badge"
+              >
+                <MaterialCommunityIcons name="check-circle" size={12} color={colors.success} />
+                <Text style={[styles.verifiedBadgeText, typography.labelSm]}>{t('profile.header.emailVerified')}</Text>
+              </View>
+            ) : (
+              <View
+                style={styles.unverifiedBadge}
+                accessibilityLabel={t('profile.header.emailUnverifiedLabel')}
+                testID="profile-email-badge"
+              >
+                <MaterialCommunityIcons name="clock-outline" size={12} color={colors.warning} />
+                <Text style={[styles.unverifiedBadgeText, typography.labelSm]}>{t('profile.header.emailUnverified')}</Text>
+              </View>
+            )}
+          </View>
+        </View>
+      </View>
+
+      {/* Modal para editar nombre de usuario */}
+      <Modal
+        visible={isEditModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={handleCloseEditModal}
+        testID="edit-name-modal"
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalOverlay}
+        >
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={handleCloseEditModal}
+            accessibilityLabel={t('profile.header.closeEditNameLabel')}
+          />
+
+          <View style={styles.dialogCard}>
+            <View style={styles.dialogHeader}>
+              <View style={styles.dialogIconBox}>
+                <MaterialCommunityIcons name="account" size={24} color={colors.primary} />
+              </View>
+              <Text style={[styles.dialogTitle, typography.headlineMd]}>
+                {t('profile.header.editNameTitle')}
+              </Text>
+            </View>
+
+            <Text style={[styles.dialogSubtitle, typography.bodySm]}>
+              {t('profile.header.editNameSubtitle')}
+            </Text>
+
+            {localizedSubmitError && (
+              <View style={styles.errorBox} testID="edit-name-submit-error">
+                <MaterialCommunityIcons name="alert-circle-outline" size={16} color={colors.error} />
+                <Text style={[styles.errorText, typography.bodySm]}>{localizedSubmitError}</Text>
+              </View>
+            )}
+
+            <View style={styles.inputContainer}>
+              <View
+                style={[
+                  styles.inputWrapper,
+                  nameError && styles.inputWrapperError,
+                ]}
+              >
+                <TextInput
+                  style={[styles.inputField, typography.bodyLg]}
+                  value={tempName}
+                  onChangeText={(val) => {
+                    setTempName(val);
+                    if (nameError) setNameError(null);
+                    if (submitError) setSubmitError(null);
+                  }}
+                  placeholder={t('profile.header.namePlaceholder')}
+                  placeholderTextColor={colors.textTertiary}
+                  autoCapitalize="words"
+                  autoCorrect={false}
+                  editable={!isUpdatingName}
+                  accessibilityLabel={t('profile.header.nameInputLabel')}
+                  testID="name-input"
+                />
+                {tempName.length > 0 && !isUpdatingName && (
+                  <Pressable
+                    onPress={() => setTempName('')}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    accessibilityLabel={t('profile.header.clearNameLabel')}
+                  >
+                    <MaterialCommunityIcons name="close-circle-outline" size={18} color={colors.outline} />
+                  </Pressable>
+                )}
+              </View>
+
+              {nameError && (
+                <Text style={[styles.fieldErrorText, typography.bodySm]} testID="edit-name-error">
+                  {localizedNameError}
+                </Text>
+              )}
+            </View>
+
+            <View style={styles.dialogActionsRow}>
+              <Button
+                testID="cancel-name-button"
+                title={t('common.cancel')}
+                variant="outline"
+                size="md"
+                onPress={handleCloseEditModal}
+                disabled={isUpdatingName}
+                style={styles.dialogCancelBtn}
+              />
+
+              <Button
+                testID="save-name-button"
+                title={isUpdatingName ? t('profile.header.saving') : t('common.save')}
+                variant="primary"
+                size="md"
+                onPress={handleSaveName}
+                disabled={isUpdatingName}
+                loading={isUpdatingName}
+                style={styles.dialogSaveBtn}
+                leftIcon={
+                  !isUpdatingName ? (
+                    <MaterialCommunityIcons name="check" size={16} color={colors.onPrimary} />
+                  ) : undefined
+                }
+              />
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+    </View>
+  );
+}
+
+const createStyles = (colors: AppColors) =>
+  StyleSheet.create({
+  container: {
+    width: '100%',
+  },
+  card: {
+    ...getAppSurfaces(colors).card,
+    padding: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  avatarSection: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: radius.full,
+    backgroundColor: colors.tertiary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(243, 201, 105, 0.4)',
+  },
+  avatarText: {
+    color: colors.onTertiary,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  infoSection: {
+    flex: 1,
+    minWidth: 0,
+    gap: 4,
+  },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  displayName: {
+    color: colors.textPrimary,
+    fontWeight: '700',
+    flexShrink: 1,
+  },
+  editNameButton: {
+    width: 28,
+    height: 28,
+    borderRadius: radius.full,
+    backgroundColor: 'rgba(91, 75, 138, 0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  editNameButtonPressed: {
+    backgroundColor: 'rgba(91, 75, 138, 0.16)',
+    transform: [{ scale: 0.95 }],
+  },
+  emailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    flexWrap: 'wrap',
+  },
+  emailText: {
+    color: colors.textSecondary,
+    flexShrink: 1,
+  },
+  verifiedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    backgroundColor: colors.successContainer,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: radius.full,
+    marginLeft: 4,
+  },
+  verifiedBadgeText: {
+    color: colors.success,
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  unverifiedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    backgroundColor: 'rgba(237, 108, 2, 0.12)',
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: radius.full,
+    marginLeft: 4,
+  },
+  unverifiedBadgeText: {
+    color: colors.warning,
+    fontSize: 10,
+    fontWeight: '700',
+  },
+
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: colors.overlay,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.margin,
+  },
+  dialogCard: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: colors.surface,
+    borderRadius: radius.xl,
+    padding: spacing.lg,
+    gap: spacing.md,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  dialogHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  dialogIconBox: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.full,
+    backgroundColor: 'rgba(91, 75, 138, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dialogTitle: {
+    color: colors.textPrimary,
+    fontWeight: '700',
+  },
+  dialogSubtitle: {
+    color: colors.textSecondary,
+    lineHeight: 18,
+  },
+  errorBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    backgroundColor: colors.errorContainer,
+    borderRadius: radius.md,
+    padding: spacing.sm,
+  },
+  errorText: {
+    color: colors.error,
+    flex: 1,
+  },
+  inputContainer: {
+    gap: 4,
+  },
+  inputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surfaceContainerLow,
+    borderRadius: radius.md,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.md,
+    minHeight: 48,
+  },
+  inputWrapperError: {
+    borderColor: colors.error,
+  },
+  inputField: {
+    flex: 1,
+    color: colors.textPrimary,
+    paddingVertical: 8,
+  },
+  fieldErrorText: {
+    color: colors.error,
+    marginTop: 2,
+  },
+  dialogActionsRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: spacing.xs,
+  },
+  dialogCancelBtn: {
+    flex: 1,
+  },
+  dialogSaveBtn: {
+    flex: 1.5,
+  },
+});

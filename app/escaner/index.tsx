@@ -1,0 +1,1725 @@
+/**
+ * FoodAI - Pantalla principal del Escáner Inteligente de Alimentos (Fase 3B).
+ * Flujo completo:
+ * 1. Captura con cámara o selección de galería con manejo robusto de permisos.
+ * 2. Vista previa y validación previa de imagen (< 8 MB, formatos JPG/PNG/WEBP).
+ * 3. Optimización automática y envío seguro a POST /api/ingredients/analyze.
+ * 4. Revisión interactiva de ingredientes detectados (corrección de nombres, cantidades requeridas, categorías, unidades, duplicados).
+ * 5. Guardado sincronizado en PantryContext sin persistencias duplicadas.
+ */
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  Image,
+  Keyboard,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+} from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
+import * as ImagePicker from 'expo-image-picker';
+import { Button, Card } from '../../src/components/common';
+import { DetectedIngredientCard } from '../../src/components/scanner';
+import { usePantry } from '../../src/context/PantryContext';
+import {
+  formatScannerDiagnostic,
+  scannerApi,
+  ScannerApiError,
+} from '../../src/services/api/scannerApi';
+import { AppColors, getAppSurfaces, radius, spacing, useAppTheme, useThemeStyles, useTypography } from '../../src/theme';
+import { IngredientCategory, IngredientUnit } from '../../src/types/pantry';
+import {
+  ScannedIngredientAction,
+  ScannedIngredientItem,
+  ScannerSaveSummary,
+  ScannerStep,
+  SelectedImage,
+} from '../../src/types/scanner';
+import {
+  inferMimeTypeFromUri,
+  prepareAndValidateImageForUpload,
+  validateImageCandidate,
+} from '../../src/utils/imageUtils';
+import {
+  areUnitsCompatibleForAddition,
+  canMergeScannedItem,
+  mapDetectedToScannedItems,
+  rematchScannedItemAfterRename,
+} from '../../src/utils/ingredientMapper';
+import {
+  getScannedItemSemanticWarnings,
+  getSemanticCheckSignature,
+  isScannedItemSemanticallyConfirmed,
+} from '../../src/utils/pantryValidation';
+import { returnToTab } from '../../src/utils/tabNavigation';
+import { useLocale } from '../../src/context/LocaleContext';
+import type { MessageKey } from '../../src/locales';
+import { localizeCodedError } from '../../src/locales/messages';
+
+export default function ScannerScreen() {
+  const typography = useTypography();
+  const router = useRouter();
+  const { colors } = useAppTheme();
+  const styles = useThemeStyles(createStyles);
+  const { t, tx, tp, locale } = useLocale();
+  const insets = useSafeAreaInsets();
+  const { width: windowWidth } = useWindowDimensions();
+  const { ingredients, addIngredient, mergeIngredientQuantity } = usePantry();
+
+  // Estados del flujo
+  const [step, setStep] = useState<ScannerStep>('capture');
+  const [selectedImage, setSelectedImage] = useState<SelectedImage | null>(null);
+  const [scannedItems, setScannedItems] = useState<ScannedIngredientItem[]>([]);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // Código estable del error de la API del escáner (Fase 28C-A): se traduce por código.
+  const [errorCode, setErrorCode] = useState<string | null>(null);
+  const localizedErrorMessage = localizeCodedError('scanner', errorCode, errorMessage, locale);
+  // Código de diagnóstico seguro (sin tokens ni URIs) para validar fallas en dispositivo físico
+  const [errorDiagnostic, setErrorDiagnostic] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  // Se guarda la clave (no el texto) para que el progreso siga el idioma activo.
+  const [analysisProgressKey, setAnalysisProgressText] = useState<MessageKey>(
+    'scanner.preparingImage'
+  );
+  const [saveSummary, setSaveSummary] = useState<ScannerSaveSummary | null>(null);
+  // Altura del teclado: el pie fijo se oculta y el contenido gana espacio para seguir siendo alcanzable
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  // Control de peticiones concurrentes, generación y cancelación
+  const isMountedRef = useRef<boolean>(true);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const isSubmittingRef = useRef<boolean>(false);
+  const activeRequestIdRef = useRef<number>(0);
+
+  // 1. Manejador de selección de imagen
+  const processSelectedAsset = async (asset: ImagePicker.ImagePickerAsset) => {
+    if (!isMountedRef.current) return;
+    setErrorMessage(null);
+    setErrorCode(null);
+    setErrorDiagnostic(null);
+    const mimeType = asset.mimeType || inferMimeTypeFromUri(asset.uri);
+    const candidateValidation = validateImageCandidate({
+      uri: asset.uri,
+      mimeType,
+      fileSize: asset.fileSize,
+      allowOversizedForOptimization: true,
+    });
+
+    if (!candidateValidation.isValid) {
+      if (!isMountedRef.current) return;
+      setErrorMessage(
+        candidateValidation.error ||
+          'Formato de imagen no permitido. Usa JPG, PNG o WEBP.'
+      );
+      setStep('error');
+      return;
+    }
+
+    const rawImage: SelectedImage = {
+      uri: asset.uri,
+      mimeType: candidateValidation.mimeType || 'image/jpeg',
+      fileName: asset.fileName || `alimento_${Date.now()}.jpg`,
+      fileSize: asset.fileSize,
+      width: asset.width,
+      height: asset.height,
+    };
+
+    if (!isMountedRef.current) return;
+    setSelectedImage(rawImage);
+    setStep('preview');
+  };
+
+  // Desmontaje seguro: abortar cualquier solicitud en vuelo y limpiar referencias
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      activeRequestIdRef.current += 1;
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+      isSubmittingRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const showSubscription = Keyboard.addListener('keyboardDidShow', (event) => {
+      setKeyboardHeight(event.endCoordinates.height);
+    });
+    const hideSubscription = Keyboard.addListener('keyboardDidHide', () => {
+      setKeyboardHeight(0);
+    });
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, []);
+
+  // 2. Tomar foto con la cámara
+  const handleLaunchCamera = async () => {
+    if (!isMountedRef.current) return;
+    setErrorMessage(null);
+
+    // En web la cámara puede no estar disponible como en un dispositivo móvil
+    if (Platform.OS === 'web') {
+      try {
+        const result = await ImagePicker.launchCameraAsync({
+          mediaTypes: ['images'],
+          allowsEditing: false,
+          quality: 0.85,
+        });
+
+        if (!isMountedRef.current) return;
+        if (!result.canceled && result.assets && result.assets.length > 0) {
+          await processSelectedAsset(result.assets[0]);
+        }
+      } catch {
+        if (!isMountedRef.current) return;
+        setErrorMessage(
+          'La cámara física no está disponible directamente en este navegador. Por favor selecciona una imagen desde tus archivos o galería.'
+        );
+      }
+      return;
+    }
+
+    try {
+      const permission = await ImagePicker.requestCameraPermissionsAsync();
+      if (!isMountedRef.current) return;
+      if (!permission.granted) {
+        setErrorMessage(
+          'No se otorgó permiso para acceder a la cámara. Puedes habilitarlo en los ajustes del dispositivo o elegir una imagen de tu galería.'
+        );
+        return;
+      }
+
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ['images'],
+        allowsEditing: false,
+        quality: 0.85,
+      });
+
+      if (!isMountedRef.current) return;
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        await processSelectedAsset(result.assets[0]);
+      }
+    } catch (err) {
+      if (!isMountedRef.current) return;
+      setErrorMessage(
+        err instanceof Error
+          ? err.message
+          : 'Ocurrió un error al intentar abrir la cámara.'
+      );
+    }
+  };
+
+  // 3. Seleccionar de la galería
+  const handleLaunchGallery = async () => {
+    if (!isMountedRef.current) return;
+    setErrorMessage(null);
+    try {
+      if (Platform.OS !== 'web') {
+        const permission =
+          await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (!isMountedRef.current) return;
+        if (!permission.granted) {
+          setErrorMessage(
+            'Se requiere permiso para acceder a tus fotos. Puedes activarlo en los ajustes del sistema.'
+          );
+          return;
+        }
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: false,
+        quality: 0.85,
+      });
+
+      if (!isMountedRef.current) return;
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        await processSelectedAsset(result.assets[0]);
+      }
+    } catch (err) {
+      if (!isMountedRef.current) return;
+      setErrorMessage(
+        err instanceof Error
+          ? err.message
+          : 'Ocurrió un error al seleccionar la imagen de la galería.'
+      );
+    }
+  };
+
+  // 4. Iniciar análisis con IA
+  const handleStartAnalysis = async () => {
+    if (!selectedImage) return;
+
+    // Asignar un token generacional único e incremental para esta petición
+    const requestId = ++activeRequestIdRef.current;
+    // Idioma fijado al iniciar el análisis: un cambio posterior no altera esta petición
+    const requestLocale = locale;
+
+    // Abortar cualquier petición previa en vuelo
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+    isSubmittingRef.current = true;
+
+    setStep('analyzing');
+    setErrorMessage(null);
+    setErrorCode(null);
+    setErrorDiagnostic(null);
+    setAnalysisProgressText('scanner.verifyingImage');
+
+    let analysisStage: 'prepare' | 'analyze' = 'prepare';
+
+    try {
+      // Pipeline estricto: validar formato, optimizar y comprobar tamaño final <= 8 MB
+      const uploadReady = await prepareAndValidateImageForUpload(selectedImage);
+
+      // Si la petición fue abortada o ya no es la activa, ignorar
+      if (
+        requestId !== activeRequestIdRef.current ||
+        !isMountedRef.current ||
+        controller.signal.aborted
+      ) {
+        return;
+      }
+
+      setAnalysisProgressText('scanner.analyzingWithAi');
+      analysisStage = 'analyze';
+      const detected = await scannerApi.analyzeIngredientsImage(uploadReady, {
+        signal: controller.signal,
+        locale: requestLocale,
+      });
+
+      if (
+        requestId !== activeRequestIdRef.current ||
+        !isMountedRef.current ||
+        controller.signal.aborted
+      ) {
+        return;
+      }
+
+      if (!detected || detected.length === 0) {
+        setErrorMessage(
+          'No se identificaron ingredientes claros en la imagen. Intenta tomar la foto más cerca de los alimentos o con mejor iluminación.'
+        );
+        setStep('error');
+        return;
+      }
+
+      // Mapeo a items de revisión con detección conservadora de duplicados en la despensa
+      const mapped = mapDetectedToScannedItems(detected, ingredients);
+
+      if (
+        requestId !== activeRequestIdRef.current ||
+        !isMountedRef.current ||
+        controller.signal.aborted
+      ) {
+        return;
+      }
+
+      setScannedItems(mapped);
+      setStep('review');
+    } catch (err) {
+      // Si la petición ya no es la activa o fue cancelada deliberadamente, no mutar UI
+      if (
+        requestId !== activeRequestIdRef.current ||
+        !isMountedRef.current ||
+        controller.signal.aborted ||
+        (err instanceof Error && err.name === 'AbortError')
+      ) {
+        return;
+      }
+
+      let msg =
+        'No se pudo completar el análisis de los alimentos. Intenta nuevamente.';
+      let diagnostic: string | null = null;
+      let code: string | null = null;
+      if (err instanceof ScannerApiError) {
+        msg = err.message;
+        code = err.code;
+        diagnostic = formatScannerDiagnostic(err);
+      } else if (err instanceof Error) {
+        msg = err.message;
+        // Los errores locales de validación/optimización de la imagen ocurren antes de cualquier envío
+        diagnostic = analysisStage === 'prepare' ? 'IMAGE_VALIDATION_FAILED (prepare)' : null;
+      }
+
+      setErrorMessage(msg);
+      setErrorCode(code);
+      setErrorDiagnostic(diagnostic);
+      setStep('error');
+    } finally {
+      // ÚNICAMENTE la petición activa puede limpiar las referencias y el cerrojo
+      if (requestId === activeRequestIdRef.current) {
+        isSubmittingRef.current = false;
+        if (abortControllerRef.current === controller) {
+          abortControllerRef.current = null;
+        }
+      }
+    }
+  };
+
+  // Cancelar análisis en curso
+  const handleCancelAnalysis = () => {
+    // Incrementar el token para invalidar respuestas tardías
+    activeRequestIdRef.current += 1;
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    isSubmittingRef.current = false;
+    setStep('preview');
+  };
+
+  // 5. Manejadores de edición en revisión
+  const handleToggleSelect = (id: string) => {
+    setScannedItems((prev) =>
+      prev.map((item) =>
+        item.id === id ? { ...item, isSelected: !item.isSelected } : item
+      )
+    );
+  };
+
+  // Renombrar recalcula la coincidencia con la despensa: un destino obsoleto nunca se conserva
+  // y un nuevo destino jamás se selecciona automáticamente para sumar (Fase 28C-B3.2).
+  const handleChangeName = (id: string, name: string) => {
+    setScannedItems((prev) =>
+      prev.map((item) =>
+        item.id === id ? rematchScannedItemAfterRename(item, name, ingredients) : item
+      )
+    );
+  };
+
+  const handleChangeQuantity = (id: string, quantity: number | null) => {
+    setScannedItems((prev) =>
+      prev.map((item) =>
+        item.id === id
+          ? {
+              ...item,
+              quantity,
+              needsReview:
+                quantity === null || item.unit === 'desconocida',
+            }
+          : item
+      )
+    );
+  };
+
+  const handleChangeUnit = (id: string, unit: IngredientUnit) => {
+    setScannedItems((prev) =>
+      prev.map((item) => {
+        if (item.id !== id) return item;
+
+        // Si se cambia a una unidad incompatible con el duplicado de la despensa,
+        // revertir de forma segura a 'create' para evitar sumas corruptas.
+        let nextAction = item.action;
+        if (item.duplicateMatch && item.action === 'add_to_existing') {
+          if (!areUnitsCompatibleForAddition(item.duplicateMatch.unit, unit)) {
+            nextAction = 'create';
+          }
+        }
+
+        return {
+          ...item,
+          unit,
+          action: nextAction,
+          needsReview:
+            item.quantity === null || unit === 'desconocida',
+        };
+      })
+    );
+  };
+
+  const handleChangeCategory = (id: string, category: IngredientCategory) => {
+    setScannedItems((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, category } : item))
+    );
+  };
+
+  const handleChangeAction = (id: string, action: ScannedIngredientAction) => {
+    setScannedItems((prev) =>
+      prev.map((item) => {
+        if (item.id !== id) return item;
+        // Nunca aceptar una suma sin destino vigente o con unidades incompatibles
+        if (action === 'add_to_existing' && !canMergeScannedItem(item)) return item;
+        return { ...item, action };
+      })
+    );
+  };
+
+  // Confirmación explícita de una combinación inusual; cualquier edición posterior la invalida
+  const handleConfirmWarnings = (id: string) => {
+    setScannedItems((prev) =>
+      prev.map((item) =>
+        item.id === id
+          ? { ...item, semanticReviewSignature: getSemanticCheckSignature(item) }
+          : item
+      )
+    );
+  };
+
+  const handleRemoveItem = (id: string) => {
+    setScannedItems((prev) => prev.filter((item) => item.id !== id));
+  };
+
+  const handleSelectAll = (select: boolean) => {
+    setScannedItems((prev) =>
+      prev.map((item) => ({ ...item, isSelected: select }))
+    );
+  };
+
+  // 6. Guardar ingredientes confirmados en PantryContext con protección de concurrencia y conversiones seguras
+  const handleConfirmAndSave = async () => {
+    if (!canSave || isSubmittingRef.current) return;
+
+    try {
+      isSubmittingRef.current = true;
+      setIsSaving(true);
+      setStep('saving');
+      setErrorMessage(null);
+
+      let savedCount = 0;
+      let updatedCount = 0;
+      let failedCount = 0;
+      const failedNames: string[] = [];
+
+      // Los ítems se procesan en secuencia. Cada suma sobre un alimento existente se calcula dentro de
+      // PantryContext contra el estado PERSISTIDO más reciente y en la sección serializada de la
+      // despensa (Fase 28B), nunca contra la instantánea de React tomada al revisar. Así se acumulan
+      // varias detecciones del mismo alimento y no se pierden mutaciones concurrentes.
+      for (const item of selectedItems) {
+        try {
+          if (
+            item.action === 'add_to_existing' &&
+            item.duplicateMatch &&
+            typeof item.quantity === 'number'
+          ) {
+            const targetId =
+              item.duplicateMatch.pantryIngredientId ||
+              (item.duplicateMatch as unknown as { id: string }).id;
+
+            const mergeResult = await mergeIngredientQuantity(
+              targetId,
+              item.quantity,
+              item.unit
+            );
+
+            if (mergeResult.status === 'merged') {
+              updatedCount += 1;
+            } else {
+              // 'incompatible_units': NUNCA sumar silenciosamente; se guarda como ítem separado.
+              // 'not_found': el registro ya no existe; se conserva lo escaneado como alimento nuevo.
+              await addIngredient({
+                name: item.name.trim(),
+                quantity: item.quantity,
+                unit: item.unit,
+                category: item.category,
+              });
+              savedCount += 1;
+            }
+          } else {
+            // Agregar nuevo ingrediente confirmado
+            if (typeof item.quantity === 'number') {
+              await addIngredient({
+                name: item.name.trim(),
+                quantity: item.quantity,
+                unit: item.unit,
+                category: item.category,
+              });
+              savedCount += 1;
+            }
+          }
+        } catch {
+          failedCount += 1;
+          failedNames.push(item.name);
+        }
+      }
+
+      setSaveSummary({
+        savedCount,
+        updatedCount,
+        failedCount,
+        failedNames,
+      });
+      setStep('completed');
+    } catch {
+      setErrorMessage(
+        'Ocurrió un error inesperado al guardar los alimentos en tu despensa.'
+      );
+      setStep('error');
+    } finally {
+      setIsSaving(false);
+      isSubmittingRef.current = false;
+    }
+  };
+
+  const handleResetScanner = () => {
+    activeRequestIdRef.current += 1;
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    isSubmittingRef.current = false;
+    setSelectedImage(null);
+    setScannedItems([]);
+    setErrorMessage(null);
+    setErrorCode(null);
+    setSaveSummary(null);
+    setStep('capture');
+  };
+
+  // Cálculos de revisión
+  const selectedItems = scannedItems.filter((i) => i.isSelected);
+  const itemsWithMissingQuantity = selectedItems.filter(
+    (i) => i.quantity === null || i.quantity <= 0
+  );
+  const itemsWithUnconfirmedWarnings = selectedItems.filter(
+    (i) =>
+      getScannedItemSemanticWarnings(i).length > 0 && !isScannedItemSemanticallyConfirmed(i)
+  );
+  const canSave =
+    selectedItems.length > 0 &&
+    itemsWithMissingQuantity.length === 0 &&
+    itemsWithUnconfirmedWarnings.length === 0 &&
+    !isSaving;
+  const allSelected = scannedItems.length > 0 && selectedItems.length === scannedItems.length;
+  const noneSelected = selectedItems.length === 0;
+
+  return (
+    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
+      {/* Encabezado propio: la referencia lleva un mosaico de ícono que el Header común no admite */}
+      <View style={styles.headerRow} testID="scanner-header">
+        <Pressable
+          onPress={() => {
+            if (step === 'review' || step === 'preview' || step === 'error') {
+              handleResetScanner();
+            } else {
+              router.back();
+            }
+          }}
+          accessibilityRole="button"
+          accessibilityLabel={t('scanner.back')}
+          accessibilityHint={t('scanner.backHint')}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          style={({ pressed }) => [styles.headerBack, pressed && styles.headerBackPressed]}
+        >
+          <MaterialCommunityIcons name="arrow-left" size={24} color={colors.textPrimary} />
+        </Pressable>
+        <View
+          style={styles.headerIconTile}
+          testID="scanner-header-icon"
+          accessible={false}
+          importantForAccessibility="no-hide-descendants"
+        >
+          <MaterialCommunityIcons name="scan-helper" size={30} color="#FFFFFF" />
+          <View style={styles.headerIconCamera}>
+            <MaterialCommunityIcons name="camera" size={14} color="#FFFFFF" />
+          </View>
+        </View>
+        <View style={styles.headerTextCol}>
+          <Text
+            style={[
+              styles.headerTitle,
+              typography.headlineMd,
+              windowWidth < 340 && styles.headerTitleCompact,
+            ]}
+            accessibilityRole="header"
+          >
+            {t('scanner.title')}
+          </Text>
+          <Text style={[styles.headerSubtitle, typography.bodySm]}>
+            {t('scanner.subtitle')}
+          </Text>
+        </View>
+      </View>
+
+      <ScrollView
+        contentContainerStyle={[
+          styles.scrollContent,
+          keyboardHeight > 0 && { paddingBottom: keyboardHeight + spacing.xl },
+        ]}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+        testID="scanner-scroll-view"
+      >
+        {/* Banner general de error */}
+        {localizedErrorMessage && step !== 'error' && (
+          <View style={styles.errorBanner} testID="scanner-top-error-banner">
+            <MaterialCommunityIcons name="alert-circle-outline" size={20} color={colors.error} />
+            <Text style={[styles.errorBannerText, typography.bodySm]}>
+              {localizedErrorMessage}
+            </Text>
+            <Pressable
+              onPress={() => {
+                setErrorMessage(null);
+                setErrorCode(null);
+              }}
+              accessibilityRole="button"
+              accessibilityLabel={t('scanner.dismissError')}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <MaterialCommunityIcons name="close" size={16} color={colors.error} />
+            </Pressable>
+          </View>
+        )}
+
+        {/* =========================================================================
+            ESTADO 1: CAPTURA INICIAL
+           ========================================================================= */}
+        {step === 'capture' && (
+          <View style={styles.captureContainer} testID="scanner-capture-state">
+            <Card variant="elevated" style={styles.viewfinderCard}>
+              <View style={styles.viewfinderBox}>
+                <Image
+                  source={require('../../assets/images/scanner-viewfinder.jpg')}
+                  style={styles.viewfinderImage}
+                  resizeMode="cover"
+                  accessibilityLabel={t('scanner.viewfinderLabel')}
+                />
+                <View style={styles.viewfinderReticleOverlay}>
+                  <View
+                    style={styles.viewfinderFrame}
+                    pointerEvents="none"
+                    accessible={false}
+                    importantForAccessibility="no-hide-descendants"
+                  >
+                    <View style={[styles.viewfinderCorner, styles.cornerTopLeft]} />
+                    <View style={[styles.viewfinderCorner, styles.cornerTopRight]} />
+                    <View style={[styles.viewfinderCorner, styles.cornerBottomLeft]} />
+                    <View style={[styles.viewfinderCorner, styles.cornerBottomRight]} />
+                  </View>
+                  <View style={styles.viewfinderReticle}>
+                    <MaterialCommunityIcons
+                      name="camera-outline"
+                      size={36}
+                      color={colors.primary}
+                    />
+                  </View>
+                  <Text
+                    style={[
+                      styles.viewfinderReticleText,
+                      typography.labelMd,
+                    ]}
+                  >
+                    {t('scanner.centerFood')}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.captureActions}>
+                <Button
+                  testID="scanner-take-photo-button"
+                  title={t('scanner.takePhoto')}
+                  variant="primary"
+                  size="lg"
+                  fullWidth
+                  onPress={() => { void handleLaunchCamera(); }}
+                  accessibilityLabel={t('scanner.takePhotoLabel')}
+                  leftIcon={
+                    <MaterialCommunityIcons
+                      name="camera-plus-outline"
+                      size={20}
+                      color={colors.onPrimary}
+                    />
+                  }
+                />
+
+                <Button
+                  testID="scanner-gallery-button"
+                  title={t('scanner.gallery')}
+                  variant="outline"
+                  size="md"
+                  fullWidth
+                  onPress={() => { void handleLaunchGallery(); }}
+                  accessibilityLabel={t('scanner.galleryLabel')}
+                  leftIcon={
+                    <MaterialCommunityIcons
+                      name="image-multiple-outline"
+                      size={20}
+                      color={colors.primary}
+                    />
+                  }
+                />
+              </View>
+            </Card>
+
+            {/* Consejos para una buena captura */}
+            <Card variant="flat" style={styles.tipsCard}>
+              <View style={styles.tipsHeaderRow}>
+                <View style={styles.tipsIconCircle}>
+                  <MaterialCommunityIcons name="lightbulb-on-outline" size={18} color={colors.primary} />
+                </View>
+                <Text style={[styles.tipsTitle, typography.headlineMd]}>
+                  {t('scanner.tipsTitle')}
+                </Text>
+              </View>
+              <View style={styles.tipItem}>
+                <MaterialCommunityIcons
+                  name="check-circle-outline"
+                  size={16}
+                  color={colors.primary}
+                />
+                <Text style={[styles.tipText, typography.bodySm]}>
+                  {t('scanner.tip1')}
+                </Text>
+              </View>
+              <View style={styles.tipItem}>
+                <MaterialCommunityIcons
+                  name="check-circle-outline"
+                  size={16}
+                  color={colors.primary}
+                />
+                <Text style={[styles.tipText, typography.bodySm]}>
+                  {t('scanner.tip2')}
+                </Text>
+              </View>
+              <View style={styles.tipItem}>
+                <MaterialCommunityIcons
+                  name="check-circle-outline"
+                  size={16}
+                  color={colors.primary}
+                />
+                <Text style={[styles.tipText, typography.bodySm]}>
+                  {t('scanner.tip3')}
+                </Text>
+              </View>
+            </Card>
+          </View>
+        )}
+
+        {/* =========================================================================
+            ESTADO 2: VISTA PREVIA DE IMAGEN
+           ========================================================================= */}
+        {step === 'preview' && selectedImage && (
+          <View style={styles.previewContainer} testID="scanner-preview-state">
+            <Card variant="elevated" style={styles.previewCard}>
+              <View style={styles.previewImageBox}>
+                <Image
+                  source={{ uri: selectedImage.uri }}
+                  style={styles.previewImage}
+                  resizeMode="cover"
+                  accessibilityLabel={t('scanner.previewImageLabel')}
+                />
+              </View>
+
+              <View style={styles.previewInfo}>
+                <View style={styles.previewBadgeRow}>
+                  <MaterialCommunityIcons name="check" size={16} color={colors.primary} />
+                  <Text style={[styles.previewBadgeText, typography.labelSm]}>
+                    {t('scanner.photoReady')}
+                  </Text>
+                </View>
+                <Text style={[styles.previewDesc, typography.bodySm]}>
+                  {t('scanner.previewDesc')}
+                </Text>
+              </View>
+
+              <View style={styles.previewButtonsRow}>
+                <Button
+                  testID="scanner-analyze-button"
+                  title={t('scanner.analyze')}
+                  variant="primary"
+                  size="lg"
+                  fullWidth
+                  onPress={() => { void handleStartAnalysis(); }}
+                  leftIcon={
+                    <MaterialCommunityIcons
+                      name="creation"
+                      size={20}
+                      color={colors.onPrimary}
+                    />
+                  }
+                  accessibilityLabel={t('scanner.analyzeLabel')}
+                />
+
+                <View style={styles.secondaryButtonsRow}>
+                  <Button
+                    testID="scanner-retake-button"
+                    title={t('scanner.changePhoto')}
+                    variant="outline"
+                    size="md"
+                    style={{ flex: 1 }}
+                    onPress={() => { void handleLaunchGallery(); }}
+                    accessibilityLabel={t('scanner.changePhotoLabel')}
+                  />
+                  <Button
+                    testID="scanner-cancel-preview-button"
+                    title={t('common.cancel')}
+                    variant="ghost"
+                    size="md"
+                    style={{ flex: 1 }}
+                    onPress={handleResetScanner}
+                    accessibilityLabel={t('scanner.cancelPreviewLabel')}
+                  />
+                </View>
+              </View>
+            </Card>
+          </View>
+        )}
+
+        {/* =========================================================================
+            ESTADO 3: ANALIZANDO CON IA
+           ========================================================================= */}
+        {step === 'analyzing' && (
+          <View style={styles.analyzingContainer} testID="scanner-analyzing-state">
+            <Card variant="elevated" style={styles.analyzingCard}>
+              <View style={styles.analyzingSpinnerBox}>
+                <ActivityIndicator size="large" color={colors.primary} />
+              </View>
+
+              <Text style={[styles.analyzingTitle, typography.headlineMd]}>
+                {t('scanner.recognizing')}
+              </Text>
+
+              <Text style={[styles.analyzingProgress, typography.bodyMd]}>
+                {tx(analysisProgressKey)}
+              </Text>
+
+              <Text style={[styles.analyzingSubtext, typography.bodySm]}>
+                {t('scanner.analyzingHint')}
+              </Text>
+
+              <Button
+                testID="scanner-abort-button"
+                title={t('scanner.cancelAnalysis')}
+                variant="outline"
+                size="sm"
+                onPress={handleCancelAnalysis}
+                accessibilityLabel={t('scanner.cancelAnalysisLabel')}
+              />
+            </Card>
+          </View>
+        )}
+
+        {/* =========================================================================
+            ESTADO 4: REVISIÓN Y CONFIRMACIÓN DE INGREDIENTES
+           ========================================================================= */}
+        {step === 'review' && (
+          <View style={styles.reviewContainer} testID="scanner-review-state">
+            {/* Encabezado del resultado: conteo dinámico y selección masiva compacta */}
+            <View style={styles.reviewIntro}>
+              <View style={styles.reviewTitleRow}>
+                <View style={styles.reviewHeadingBlock} testID="scanner-review-heading">
+                  <Text
+                    style={[
+                      styles.reviewHeading,
+                      typography.headlineMd,
+                      windowWidth < 400 && styles.reviewHeadingCompact,
+                    ]}
+                    accessibilityRole="header"
+                  >
+                    {tp('scanner.detectedCount', scannedItems.length)}
+                  </Text>
+                </View>
+                <View style={styles.selectLinksRow}>
+                  <Pressable
+                    testID="scanner-select-all-button"
+                    onPress={() => handleSelectAll(true)}
+                    style={({ pressed }) => [styles.selectLink, pressed && styles.selectLinkPressed]}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('scanner.selectAllLabel')}
+                    accessibilityState={{ selected: allSelected }}
+                  >
+                    <Text style={[styles.selectLinkText, typography.labelLg]}>{t('scanner.all')}</Text>
+                  </Pressable>
+                  <View style={styles.selectLinkDivider} />
+                  <Pressable
+                    testID="scanner-deselect-all-button"
+                    onPress={() => handleSelectAll(false)}
+                    style={({ pressed }) => [styles.selectLink, pressed && styles.selectLinkPressed]}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('scanner.deselectAllLabel')}
+                    accessibilityState={{ selected: noneSelected }}
+                  >
+                    <Text style={[styles.selectLinkText, typography.labelLg]}>{t('scanner.none')}</Text>
+                  </Pressable>
+                </View>
+              </View>
+              <Text style={[styles.reviewSubheading, typography.bodyMd]}>
+                {t('scanner.reviewSubheading')}
+              </Text>
+            </View>
+
+            {/* Aviso si faltan cantidades */}
+            {itemsWithMissingQuantity.length > 0 && (
+              <View
+                style={styles.missingQuantityBanner}
+                testID="scanner-missing-quantity-notice"
+              >
+                <MaterialCommunityIcons name="alert-outline" size={18} color={colors.demoBadgeText} />
+                <Text style={[styles.missingQuantityText, typography.bodySm]}>
+                  {tp('scanner.missingQuantity', itemsWithMissingQuantity.length)}
+                </Text>
+              </View>
+            )}
+
+            {/* Aviso si hay combinaciones inusuales sin confirmar */}
+            {itemsWithUnconfirmedWarnings.length > 0 && (
+              <View
+                style={styles.missingQuantityBanner}
+                testID="scanner-semantic-warning-notice"
+              >
+                <MaterialCommunityIcons name="alert-outline" size={18} color={colors.demoBadgeText} />
+                <Text style={[styles.missingQuantityText, typography.bodySm]}>
+                  {tp('scanner.unconfirmedWarnings', itemsWithUnconfirmedWarnings.length)}
+                </Text>
+              </View>
+            )}
+
+            {/* Lista de tarjetas interactivas */}
+            <View style={styles.cardsList}>
+              {scannedItems.map((item) => (
+                <DetectedIngredientCard
+                  key={item.id}
+                  item={item}
+                  onToggleSelect={handleToggleSelect}
+                  onChangeName={handleChangeName}
+                  onChangeQuantity={handleChangeQuantity}
+                  onChangeUnit={handleChangeUnit}
+                  onChangeCategory={handleChangeCategory}
+                  onChangeAction={handleChangeAction}
+                  onRemove={handleRemoveItem}
+                  onConfirmWarnings={handleConfirmWarnings}
+                />
+              ))}
+            </View>
+          </View>
+        )}
+
+        {/* =========================================================================
+            ESTADO 5: GUARDANDO EN DESPENSA
+           ========================================================================= */}
+        {step === 'saving' && (
+          <View style={styles.analyzingContainer} testID="scanner-saving-state">
+            <Card variant="elevated" style={styles.analyzingCard}>
+              <ActivityIndicator size="large" color={colors.primary} />
+              <Text style={[styles.analyzingTitle, typography.headlineMd]}>
+                {t('scanner.savingTitle')}
+              </Text>
+              <Text style={[styles.analyzingProgress, typography.bodyMd]}>
+                {t('scanner.savingDesc')}
+              </Text>
+            </Card>
+          </View>
+        )}
+
+        {/* =========================================================================
+            ESTADO 6: COMPLETADO CON ÉXITO
+           ========================================================================= */}
+        {step === 'completed' && saveSummary && (
+          <View style={styles.completedContainer} testID="scanner-completed-state">
+            <Card variant="elevated" style={styles.completedCard}>
+              <View style={styles.successIconBox}>
+                <MaterialCommunityIcons name="check-circle" size={54} color={colors.success} />
+              </View>
+
+              <Text style={[styles.completedTitle, typography.headlineMd]}>
+                {t('scanner.completedTitle')}
+              </Text>
+
+              <Text style={[styles.completedDesc, typography.bodyMd]}>
+                {t('scanner.completedDesc')}
+              </Text>
+
+              <View style={styles.summaryStatsBox}>
+                {saveSummary.savedCount > 0 && (
+                  <View style={styles.statRow}>
+                    <MaterialCommunityIcons name="plus-circle-outline" size={18} color={colors.primary} />
+                    <Text style={[styles.statText, typography.bodyMd]}>
+                      <Text style={{ fontWeight: '700' }}>{saveSummary.savedCount}</Text>
+                      {tp('scanner.savedSuffix', saveSummary.savedCount)}
+                    </Text>
+                  </View>
+                )}
+
+                {saveSummary.updatedCount > 0 && (
+                  <View style={styles.statRow}>
+                    <MaterialCommunityIcons name="sync" size={18} color={colors.tertiary} />
+                    <Text style={[styles.statText, typography.bodyMd]}>
+                      <Text style={{ fontWeight: '700' }}>{saveSummary.updatedCount}</Text>
+                      {tp('scanner.updatedSuffix', saveSummary.updatedCount)}
+                    </Text>
+                  </View>
+                )}
+
+                {saveSummary.failedCount > 0 && (
+                  <View style={styles.statRow}>
+                    <MaterialCommunityIcons name="alert-circle" size={18} color={colors.error} />
+                    <Text style={[styles.statText, typography.bodySm, { color: colors.error }]}>
+                      {t('scanner.failedSummary', {
+                        count: saveSummary.failedCount,
+                        names: saveSummary.failedNames.join(', '),
+                      })}
+                    </Text>
+                  </View>
+                )}
+              </View>
+
+              <View style={styles.completedButtons}>
+                <Button
+                  testID="scanner-go-to-pantry-button"
+                  title={t('scanner.goToPantry')}
+                  variant="primary"
+                  size="lg"
+                  fullWidth
+                  onPress={() => returnToTab(router, '/(tabs)/despensa')}
+                  leftIcon={
+                    <MaterialCommunityIcons
+                      name="fridge-outline"
+                      size={20}
+                      color={colors.onPrimary}
+                    />
+                  }
+                  accessibilityLabel={t('scanner.goToPantryLabel')}
+                />
+
+                <Button
+                  testID="scanner-scan-again-button"
+                  title={t('scanner.scanMore')}
+                  variant="outline"
+                  size="md"
+                  fullWidth
+                  onPress={handleResetScanner}
+                  leftIcon={
+                    <MaterialCommunityIcons
+                      name="camera-outline"
+                      size={20}
+                      color={colors.primary}
+                    />
+                  }
+                  accessibilityLabel={t('scanner.scanMoreLabel')}
+                />
+
+                <Button
+                  testID="scanner-go-home-button"
+                  title={t('scanner.goHome')}
+                  variant="ghost"
+                  size="md"
+                  fullWidth
+                  onPress={() => returnToTab(router, '/(tabs)')}
+                  accessibilityLabel={t('scanner.goHomeLabel')}
+                />
+              </View>
+            </Card>
+          </View>
+        )}
+
+        {/* =========================================================================
+            ESTADO 7: ERROR CON OPCIONES DE REINTENTO
+           ========================================================================= */}
+        {step === 'error' && (
+          <View style={styles.errorStateContainer} testID="scanner-error-state">
+            <Card variant="outlined" style={styles.errorStateCard}>
+              <View style={styles.errorIconBox}>
+                <MaterialCommunityIcons name="alert-circle-outline" size={48} color={colors.error} />
+              </View>
+
+              <Text style={[styles.errorStateTitle, typography.headlineMd]}>
+                {t('scanner.errorTitle')}
+              </Text>
+
+              <Text style={[styles.errorStateDesc, typography.bodyMd]}>
+                {localizedErrorMessage || t('scanner.errorDefault')}
+              </Text>
+
+              {errorDiagnostic && (
+                <Text
+                  testID="scanner-error-diagnostic"
+                  style={[styles.errorStateDiagnostic, typography.labelSm]}
+                >
+                  {t('scanner.diagnosticLabel')}{errorDiagnostic}
+                </Text>
+              )}
+
+              <View style={styles.errorStateButtons}>
+                {selectedImage && (
+                  <Button
+                    testID="scanner-retry-analysis-button"
+                    title={t('scanner.retryAnalysis')}
+                    variant="primary"
+                    size="lg"
+                    fullWidth
+                    onPress={() => { void handleStartAnalysis(); }}
+                    leftIcon={
+                      <MaterialCommunityIcons
+                        name="refresh"
+                        size={20}
+                        color={colors.onPrimary}
+                      />
+                    }
+                  />
+                )}
+
+                <Button
+                  testID="scanner-retry-pick-button"
+                  title={t('scanner.pickAnother')}
+                  variant="outline"
+                  size="md"
+                  fullWidth
+                  onPress={handleResetScanner}
+                  leftIcon={
+                    <MaterialCommunityIcons
+                      name="camera-outline"
+                      size={20}
+                      color={colors.primary}
+                    />
+                  }
+                />
+
+                <Button
+                  testID="scanner-cancel-error-button"
+                  title={t('scanner.cancelAndBack')}
+                  variant="ghost"
+                  size="md"
+                  fullWidth
+                  onPress={() => router.back()}
+                />
+              </View>
+            </Card>
+          </View>
+        )}
+      </ScrollView>
+
+      {/*
+        Acciones de guardado fijas al pie, como en la referencia. Se usan Pressable propios porque el
+        Button común tiene altura fija y una sola línea, y recortaría el texto a 320 dp o con fuente grande.
+      */}
+      {step === 'review' && keyboardHeight === 0 && (
+        <View
+          style={[styles.reviewFooter, { paddingBottom: Math.max(insets.bottom, spacing.sm + 4) }]}
+          testID="scanner-review-footer"
+        >
+          <Pressable
+            testID="scanner-confirm-save-button"
+            disabled={!canSave}
+            onPress={() => { void handleConfirmAndSave(); }}
+            accessibilityRole="button"
+            accessibilityLabel={t('scanner.confirmSaveLabel')}
+            accessibilityState={{ disabled: !canSave }}
+            style={({ pressed }) => [
+              styles.saveAction,
+              canSave ? styles.saveActionEnabled : styles.saveActionDisabled,
+              pressed && canSave && styles.actionPressed,
+            ]}
+          >
+            <MaterialCommunityIcons
+              name="content-save-outline"
+              size={22}
+              color={canSave ? colors.onPrimary : colors.textSecondary}
+            />
+            <Text
+              style={[
+                styles.saveActionText,
+                typography.labelLg,
+                !canSave && styles.saveActionTextDisabled,
+              ]}
+            >
+              {selectedItems.length === 0
+                ? t('scanner.selectAtLeastOne')
+                : itemsWithMissingQuantity.length > 0
+                ? t('scanner.defineQuantities')
+                : itemsWithUnconfirmedWarnings.length > 0
+                ? t('scanner.reviewUnits')
+                : tp('scanner.saveCount', selectedItems.length)}
+            </Text>
+          </Pressable>
+
+          <Pressable
+            testID="scanner-retake-from-review-button"
+            onPress={handleResetScanner}
+            accessibilityRole="button"
+            accessibilityLabel={t('scanner.discardLabel')}
+            style={({ pressed }) => [styles.discardAction, pressed && styles.actionPressed]}
+          >
+            <MaterialCommunityIcons name="camera-outline" size={20} color={colors.primary} />
+            <Text style={[styles.discardActionText, typography.labelLg]}>
+              {t('scanner.discard')}
+            </Text>
+          </Pressable>
+        </View>
+      )}
+    </SafeAreaView>
+  );
+}
+
+const createStyles = (colors: AppColors) => {
+  const surfaces = getAppSurfaces(colors);
+  return StyleSheet.create({
+    safeArea: {
+      flex: 1,
+      ...surfaces.canvas,
+    },
+    headerRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm + 4,
+      paddingHorizontal: spacing.margin,
+      paddingVertical: spacing.sm,
+      minHeight: 56,
+    },
+    headerBack: {
+      width: 44,
+      height: 44,
+      marginLeft: -spacing.sm,
+      marginRight: -spacing.xs,
+      borderRadius: radius.full,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    headerBackPressed: {
+      backgroundColor: colors.surfaceContainer,
+    },
+    headerIconTile: {
+      width: 48,
+      height: 48,
+      borderRadius: radius.lg,
+      alignItems: 'center',
+      justifyContent: 'center',
+      ...surfaces.brand,
+    },
+    headerIconCamera: {
+      position: 'absolute',
+    },
+    headerTextCol: {
+      flex: 1,
+      minWidth: 0,
+    },
+    headerTitle: {
+      color: colors.textPrimary,
+      fontWeight: '700',
+    },
+    headerTitleCompact: {
+      fontSize: 18,
+      lineHeight: 24,
+    },
+    headerSubtitle: {
+      color: colors.textSecondary,
+    },
+    scrollContent: {
+      padding: spacing.margin,
+      paddingBottom: spacing.xxl + 20,
+      gap: spacing.md,
+    },
+    errorBanner: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.xs,
+      backgroundColor: colors.errorContainer,
+      padding: spacing.sm,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      borderColor: colors.error,
+    },
+    errorBannerText: {
+      color: colors.onErrorContainer,
+      flex: 1,
+    },
+    captureContainer: {
+      gap: spacing.md,
+    },
+    viewfinderCard: {
+      backgroundColor: colors.surface,
+      padding: spacing.md,
+      gap: spacing.md,
+    },
+    viewfinderBox: {
+      width: '100%',
+      height: 300,
+      borderRadius: radius.lg + 4,
+      overflow: 'hidden',
+      position: 'relative',
+      backgroundColor: '#1C1C19',
+    },
+    viewfinderImage: {
+      width: '100%',
+      height: '100%',
+      opacity: 0.9,
+    },
+    viewfinderReticleOverlay: {
+      ...StyleSheet.absoluteFill,
+      backgroundColor: 'rgba(28, 28, 25, 0.38)',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: spacing.xs,
+    },
+    viewfinderReticle: {
+      width: 72,
+      height: 72,
+      borderRadius: radius.full,
+      backgroundColor: colors.surface,
+      alignItems: 'center',
+      justifyContent: 'center',
+      elevation: 4,
+      borderWidth: 6,
+      borderColor: 'rgba(255, 255, 255, 0.4)',
+    },
+    viewfinderReticleText: {
+      color: '#FFFFFF',
+      fontWeight: '700',
+      textShadowColor: 'rgba(0, 0, 0, 0.75)',
+      textShadowOffset: { width: 0, height: 1 },
+      textShadowRadius: 3,
+    },
+    captureActions: {
+      gap: spacing.xs,
+    },
+    viewfinderFrame: {
+      position: 'absolute',
+      top: '12%',
+      bottom: '12%',
+      left: '9%',
+      right: '9%',
+    },
+    viewfinderCorner: {
+      position: 'absolute',
+      width: 30,
+      height: 30,
+      borderColor: 'rgba(252, 249, 244, 0.92)',
+    },
+    cornerTopLeft: {
+      top: 0,
+      left: 0,
+      borderTopWidth: 3,
+      borderLeftWidth: 3,
+      borderTopLeftRadius: 14,
+    },
+    cornerTopRight: {
+      top: 0,
+      right: 0,
+      borderTopWidth: 3,
+      borderRightWidth: 3,
+      borderTopRightRadius: 14,
+    },
+    cornerBottomLeft: {
+      bottom: 0,
+      left: 0,
+      borderBottomWidth: 3,
+      borderLeftWidth: 3,
+      borderBottomLeftRadius: 14,
+    },
+    cornerBottomRight: {
+      bottom: 0,
+      right: 0,
+      borderBottomWidth: 3,
+      borderRightWidth: 3,
+      borderBottomRightRadius: 14,
+    },
+    tipsIconCircle: {
+      width: 32,
+      height: 32,
+      borderRadius: radius.full,
+      backgroundColor: colors.primaryFixed,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    tipsCard: {
+      backgroundColor: colors.surfaceContainerLow,
+      padding: spacing.md,
+      gap: spacing.sm,
+    },
+    tipsHeaderRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.xs,
+    },
+    tipsTitle: {
+      color: colors.textPrimary,
+      fontWeight: '700',
+    },
+    tipItem: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: spacing.xs,
+    },
+    tipText: {
+      color: colors.textSecondary,
+      flex: 1,
+      lineHeight: 18,
+    },
+    previewContainer: {
+      gap: spacing.md,
+    },
+    previewCard: {
+      backgroundColor: colors.surface,
+      padding: spacing.md,
+      gap: spacing.md,
+    },
+    previewImageBox: {
+      width: '100%',
+      height: 260,
+      borderRadius: radius.lg,
+      overflow: 'hidden',
+      backgroundColor: colors.surfaceContainerLow,
+    },
+    previewImage: {
+      width: '100%',
+      height: '100%',
+    },
+    previewInfo: {
+      gap: 4,
+    },
+    previewBadgeRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
+    previewBadgeText: {
+      color: colors.primary,
+      fontWeight: '700',
+    },
+    previewDesc: {
+      color: colors.textSecondary,
+    },
+    previewButtonsRow: {
+      gap: spacing.xs,
+    },
+    secondaryButtonsRow: {
+      flexDirection: 'row',
+      gap: spacing.xs,
+    },
+    analyzingContainer: {
+      paddingVertical: spacing.xl,
+    },
+    analyzingCard: {
+      backgroundColor: colors.surface,
+      padding: spacing.xl,
+      alignItems: 'center',
+      gap: spacing.md,
+    },
+    analyzingSpinnerBox: {
+      width: 68,
+      height: 68,
+      borderRadius: radius.full,
+      backgroundColor: colors.surfaceContainerLow,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    analyzingTitle: {
+      color: colors.textPrimary,
+      fontWeight: '700',
+      textAlign: 'center',
+    },
+    analyzingProgress: {
+      color: colors.primary,
+      fontWeight: '600',
+      textAlign: 'center',
+    },
+    analyzingSubtext: {
+      color: colors.textSecondary,
+      textAlign: 'center',
+      maxWidth: 280,
+    },
+    reviewContainer: {
+      gap: spacing.md,
+    },
+    reviewIntro: {
+      gap: 2,
+    },
+    reviewTitleRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      columnGap: spacing.sm,
+    },
+    reviewHeadingBlock: {
+      flexGrow: 1,
+      flexShrink: 1,
+      minWidth: 0,
+    },
+    reviewHeading: {
+      color: colors.textPrimary,
+      fontWeight: '700',
+    },
+    reviewHeadingCompact: {
+      fontSize: 18,
+      lineHeight: 24,
+    },
+    reviewSubheading: {
+      color: colors.textSecondary,
+    },
+    selectLinksRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 2,
+    },
+    selectLink: {
+      minHeight: 44,
+      minWidth: 44,
+      paddingHorizontal: 2,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    selectLinkPressed: {
+      opacity: 0.6,
+    },
+    selectLinkText: {
+      color: colors.primary,
+    },
+    selectLinkDivider: {
+      width: 1,
+      height: 18,
+      backgroundColor: colors.controlBorder,
+    },
+    missingQuantityBanner: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      backgroundColor: colors.demoBadgeBackground,
+      paddingVertical: spacing.sm + 2,
+      paddingHorizontal: spacing.sm + 4,
+      borderRadius: radius.lg,
+    },
+    missingQuantityText: {
+      color: colors.demoBadgeText,
+      flex: 1,
+      lineHeight: 18,
+    },
+    cardsList: {
+      gap: spacing.md,
+    },
+    reviewFooter: {
+      gap: spacing.sm,
+      paddingHorizontal: spacing.margin,
+      paddingTop: spacing.sm + 4,
+      ...surfaces.dock,
+      borderTopLeftRadius: radius.xl,
+      borderTopRightRadius: radius.xl,
+      borderBottomWidth: 0,
+    },
+    saveAction: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: spacing.sm,
+      minHeight: 54,
+      paddingVertical: spacing.sm,
+      paddingHorizontal: spacing.md,
+      borderRadius: radius.lg + 2,
+    },
+    saveActionEnabled: {
+      ...surfaces.cta,
+    },
+    saveActionDisabled: {
+      backgroundColor: colors.surfaceContainerHigh,
+    },
+    saveActionText: {
+      flexShrink: 1,
+      color: colors.onPrimary,
+      fontWeight: '700',
+      fontSize: 15,
+      textAlign: 'center',
+    },
+    saveActionTextDisabled: {
+      color: colors.textSecondary,
+    },
+    discardAction: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: spacing.sm,
+      minHeight: 48,
+      paddingVertical: spacing.xs,
+      paddingHorizontal: spacing.md,
+      borderRadius: radius.lg + 2,
+      borderWidth: 1.5,
+      borderColor: colors.fieldBorder,
+    },
+    discardActionText: {
+      flexShrink: 1,
+      color: colors.textPrimary,
+      textAlign: 'center',
+    },
+    actionPressed: {
+      opacity: 0.82,
+    },
+    completedContainer: {
+      paddingVertical: spacing.lg,
+    },
+    completedCard: {
+      backgroundColor: colors.surface,
+      padding: spacing.xl,
+      alignItems: 'center',
+      gap: spacing.md,
+    },
+    successIconBox: {
+      marginBottom: spacing.xs,
+    },
+    completedTitle: {
+      color: colors.textPrimary,
+      fontWeight: '700',
+      textAlign: 'center',
+    },
+    completedDesc: {
+      color: colors.textSecondary,
+      textAlign: 'center',
+      lineHeight: 22,
+    },
+    summaryStatsBox: {
+      width: '100%',
+      backgroundColor: colors.surfaceContainerLow,
+      padding: spacing.md,
+      borderRadius: radius.md,
+      gap: spacing.xs,
+    },
+    statRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.xs,
+    },
+    statText: {
+      color: colors.textPrimary,
+      flex: 1,
+    },
+    completedButtons: {
+      width: '100%',
+      gap: spacing.xs,
+      marginTop: spacing.sm,
+    },
+    errorStateContainer: {
+      paddingVertical: spacing.lg,
+    },
+    errorStateCard: {
+      backgroundColor: colors.surface,
+      padding: spacing.xl,
+      alignItems: 'center',
+      gap: spacing.md,
+      borderColor: colors.error,
+    },
+    errorIconBox: {
+      marginBottom: spacing.xs,
+    },
+    errorStateTitle: {
+      color: colors.error,
+      fontWeight: '700',
+      textAlign: 'center',
+    },
+    errorStateDesc: {
+      color: colors.textPrimary,
+      textAlign: 'center',
+      lineHeight: 22,
+    },
+    errorStateDiagnostic: {
+      color: colors.textSecondary,
+      textAlign: 'center',
+    },
+    errorStateButtons: {
+      width: '100%',
+      gap: spacing.xs,
+      marginTop: spacing.sm,
+    },
+  });
+};

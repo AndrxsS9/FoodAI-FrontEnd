@@ -205,8 +205,3 @@ export const LocaleProvider: React.FC<LocaleProviderProps> = ({
 export function useLocale(): LocaleContextValue {
   return useContext(LocaleContext) ?? defaultLocaleContextValue;
 }
-
-/** Alias abreviado para componentes que solo necesitan traducir. */
-export function useTranslation(): LocaleContextValue {
-  return useLocale();
-}

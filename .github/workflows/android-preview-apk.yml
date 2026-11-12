@@ -256,19 +256,73 @@ jobs:
           fi
 
           # 1) Firma
-          "$BT/apksigner" verify --verbose --print-certs "$APK" > "${RUNNER_TEMP}/apksigner.txt"
-          cat "${RUNNER_TEMP}/apksigner.txt"
-          SIGNERS=$(grep -cE '^Signer #[0-9]+ certificate SHA-256 digest:' "${RUNNER_TEMP}/apksigner.txt" || true)
-          if [ "$SIGNERS" != "1" ]; then
-            echo "::error::Se esperaba exactamente 1 firmante y se encontraron ${SIGNERS}."
+          # `apksigner verify` termina con código != 0 si alguna firma no verifica
+          # (set -e aborta el paso). La salida va a un archivo, sin pipes.
+          SIGOUT="${RUNNER_TEMP}/apksigner.txt"
+          "$BT/apksigner" verify --verbose --print-certs "$APK" > "$SIGOUT"
+          cat "$SIGOUT"
+
+          # Firmantes independientes: línea explícita "Number of signers: N". Debe
+          # aparecer una sola vez y valer 1. Los esquemas (v1/v2/v3/v3.1) NO son
+          # firmantes: un único firmante puede figurar en varias líneas por esquema.
+          SIGNER_LINES=$(grep -cE '^Number of signers: [0-9]+$' "$SIGOUT" || true)
+          SIGNERS=$(sed -nE 's/^Number of signers: ([0-9]+)$/\1/p' "$SIGOUT")
+          if [ "$SIGNER_LINES" != "1" ] || [ "$SIGNERS" != "1" ]; then
+            echo "::error::Se esperaba exactamente 1 firmante ('Number of signers: 1') y se encontró '${SIGNERS:-ninguno}'."
             exit 1
           fi
-          if grep -qi 'CN=Android Debug' "${RUNNER_TEMP}/apksigner.txt"; then
+          if grep -qi 'CN=Android Debug' "$SIGOUT"; then
             echo "::error::El APK está firmado con el certificado de depuración de Android."
             exit 1
           fi
-          APK_SHA256=$(sed -nE 's/^Signer #1 certificate SHA-256 digest: ([0-9a-fA-F]+).*/\1/p' "${RUNNER_TEMP}/apksigner.txt" | tr 'A-F' 'a-f')
-          APK_SHA1=$(sed -nE 's/^Signer #1 certificate SHA-1 digest: ([0-9a-fA-F]+).*/\1/p' "${RUNNER_TEMP}/apksigner.txt" | tr 'A-F' 'a-f')
+
+          # Huellas del certificado del firmante. Formatos de apksigner soportados:
+          #   por esquema (build-tools 37): "V2 Signer: certificate SHA-256 digest: <hex>"
+          #   clásico:                      "Signer #1 certificate SHA-256 digest: <hex>"
+          # "Source Stamp Signer" (sello de la tienda) no firma la app y se ignora.
+          # Cualquier otra línea con huella aborta (formato no reconocido: falla
+          # cerrada). Imprime las huellas DISTINTAS en minúsculas.
+          signer_digests() {
+            ALGO="$1" awk '
+              index($0, "certificate " ENVIRON["ALGO"] " digest:") == 0 { next }
+              /^Source Stamp Signer/ { next }
+              $0 !~ /^(Signer #[0-9]+|V[0-9]+(\.[0-9]+)? Signer( #[0-9]+)?):? certificate / { bad = 1; next }
+              {
+                d = $0; sub(/^.*digest:[ \t]*/, "", d); sub(/[ \t\r]+$/, "", d); d = tolower(d)
+                if (!(d in seen)) { seen[d] = 1; print d }
+              }
+              END { exit(bad ? 2 : 0) }
+            ' "$SIGOUT"
+          }
+          # Exactamente UN certificado (todas las líneas por esquema deben coincidir)
+          # y con el formato hexadecimal esperado ($2 = longitud en caracteres).
+          read_signer_digest() {
+            local algo="$1" len="$2" digests
+            if ! digests=$(signer_digests "$algo"); then
+              echo "::error::apksigner reporta huellas ${algo} con un formato no reconocido." >&2
+              return 1
+            fi
+            if [ -z "$digests" ]; then
+              echo "::error::apksigner no reporta la huella ${algo} del certificado del APK." >&2
+              return 1
+            fi
+            if [ "$(wc -l <<< "$digests")" -ne 1 ]; then
+              echo "::error::apksigner reporta varios certificados ${algo} distintos para el APK." >&2
+              return 1
+            fi
+            if ! [[ "$digests" =~ ^[0-9a-f]{${len}}$ ]]; then
+              echo "::error::La huella ${algo} del APK está mal formada." >&2
+              return 1
+            fi
+            printf '%s' "$digests"
+          }
+          APK_SHA256=$(read_signer_digest SHA-256 64)
+          APK_SHA1=$(read_signer_digest SHA-1 40)
+
+          if ! [[ "$KEYSTORE_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::No se pudo determinar la huella SHA-256 del keystore EAS."
+            exit 1
+          fi
           if [ "$APK_SHA256" != "$KEYSTORE_SHA256" ]; then
             echo "::error::La firma del APK (${APK_SHA256}) no coincide con el keystore EAS (${KEYSTORE_SHA256})."
             exit 1
@@ -278,10 +332,6 @@ jobs:
           EXPECTED_NORM=$(printf '%s' "$EXPECTED_SHA256" | tr -d ':[:space:]' | tr 'A-F' 'a-f')
           if [ -n "$EXPECTED_NORM" ] && ! [[ "$EXPECTED_NORM" =~ ^[0-9a-f]{64}$ ]]; then
             echo "::error::expected_cert_sha256 no es una huella SHA-256 válida (64 caracteres hexadecimales)."
-            exit 1
-          fi
-          if [ -z "$APK_SHA256" ] || [ -z "$KEYSTORE_SHA256" ]; then
-            echo "::error::No se pudo determinar la huella SHA-256 del APK o del keystore EAS."
             exit 1
           fi
           if [ -n "$EXPECTED_NORM" ] && [ "$APK_SHA256" != "$EXPECTED_NORM" ]; then

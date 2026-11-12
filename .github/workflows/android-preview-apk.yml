@@ -150,7 +150,17 @@ jobs:
           # Confirmar con los metadatos oficiales de sdkmanager que el paquete existe.
           "$SDKMANAGER" --list > "${RUNNER_TEMP}/sdkmanager-list.txt"
           sdk_ids() { awk -F'|' '{ gsub(/[[:space:]]/, "", $1); print $1 }' "$1"; }
-          if ! sdk_ids "${RUNNER_TEMP}/sdkmanager-list.txt" | grep -qxF "$PLATFORM_PKG"; then
+          # Coincidencia EXACTA de un id de paquete en un listado de sdkmanager.
+          # awk lee el archivo completo, sin pipes: `cmd | grep -q` corta la lectura al
+          # primer acierto, el productor recibe SIGPIPE (141) y, con pipefail, un
+          # paquete presente se reportaba como ausente (falso negativo).
+          sdk_has_pkg() {
+            SDK_PKG="$2" awk -F'|' '
+              { id = $1; gsub(/[[:space:]]/, "", id); if (id == ENVIRON["SDK_PKG"]) found = 1 }
+              END { exit(found ? 0 : 1) }
+            ' "$1"
+          }
+          if ! sdk_has_pkg "${RUNNER_TEMP}/sdkmanager-list.txt" "$PLATFORM_PKG"; then
             echo "::error::sdkmanager no publica ${PLATFORM_PKG}. Plataformas disponibles para la API ${COMPILE_SDK%%.*}:"
             sdk_ids "${RUNNER_TEMP}/sdkmanager-list.txt" | grep -E "^platforms;android-${COMPILE_SDK%%.*}([.-]|$)" | sort -u || true
             exit 1
@@ -166,7 +176,7 @@ jobs:
           # Verificar que todo quedó realmente instalado (sin alias ni enlaces).
           "$SDKMANAGER" --list_installed > "${RUNNER_TEMP}/sdkmanager-installed.txt"
           for pkg in "$PLATFORM_PKG" "build-tools;${BUILD_TOOLS}" "ndk;${NDK_VERSION}"; do
-            if ! sdk_ids "${RUNNER_TEMP}/sdkmanager-installed.txt" | grep -qxF "$pkg"; then
+            if ! sdk_has_pkg "${RUNNER_TEMP}/sdkmanager-installed.txt" "$pkg"; then
               echo "::error::${pkg} no figura como instalado tras sdkmanager --install."
               exit 1
             fi
